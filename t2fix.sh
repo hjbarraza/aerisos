@@ -6,7 +6,7 @@ read -rp "EFI partition (e.g. nvme0n1p1): " E </dev/tty
 mount -o subvol=@ /dev/$R /mnt 2>/dev/null || mount /dev/$R /mnt
 mount /dev/$E /mnt/boot
 sed -n '/^\[arch-mact2\]/,/^$/p' /etc/pacman.conf >> /mnt/etc/pacman.conf
-pacstrap /mnt linux-t2 linux-t2-headers apple-t2-audio-config apple-bcm-firmware
+pacstrap /mnt linux-t2 linux-t2-headers apple-t2-audio-config
 echo 'MODULES=(apple-bce)' >> /mnt/etc/mkinitcpio.conf
 arch-chroot /mnt mkinitcpio -P
 cd /mnt/boot/loader/entries
