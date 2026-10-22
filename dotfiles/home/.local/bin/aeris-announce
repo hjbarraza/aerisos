@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""aeris-announce - speak and show AERIS status events.
+
+Polls /var/lib/aeris/status.json, diffs it against what was already announced and
+says new events through aeris-speak (Kokoro bf_emma) plus a dunst notification:
+  A) new unacknowledged watchlist findings
+  B) ISS / Tiangong passes and satellites overhead
+  C) new entries in the alerts list
+  D) emergency squawks
+State lives in /tmp/aeris-announce-state.json. On the very first run (no state file)
+the current status is recorded silently, so a restart does not replay old events.
+
+Usage: aeris-announce [--once] [--dry-run]
+Unit file: aeris-announce --print-unit
+"""
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+STATUS = "/var/lib/aeris/status.json"
+STATE = "/tmp/aeris-announce-state.json"
+SPEAK = os.path.expanduser("~/.local/bin/aeris-speak")
+POLL = 15
+NO_EMERGENCY = {"", "NONE", "—", "-", "NULL"}
+
+UNIT = """[Unit]
+Description=AERIS spoken status announcements
+After=graphical-session.target pipewire.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/aeris-announce
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+"""
+
+DRY = "--dry-run" in sys.argv
+
+
+def log(msg):
+    print(msg, file=sys.stderr, flush=True)
+
+
+def announce(title, text):
+    log(f"announce: {text}")
+    if DRY:
+        return
+    try:
+        subprocess.run(["dunstify", "-a", "AERIS", "-u", "normal", title, text],
+                       timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError) as e:
+        log(f"dunstify failed: {e}")
+    try:
+        subprocess.run([SPEAK, text], timeout=120, check=False)
+    except (OSError, subprocess.SubprocessError) as e:
+        log(f"aeris-speak failed: {e}")
+
+
+def load_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def save_state(state):
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(state, f)
+    os.replace(tmp, STATE)
+
+
+def clean_title(t):
+    t = re.sub(r"^\s*\[[a-z]{2}-[A-Z]{2}\]\s*", "", t)  # language tag
+    t = re.sub(r"\s+-\s+[^-]{2,40}$", "", t)            # trailing " - Publisher"
+    return t.strip()
+
+
+def finding_title(f):
+    if isinstance(f, dict):
+        return f.get("title") or f.get("headline") or ""
+    return str(f)
+
+
+def check_watch(s, state):
+    seen = set(state.setdefault("watch", []))
+    current = set()
+    for item in (s.get("watch") or {}).get("items") or []:
+        name = item.get("name", "?")
+        fresh = []
+        for f in item.get("new") or []:
+            key = f"{name}|{finding_title(f)}"
+            current.add(key)
+            if key not in seen:
+                fresh.append(f)
+        if fresh:
+            announce("Watchlist", f"New watchlist finding: {name}. {clean_title(finding_title(fresh[0]))}")
+    # keep only still-unacknowledged keys, so acked-then-reappearing items speak again
+    state["watch"] = sorted(current)
+
+
+def check_pass(s, state, field, label, speak_name):
+    val = (s.get("space") or {}).get(field) or ""
+    last = state.setdefault("last", {}).get(field, "")
+    state["last"][field] = val
+    if not val or val == last:
+        return
+    m = re.match(r"\s*(\d{1,2}:\d{2})\s*·\s*(\d+)\s*°", val)
+    if m:
+        announce(label, f"{speak_name} pass in {m.group(1)}. Maximum elevation {m.group(2)} degrees.")
+    else:
+        announce(label, f"{speak_name} pass: {val}")
+
+
+def check_sats(s, state):
+    val = (s.get("space") or {}).get("sats") or ""
+    last = state.setdefault("last", {}).get("sats", "")
+    state["last"]["sats"] = val
+    if not val or val == last:
+        return
+    m = re.match(r"\s*(\d+)\s*O/H\s*(?:·\s*(.*))?", val)
+    if not m:
+        return
+    n, names = int(m.group(1)), (m.group(2) or "").strip()
+    text = f"{n} satellite{'s' if n != 1 else ''} overhead."
+    if names:
+        text += f" {names}."
+    announce("Satellites", text)
+
+
+def check_alerts(s, state):
+    current = [a for a in (s.get("alerts") or []) if isinstance(a, str)]
+    seen = set(state.setdefault("alerts", []))
+    for a in current:
+        if a not in seen:
+            announce("Alert", f"Alert: {a}")
+    state["alerts"] = current
+
+
+def check_emergency(s, state):
+    val = str((s.get("air") or {}).get("emergency") or "").strip()
+    last = state.setdefault("last", {}).get("emergency", "")
+    state["last"]["emergency"] = val
+    if val.upper() in NO_EMERGENCY or val == last:
+        return
+    announce("Emergency squawk", f"Emergency squawk detected. {val}")
+
+
+def check_space_weather(s, state):
+    """Announce geomagnetic storms (G1+), M/X-class flares, and NOAA scale changes."""
+    space = s.get("space") or {}
+    last = state.setdefault("last", {})
+
+    # Kp / geomagnetic storms
+    kp_val = space.get("kp") or ""
+    kp_prev = last.get("kp", "")
+    last["kp"] = kp_val
+    if kp_val != kp_prev and kp_val:
+        # Announce when it goes to STORM or SEVERE, not on every quiet fluctuation
+        kp_upper = kp_val.upper()
+        if "STORM" in kp_upper or "SEVERE" in kp_upper:
+            announce("Space weather", f"Geomagnetic storm. {kp_val}.")
+
+    # Solar flares — announce M-class and X-class
+    flare_val = space.get("flare") or ""
+    flare_prev = last.get("flare", "")
+    last["flare"] = flare_val
+    if flare_val != flare_prev and flare_val:
+        fl = flare_val.strip().upper()
+        if fl.startswith("M") or fl.startswith("X"):
+            announce("Solar flare", f"Solar flare detected. Class {flare_val}.")
+
+    # NOAA scales — announce when any scale goes above 0
+    scales_val = space.get("scales") or ""
+    scales_prev = last.get("scales", "")
+    last["scales"] = scales_val
+    if scales_val != scales_prev and scales_val:
+        # "R0 S0 G0" is quiet; anything else is active
+        if scales_val.strip() != "R0 S0 G0":
+            announce("NOAA scales", f"Space weather scales active. {scales_val}.")
+
+
+def check_launch(s, state):
+    """Announce upcoming rocket launch when T-0 is within 1 hour and status is GO."""
+    space = s.get("space") or {}
+    last = state.setdefault("last", {})
+
+    t0_val = space.get("launch_t0") or ""
+    t0_prev = last.get("launch_t0", "")
+    last["launch_t0"] = t0_val
+
+    if not t0_val or t0_val == t0_prev:
+        return
+
+    launch_name = space.get("launch") or "Unknown mission"
+    t0_upper = t0_val.upper()
+    if "GO" in t0_upper:
+        # Parse time to check if within 1 hour
+        # Format: "23 OCT 00:51 · GO"
+        m = re.match(r"(\d{1,2}\s+\w+\s+\d{1,2}:\d{2})", t0_val)
+        if m:
+            announce("Rocket launch", f"Rocket launch upcoming. {launch_name}. T zero at {m.group(1)}. Status go.")
+
+
+def check_outages(s, state):
+    """Announce internet outages."""
+    val = str((s.get("world") or {}).get("outages") or "").strip()
+    last = state.setdefault("last", {}).get("outages", "")
+    state["last"]["outages"] = val
+    if not val or val == last or val.upper() in {"NONE", "—", "-", "0"}:
+        return
+    announce("Internet outage", f"Internet outage detected. {val}.")
+
+
+def process(s, state):
+    check_watch(s, state)
+    check_pass(s, state, "iss", "ISS pass", "ISS")
+    check_pass(s, state, "css", "Tiangong pass", "Tiangong")
+    check_sats(s, state)
+    check_alerts(s, state)
+    check_emergency(s, state)
+    check_space_weather(s, state)
+    check_launch(s, state)
+    check_outages(s, state)
+
+
+def seed(s):
+    """Record current status as already announced (no speech)."""
+    global DRY
+    old, DRY = DRY, True
+    state = {}
+    try:
+        process(s, state)
+    finally:
+        DRY = old
+    return state
+
+
+def fingerprint():
+    try:
+        with open(STATUS, "rb") as f:
+            return hashlib.sha1(f.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def main():
+    if "--print-unit" in sys.argv:
+        sys.stdout.write(UNIT)
+        return
+    once = "--once" in sys.argv
+    state = load_json(STATE)
+    last_fp = None
+    while True:
+        fp = fingerprint()
+        if fp and fp != last_fp:
+            s = load_json(STATUS)
+            if isinstance(s, dict):
+                if state is None:
+                    state = seed(s)
+                    log("first run: recorded current status silently")
+                else:
+                    process(s, state)
+                save_state(state)
+                last_fp = fp
+        if once:
+            return
+        time.sleep(POLL)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

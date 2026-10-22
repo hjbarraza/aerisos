@@ -37,7 +37,7 @@ CONF="$HOME/.config/aerisos/setup.conf"
 [[ -f $CONF ]] && source "$CONF"
 
 # Install modules, in the order "all" runs them
-MODULES=(t2 essentials wizard packages hardware steam controller dotfiles login voxtype tools aeris maps titan theme safety boot logins)
+MODULES=(t2 essentials wizard packages hardware steam controller dotfiles login voxtype tools aeris tts maps titan theme safety boot logins)
 # Only run when named: hardware unique to one machine, or maintenance
 OPTIONAL=(gamesdrive razer snapshot)
 
@@ -73,11 +73,15 @@ HOME_PATHS=(
     .local/bin/aeris-onto
     .local/bin/aeris-alerts
     .local/bin/watch-open
+    .local/bin/aeris-speak
+    .local/bin/aeris-announce
+    .local/bin/aeris-agent-notify
     .config/autostart/nm-applet.desktop
     .local/share/aeris/watchlist.json
     .config/opencode
     .config/systemd/user/aeris-watch.service
     .config/systemd/user/aeris-watch.timer
+    .config/systemd/user/aeris-announce.service
     .config/systemd/user/defence-maps.service
     .claude/skills
     .claude/settings.json
@@ -660,10 +664,58 @@ mod_aeris() {
 
     # Claude Code (native installer); OpenCode is the AERIS fork, installed by hand
     have claude || run bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
+    # Claude Code's TTS hooks (Stop / Notification -> aeris-agent-notify) are already in
+    # ~/.claude/settings.json, restored by the dotfiles module; the voice itself is the tts module
     if ! have opencode && [[ ! -x $HOME/.opencode/bin/opencode ]]; then
         warn "OpenCode (AERIS fork) not installed; its config is already in ~/.config/opencode"
     fi
     info "~/maps (defence maps app + data) lives in its own repo: ./setup.sh maps installs it"
+}
+
+# Spoken announcements: Kokoro (bf_emma) behind aeris-speak, and the aeris-announce
+# user service that speaks watchlist/pass/alert events. The scripts and the unit arrive
+# with dotfiles; this installs the voice they need
+mod_tts() {
+    log "TTS voice: Kokoro venv, model files, aeris-announce service"
+    local base="$HOME/.local/share/aeris"
+    local venv="$base/tts-venv" models="$base/tts-models"
+    local url=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+    local f
+
+    pacman_install python pipewire libnotify dunst
+
+    if [[ ! -x $venv/bin/python3 ]]; then
+        run mkdir -p "$base"
+        run python3 -m venv "$venv"
+    fi
+    if (( DRY )) || ! "$venv/bin/python3" -c 'import kokoro_onnx, soundfile' >/dev/null 2>&1; then
+        run "$venv/bin/pip" install --quiet kokoro-onnx soundfile || warn "pip install failed; re-run: ./setup.sh tts"
+    fi
+
+    run mkdir -p "$models"
+    for f in kokoro-v1.0.onnx voices-v1.0.bin; do
+        [[ -s $models/$f ]] && continue
+        run curl -fL --retry 3 -o "$models/$f.part" "$url/$f" \
+            && run mv "$models/$f.part" "$models/$f" \
+            || warn "Download of $f failed; re-run: ./setup.sh tts"
+    done
+
+    # Point aeris-speak at the canonical install locations (older copies used ~/tts-samples)
+    if [[ -f $HOME/.local/bin/aeris-speak ]]; then
+        run sed -i -E \
+            -e 's|^VENV=.*|VENV="$HOME/.local/share/aeris/tts-venv"|' \
+            -e 's|^MODEL=.*|MODEL="$HOME/.local/share/aeris/tts-models/kokoro-v1.0.onnx"|' \
+            -e 's|^VOICES=.*|VOICES="$HOME/.local/share/aeris/tts-models/voices-v1.0.bin"|' \
+            "$HOME/.local/bin/aeris-speak"
+    else
+        warn "aeris-speak not found; run the 'dotfiles' module first"
+    fi
+
+    run systemctl --user daemon-reload
+    if [[ -f $HOME/.config/systemd/user/aeris-announce.service ]]; then
+        run systemctl --user enable --now aeris-announce.service
+    fi
+    info "Test: aeris-speak \"AERIS voice online\""
 }
 
 mod_theme() {

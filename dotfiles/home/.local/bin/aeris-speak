@@ -1,0 +1,41 @@
+#!/bin/bash
+# aeris-speak - AERIS system TTS voice (Kokoro 82M, bf_emma)
+# Usage: aeris-speak "text to speak"
+#        echo "text" | aeris-speak
+set -euo pipefail
+
+VENV="$HOME/.local/share/aeris/tts-venv"
+MODEL="$HOME/.local/share/aeris/tts-models/kokoro-v1.0.onnx"
+VOICES="$HOME/.local/share/aeris/tts-models/voices-v1.0.bin"
+VOICE="bf_emma"
+SPEED="${AERIS_SPEAK_SPEED:-1.0}"
+
+if [ $# -gt 0 ]; then
+    TEXT="$*"
+else
+    TEXT="$(cat)"
+fi
+
+[ -z "$TEXT" ] && exit 0
+
+TMPWAV="$(mktemp /tmp/aeris-speak-XXXXXX.wav)"
+trap 'rm -f "$TMPWAV"' EXIT
+
+AERIS_TTS_MODEL="$MODEL" \
+AERIS_TTS_VOICES="$VOICES" \
+AERIS_TTS_VOICE="$VOICE" \
+AERIS_TTS_SPEED="$SPEED" \
+"$VENV/bin/python3" - "$TEXT" "$TMPWAV" << 'PYEOF'
+import os, sys, soundfile as sf
+from kokoro_onnx import Kokoro
+
+kokoro = Kokoro(os.environ["AERIS_TTS_MODEL"], os.environ["AERIS_TTS_VOICES"])
+samples, sr = kokoro.create(
+    sys.argv[1],
+    voice=os.environ["AERIS_TTS_VOICE"],
+    speed=float(os.environ["AERIS_TTS_SPEED"]),
+)
+sf.write(sys.argv[2], samples, sr)
+PYEOF
+
+pw-play "$TMPWAV" 2>/dev/null || mpv --no-terminal "$TMPWAV" 2>/dev/null || aplay "$TMPWAV" 2>/dev/null

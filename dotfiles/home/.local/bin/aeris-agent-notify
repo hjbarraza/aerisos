@@ -1,0 +1,14 @@
+#!/bin/bash
+# aeris-agent-notify - TTS notification when an AI agent needs attention
+# Usage: aeris-agent-notify "hermes" "Task complete: built the TTS system"
+#        aeris-agent-notify "claude" "Needs review: PR #42 ready"
+set -euo pipefail
+
+AGENT="${1:-agent}"
+MSG="${2:-needs your attention}"
+
+# Dunst notification (visual)
+dunstify -a "AERIS" -u normal "$AGENT" "$MSG" 2>/dev/null || true
+
+# Voice announcement (keep it brief)
+~/.local/bin/aeris-speak "${AGENT} ${MSG}"

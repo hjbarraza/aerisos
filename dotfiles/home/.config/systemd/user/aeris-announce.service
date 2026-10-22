@@ -1,0 +1,12 @@
+[Unit]
+Description=AERIS spoken status announcements
+After=graphical-session.target pipewire.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/aeris-announce
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

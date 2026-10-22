@@ -131,6 +131,7 @@ Run only some parts by naming modules:
 | `voxtype` | Voice dictation: installs Voxtype, downloads the `small.en` speech model, turns on GPU acceleration, and keeps only the top-bar icon (no floating overlay). Hold **Right Option/Alt** (or Right Ctrl), speak, release. |
 | `tools` | Omarchy-style tools, minus the gimmicks: **AerisOS menu** (`SUPER+ALT+SPACE` or click Æ: a Vicinae extension with sections, monochrome icons, live ON/OFF and battery/GPU state, shortcuts, and a confirmation before log out, restart or shut down), **`aeris-update`** (one command for everything), low-battery alerts (15% and 7%), a one-line terminal greeting (ÆRIS OS · おはようございます, こんにちは or こんばんは by time of day), web apps in their own windows, media codecs, Node with global npm packages in `~/.local`, Git defaults and GitHub CLI. Set `AERIS_GIT_NAME` / `AERIS_GIT_EMAIL` to configure your Git identity. See [Shortcuts](#shortcuts). |
 | `aeris` | The AERIS intelligence layer: enables the hourly watchlist timer (`aeris-watch`, Google News queries per topic) and the local defence-maps server (`~/maps` at 127.0.0.1:8765), installs Ollama and a local model — CUDA + `qwen3.5:9b` on NVIDIA, Vulkan + `qwen3.5:4b` on any other GPU (4 GB cards like the T2 Mac's Radeon) — for the telegram-style headline compression on the lock and login feeds, the English glosses of foreign-language findings on the watch page, and the AERIS board, and installs Claude Code if missing. If Ollama is down or has no model, those features use OpenRouter (`z-ai/glm-5.3-flash`, key from `opencode auth login` or `$OPENROUTER_API_KEY`); without a key the screens show raw headlines. Without NVIDIA, the OpenCode agents' models are switched to OpenRouter (the local ones need more than 4 GB). OpenCode is the AERIS fork, installed by hand; its config arrives with `dotfiles`. **`~/maps` itself is data — restore it from a backup.** |
+| `tts` | The spoken voice (see [Voice](#voice)): a Python venv at `~/.local/share/aeris/tts-venv` with `kokoro-onnx` and `soundfile`, the Kokoro model files (`kokoro-v1.0.onnx`, `voices-v1.0.bin`) in `~/.local/share/aeris/tts-models/`, `aeris-speak` pointed at those paths, and the `aeris-announce` user service enabled. Skips what is already there. Runs after `aeris`. |
 | `maps` | The defence-maps app: clones its **separate private repo** to `~/maps` and starts the local server (127.0.0.1:8765). Only runs if you said yes in the wizard (or name it: `./setup.sh maps`); skipped quietly otherwise. Needs access to that repo. |
 | `theme` | The monochrome look with one neon accent: a 2 px white → green → purple gradient border on the focused window that rotates continuously (the `borderangle` loop animation), black borders on unfocused windows, no window shadows, greyscale app icons (the **Mono** icon theme, built by `~/.local/bin/make-mono-icons`), dark GTK, and one text size everywhere (Söhne 9 pt = 12 px). Applies live. |
 | `safety` | Btrfs snapshots before and after every package install (Snapper + snap-pac, last 10 kept), a firewall that blocks incoming connections except LocalSend, and a check for BIOS/SSD firmware updates (reports only, installs nothing). |
@@ -369,3 +370,47 @@ dotfiles/system/ SDDM theme + config restored by the login module
   this folder publicly with the fonts in it.
 - Written for: Arch Linux, Hyprland (Lua config), systemd-boot with a unified
   kernel image (mkinitcpio), Razer Blade 17 (2022) with Intel + NVIDIA graphics.
+
+## Voice
+
+AERIS speaks. The system voice is **Emma** (Kokoro 82M, voice `bf_emma`), running locally
+through ONNX: no account, no network once the model is downloaded.
+
+**What gets announced** (`aeris-announce`, a user service that watches
+`/var/lib/aeris/status.json` and speaks only what is new, with a dunst notification
+alongside; the first run records the current state silently so a restart never replays old events):
+
+| Event | Spoken when |
+|---|---|
+| Watchlist | A new unacknowledged finding appears |
+| Passes | An ISS or Tiangong pass is coming up (time and peak elevation) |
+| Satellites | Bright satellites are overhead |
+| Alerts | A new entry joins the AERIS alerts list (GNSS jammed, etc.) |
+| Squawks | An emergency squawk (7500 / 7600 / 7700) within 50 km |
+| Space weather | A geomagnetic storm, an M- or X-class flare, or active NOAA scales |
+| Launches | The next rocket launch is GO |
+| Outages | A major internet outage is reported |
+
+**Agent notifications:** Claude Code's `Stop` and `Notification` hooks (in
+`~/.claude/settings.json`, restored by `dotfiles`) call `aeris-agent-notify`, so Emma says
+when a task finished or Claude is waiting for you. Any other agent can do the same:
+`aeris-agent-notify "hermes" "finished the build"`.
+
+**Custom announcements:** `aeris-speak` takes text as arguments or on stdin:
+
+```bash
+aeris-speak "Backup complete"
+echo "Build finished" | aeris-speak
+AERIS_SPEAK_SPEED=1.2 aeris-speak "A little faster"
+```
+
+**Setup:** the `tts` module of `setup.sh` (`./setup.sh tts`, after `aeris` in a full run)
+creates the venv, downloads the model files (about 340 MB, from the
+[kokoro-onnx releases](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0)),
+points `aeris-speak` at them and enables `aeris-announce.service`. The scripts and the unit
+themselves are in `HOME_PATHS`, so `snapshot` saves them and `dotfiles` restores them.
+Stop the announcements with `systemctl --user disable --now aeris-announce`.
+
+**Change the voice:** edit `VOICE=` in `~/.local/bin/aeris-speak` (e.g. `af_heart`,
+`bm_george`; the list is in the kokoro-onnx docs), then `./setup.sh snapshot` to keep it.
+The spoken login greeting (`aeris-hello`) has its own voice setting, `AERIS_HELLO_VOICE`.
