@@ -30,6 +30,27 @@ hl.monitor({
     scale    = "auto",
 })
 
+-- T2 MacBook (MacBookPro16,1): this unit's Radeon Pro 5300M has a degraded DisplayPort
+-- output stage that corrupts the picture at 5K bandwidth — horizontal band flicker on
+-- every port and display, under macOS too. Diagnosed 2026-10-22: clean at quarter rate,
+-- so it is marginal high-speed signaling, not clocks, heat or the link (no retrains
+-- logged). Cap the Studio Display at 4K@60. Keyed to the Mac model via DMI, not the
+-- hostname, so reinstalls keep the fix; other hosts drive the display at native 5K.
+-- Another display flickering on the T2? Add an hl.monitor rule like this one for it
+-- (desc from `hyprctl monitors`), stepping the mode down until the bands stop.
+local product = ""
+do
+    local f = io.open("/sys/class/dmi/id/product_name")
+    if f then product = (f:read("l") or ""):gsub("%s+$", ""); f:close() end
+end
+if product == "MacBookPro16,1" then
+    hl.monitor({
+        output = "desc:Apple Computer Inc StudioDisplay 0x5DBACB3E",
+        mode   = "3840x2160@60",
+        scale  = 1.5,
+    })
+end
+
 -- eDP-2 is the NVIDIA dGPU's mux copy of the internal panel (Advanced Optimus).
 -- It can report "connected" on resume from sleep, and Hyprland then puts the
 -- lock screen on it — a panel that can't actually display anything. Never enable it.

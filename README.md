@@ -80,6 +80,16 @@ T2's internal ethernet. The T2 Mac's Radeon 5500M runs the local model through
 Vulkan (`ollama-vulkan`, `qwen3.5:4b`; ROCm doesn't support it), and Steam is
 skipped there (NVIDIA machines only).
 
+**Known hardware fault — external display flicker (horizontal bands):** this
+MacBookPro16,1's Radeon DP output stage is degraded; at 5K bandwidth it produces
+transient bit errors — band flicker on every port and display, under macOS too,
+with the link never dropping (nothing in any log). Clocks, heat and the DP link
+were ruled out (2026-10-22); the picture is clean at lower link rates. The fix is
+a bandwidth cap: `hyprland.lua` pins the Studio Display to 4K@60 on this model
+(DMI-keyed `hl.monitor` rule; other hosts drive it at native 5K). If another
+display flickers the same way on a T2, add a rule like it and step the mode down
+until the bands stop. The real repair would be board-level.
+
 ## Quick start (already on Arch + Hyprland)
 
 ```bash
