@@ -930,6 +930,14 @@ done
 (( ${#selected[@]} )) || selected=("${MODULES[@]}")
 
 [[ $EUID -ne 0 ]] || { echo "Run as your normal user, not root." >&2; exit 1; }
+
+# Everything shown is also kept, so a failed run can be read afterwards
+if (( ! DRY )); then
+    LOG="$HOME/.local/state/aerisos/setup-$(date +%Y%m%d-%H%M%S).log"
+    mkdir -p "${LOG%/*}"
+    exec > >(tee -a "$LOG") 2>&1
+    info "Log: $LOG"
+fi
 if (( ! DRY )) && printf '%s\n' "${selected[@]}" | grep -vx snapshot >/dev/null; then
     if [[ -t 0 ]]; then
         sudo -v
@@ -942,7 +950,7 @@ if (( ! DRY )) && printf '%s\n' "${selected[@]}" | grep -vx snapshot >/dev/null;
 fi
 
 current=""
-trap 'warn "Failed in module \"$current\" (line $LINENO). Fix it and re-run: ./setup.sh $current"' ERR
+trap 'warn "Failed in module \"$current\" (line $LINENO). Fix it and re-run: ./setup.sh $current (log: ${LOG:-none})"' ERR
 for current in "${selected[@]}"; do
     "mod_$current"
 done
