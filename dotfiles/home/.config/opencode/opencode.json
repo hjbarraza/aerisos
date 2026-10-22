@@ -1,7 +1,7 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "AERIS",
-  "model": "ollama/gemma4-e4b-32k",
+  "model": "openrouter/z-ai/glm-5.3-flash",
   "small_model": "openrouter/z-ai/glm-5.3-flash",
   "provider": {
     "ollama": {
@@ -50,6 +50,13 @@
             "output": 32768
           }
         }
+      },
+      "options": {
+        "extraBody": {
+          "provider": {
+            "zdr": true
+          }
+        }
       }
     }
   },
@@ -93,7 +100,7 @@
     "AERIS-FAST": {
       "description": "AERIS Agent on Gemma 4 E4B (local, GPU only): fastest, lighter reasoning",
       "mode": "primary",
-      "model": "ollama/gemma4-e4b-32k",
+      "model": "openrouter/z-ai/glm-5.3-flash",
       "temperature": 0.4,
       "color": "#b0b0b0",
       "prompt": "{file:./prompts/AERIS.md}",
