@@ -460,6 +460,10 @@ TG_CACHE = os.path.join(OUT_DIR, "tg-cache.json")
 TG_KEEP = 400  # memo entries kept (oldest dropped first)
 OLLAMA = "http://127.0.0.1:11434"
 TG_MODELS = ("qwen3.5:9b", "qwen3.5-9b-16k:latest", "gemma4:12b")  # first available wins
+# No local model (machines without an NVIDIA GPU, e.g. the T2 Mac): OpenRouter instead,
+# with the key `opencode auth login` saved (or $OPENROUTER_API_KEY)
+OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
+OR_MODEL = "z-ai/glm-5.3-flash"  # same as AERIS-CLOUD in opencode.json
 TG_PROMPT = ("Compress this news headline telegram-style: keep names, numbers and places, "
              "drop articles and filler words. At most {}, ALL CAPS. "
              "Answer with the compressed line only.\n\nHEADLINE: ")
@@ -472,22 +476,60 @@ _tg_down = False
 _tg_model = None
 
 
+def openrouter_key():
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not key:
+        try:
+            with open(os.path.expanduser(f"~{USER}/.local/share/opencode/auth.json")) as f:
+                key = json.load(f).get("openrouter", {}).get("key", "")
+        except (OSError, ValueError, AttributeError):
+            pass
+    return key
+
+
+def _tg_backend():
+    """("ollama", model) when a local model is installed, else ("openrouter", key)."""
+    try:
+        tags = [m.get("name", "") for m in fetch_json(f"{OLLAMA}/api/tags", 3).get("models", [])]
+    except (OSError, ValueError):
+        tags = []
+    local = next((m for m in TG_MODELS if m in tags), tags[0] if tags else "")
+    if local:
+        return ("ollama", local)
+    key = openrouter_key()
+    if key:
+        return ("openrouter", key)
+    # An OSError: telegraph() treats it as "model down", shows raw, memoizes nothing
+    raise ConnectionError("no local Ollama model and no OpenRouter key")
+
+
+def _tg_generate(prompt, max_tokens, timeout):
+    backend, arg = _tg_model
+    if backend == "ollama":
+        body = {"model": arg, "prompt": prompt, "stream": False, "think": False,
+                "options": {"temperature": 0, "num_predict": max_tokens}}
+        url, headers = f"{OLLAMA}/api/generate", {}
+    else:
+        body = {"model": OR_MODEL, "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0, "max_tokens": max_tokens, "reasoning": {"enabled": False}}
+        url, headers = OPENROUTER, {"Authorization": f"Bearer {arg}"}
+    req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", **headers})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        reply = json.loads(r.read())
+    if backend == "ollama":
+        return reply.get("response", "")
+    return reply["choices"][0]["message"].get("content") or ""
+
+
 def _tg_ask(title, about=None):
     global _tg_model
     if _tg_model is None:
-        tags = [m.get("name", "") for m in fetch_json(f"{OLLAMA}/api/tags", 3).get("models", [])]
-        _tg_model = next((m for m in TG_MODELS if m in tags), tags[0] if tags else "")
-    if not _tg_model:
-        raise ValueError("no ollama model")
+        _tg_model = _tg_backend()
     # A telegram may run to two lock-screen lines; too long still → once more, harder
     for limit in ("15 words and under 85 characters", "7 words and under 40 characters"):
         prompt = (TG_ABOUT.format(about) if about else "") + TG_PROMPT.format(limit) + title
-        body = json.dumps({"model": _tg_model, "prompt": prompt, "stream": False,
-                           "think": False, "options": {"temperature": 0, "num_predict": 40}}).encode()
-        req = urllib.request.Request(f"{OLLAMA}/api/generate", data=body,
-                                     headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            reply = json.loads(r.read()).get("response", "")
+        reply = _tg_generate(prompt, 40, 20)
         line = reply.strip().splitlines()[0] if reply.strip() else ""
         line = re.sub(r"\s+", " ", re.sub(r"[\"“”]", "", line)).strip(" .").upper()
         if 0 < len(line) <= 2 * NEWS_WIDTH:

@@ -67,7 +67,7 @@ mount "$ESP" /mnt/boot
 
 # --- base system --------------------------------------------------------------
 say "Installing the base system (pacstrap)"
-pacstrap -K /mnt base linux linux-firmware btrfs-progs networkmanager sudo git \
+pacstrap -K /mnt base linux linux-firmware btrfs-progs networkmanager sudo git w3m \
     intel-ucode amd-ucode nano
 genfstab -U /mnt >> /mnt/etc/fstab
 

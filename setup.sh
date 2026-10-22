@@ -4,6 +4,7 @@
 # Usage: ./setup.sh [--dry-run] [module ...]
 #        ./setup.sh               run every install module (same as "all")
 #        ./setup.sh steam boot    run only these modules
+#        ./setup.sh essentials    Brave, w3m and Claude Code only (runs first in a full install)
 #        ./setup.sh wizard        (re-)answer the personal questions (name, email, hostname, maps)
 #        ./setup.sh maps          install/update the defence-maps app (separate private repo)
 #        ./setup.sh gamesdrive    optional: mount this laptop's games drive
@@ -36,7 +37,7 @@ CONF="$HOME/.config/aerisos/setup.conf"
 [[ -f $CONF ]] && source "$CONF"
 
 # Install modules, in the order "all" runs them
-MODULES=(wizard packages hardware steam controller dotfiles login voxtype tools aeris maps titan theme safety boot)
+MODULES=(t2 essentials wizard packages hardware steam controller dotfiles login voxtype tools aeris maps titan theme safety boot)
 # Only run when named: hardware unique to one machine, or maintenance
 OPTIONAL=(gamesdrive razer snapshot)
 
@@ -132,6 +133,13 @@ write_root_file() {
 # (grep without -q: an early exit would SIGPIPE the producer and trip pipefail)
 gpu_has() { lspci | grep -iE 'vga|3d|display' | grep -iE "$1" >/dev/null; }
 
+# Local models (Ollama) only with an NVIDIA GPU; elsewhere (the T2 Mac: Intel + Radeon
+# 5500M, no ROCm) the lock screen, watchlist and OpenCode use OpenRouter
+local_llm() { gpu_has nvidia; }
+
+# Intel Mac with the T2 chip (needs the linux-t2 kernel from the arch-mact2 repo)
+is_t2() { lspci | grep -i 'T2 Bridge' >/dev/null; }
+
 # PCI address of the first GPU matching a vendor, e.g. "0000:01:00.0"
 gpu_addr() { lspci -D | grep -iE 'vga|3d|display' | grep -iE "$1" | head -1 | cut -d' ' -f1; }
 
@@ -193,6 +201,61 @@ EOF
 
 # --- modules -------------------------------------------------------------------
 
+# T2 Macs only (skipped elsewhere). The kernel, firmware and boot entry come from
+# t2/chroot.sh at install time; this keeps them updatable and the repos sane
+mod_t2() {
+    is_t2 || return 0
+    log "T2 Mac: arch-mact2 repo, linux-t2 kernel, stable repos only, internal NIC ignored"
+    if [[ ! -s /etc/pacman.d/arch-mact2-mirrorlist ]]; then
+        write_root_file /etc/pacman.d/arch-mact2-mirrorlist < "$AERIS/t2/arch-mact2-mirrorlist"
+    fi
+    if ! grep -q '^\[arch-mact2\]' /etc/pacman.conf; then
+        info "Adding the arch-mact2 repo (linux-t2 updates come from it)"
+        as_root sh -c "printf '\n[arch-mact2]\nInclude = /etc/pacman.d/arch-mact2-mirrorlist\nSigLevel = Never\n' >> /etc/pacman.conf"
+    fi
+    # Testing repos only by accident: AerisOS is built on stable packages
+    if grep -qE '^\[(core|extra|multilib)-testing\]' /etc/pacman.conf; then
+        warn "Testing repos were enabled in /etc/pacman.conf; turning them off"
+        as_root sed -i -E '/^\[(core|extra|multilib)-testing\]/{s/^/#/;n;s/^/#/}' /etc/pacman.conf
+    fi
+    as_root pacman -Sy
+    pacman_install linux-t2 linux-t2-headers apple-t2-audio-config apple-bcm-firmware-fetcher iwd
+
+    # The T2's internal USB ethernet (iBridge, same MAC on every T2 Mac) never gets an
+    # address; without this NetworkManager shows it "connecting" forever
+    if [[ ! -f /etc/NetworkManager/conf.d/t2-ibridge.conf ]]; then
+        printf '[keyfile]\nunmanaged-devices=mac:ac:de:48:00:11:22\n' \
+            | write_root_file /etc/NetworkManager/conf.d/t2-ibridge.conf
+        as_root nmcli general reload || true
+    fi
+}
+
+# First, and never fatal: a browser, a terminal browser and Claude Code are there
+# to get help even if a later module breaks
+mod_essentials() {
+    log "Essentials: Brave, w3m (terminal browser), Claude Code"
+    pacman_install w3m flatpak || warn "w3m/flatpak install failed"
+
+    # Brave from Flathub (no AUR build to fail); /usr/local/bin/brave because
+    # hyprland.lua and the web apps call it by name
+    as_root flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+    as_root flatpak install -y --noninteractive flathub com.brave.Browser || warn "Brave flatpak install failed; re-run: ./setup.sh essentials"
+    if [[ ! -x /usr/local/bin/brave ]]; then
+        printf '#!/bin/sh\nexec flatpak run com.brave.Browser "$@"\n' | write_root_file /usr/local/bin/brave
+        as_root chmod 755 /usr/local/bin/brave
+    fi
+
+    # Claude Code (native installer, into ~/.local/bin). The dotfiles .bashrc puts that on
+    # PATH later; until then, add it so `claude` works in the next terminal
+    if [[ ! -x $HOME/.local/bin/claude ]]; then
+        run bash -c 'curl -fsSL https://claude.ai/install.sh | bash' || warn "Claude Code install failed; re-run: ./setup.sh essentials"
+    fi
+    if ! grep -qs '\.local/bin' "$HOME/.bashrc"; then
+        run sh -c "printf '%s\n' 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> \"\$HOME/.bashrc\""
+    fi
+    info "Browser: brave (or w3m in a terminal). Help: open a new terminal and run claude"
+}
+
 mod_packages() {
     log "Packages: multilib, system update, yay, package lists"
 
@@ -219,12 +282,17 @@ mod_packages() {
         wanted=$(comm -12 <(sort -u "$PKG/pacman.txt") <(echo "$available"))
         missing=$(comm -23 <(sort -u "$PKG/pacman.txt") <(echo "$available"))
         [[ -n $missing ]] && warn "Not in repos, skipped: $(echo $missing)"
+        # NVIDIA drivers, CUDA and local models only where there's an NVIDIA GPU
+        if ! local_llm; then
+            wanted=$(grep -vE '^(lib32-)?nvidia|^libva-nvidia|^ollama' <<<"$wanted" || true)
+            info "No NVIDIA GPU: skipping NVIDIA drivers and Ollama (AI runs on OpenRouter)"
+        fi
         # shellcheck disable=SC2086
         pacman_install $wanted
     fi
     if [[ -s $PKG/aur.txt ]]; then
         # shellcheck disable=SC2046
-        aur_install $(grep -vE '^(yay-bin|.*-debug)$' "$PKG/aur.txt")
+        aur_install $(grep -vE '^(yay-bin|.*-debug)$' "$PKG/aur.txt" | { local_llm && cat || grep -vx envycontrol; })
     fi
 }
 
@@ -511,11 +579,21 @@ mod_aeris() {
     fi
 
     # Local models: lock-screen telegram compression (aeris-status) and the AERIS board
-    pacman_install ollama
-    gpu_has nvidia && pacman_install ollama-cuda
-    as_root systemctl enable --now ollama.service
-    if have ollama && ! ollama list 2>/dev/null | grep -q '^qwen3.5:9b'; then
-        run ollama pull qwen3.5:9b || warn "Model pull failed; aeris-status falls back to raw headlines"
+    if local_llm; then
+        pacman_install ollama ollama-cuda
+        as_root systemctl enable --now ollama.service
+        if have ollama && ! ollama list 2>/dev/null | grep -q '^qwen3.5:9b'; then
+            run ollama pull qwen3.5:9b || warn "Model pull failed; aeris-status falls back to raw headlines"
+        fi
+    else
+        # No local models: every OpenCode agent on OpenRouter; aeris-status and aeris-watch
+        # switch to OpenRouter by themselves (no Ollama answering)
+        if [[ -f $HOME/.config/opencode/opencode.json ]]; then
+            run sed -i -E 's#"ollama/[^"]*"#"openrouter/z-ai/glm-5.3-flash"#' "$HOME/.config/opencode/opencode.json"
+            run sed -i -E 's#^model: ollama/.*#model: openrouter/z-ai/glm-5.3-flash#' "$HOME"/.config/opencode/agents/*.md
+        fi
+        [[ -f $HOME/.local/share/opencode/auth.json ]] && grep -q openrouter "$HOME/.local/share/opencode/auth.json" \
+            || info "OpenRouter key: run 'opencode auth login' (OpenRouter); the lock screen and watchlist use it too"
     fi
 
     # Claude Code (native installer); OpenCode is the AERIS fork, installed by hand

@@ -115,28 +115,67 @@ GLOSS_CACHE = os.path.join(DATA_DIR, "gloss-cache.json")
 GLOSS_KEEP = 600
 OLLAMA = "http://127.0.0.1:11434"
 GLOSS_MODELS = ("qwen3.5:9b", "qwen3.5-9b-16k:latest", "gemma4:12b")
+# No local model (machines without an NVIDIA GPU, e.g. the T2 Mac): OpenRouter instead,
+# with the key `opencode auth login` saved (or $OPENROUTER_API_KEY)
+OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
+OR_MODEL = "z-ai/glm-5.3-flash"  # same as AERIS-CLOUD in opencode.json
 
 _gloss_memo = None
 _gloss_down = False
 _gloss_model = None
 
 
+def openrouter_key():
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not key:
+        try:
+            with open(os.path.expanduser("~/.local/share/opencode/auth.json")) as f:
+                key = json.load(f).get("openrouter", {}).get("key", "")
+        except (OSError, ValueError, AttributeError):
+            pass
+    return key
+
+
+def _gloss_backend():
+    """("ollama", model) when a local model is installed, else ("openrouter", key)."""
+    try:
+        with urllib.request.urlopen(f"{OLLAMA}/api/tags", timeout=3) as r:
+            tags = [m.get("name", "") for m in json.loads(r.read()).get("models", [])]
+    except (OSError, ValueError):
+        tags = []
+    local = next((m for m in GLOSS_MODELS if m in tags), tags[0] if tags else "")
+    if local:
+        return ("ollama", local)
+    key = openrouter_key()
+    if key:
+        return ("openrouter", key)
+    # An OSError: gloss() treats it as "model down", no gloss, memoizes nothing
+    raise ConnectionError("no local Ollama model and no OpenRouter key")
+
+
 def _gloss_ask(title):
     global _gloss_model
     if _gloss_model is None:
-        with urllib.request.urlopen(f"{OLLAMA}/api/tags", timeout=3) as r:
-            tags = [m.get("name", "") for m in json.loads(r.read()).get("models", [])]
-        _gloss_model = next((m for m in GLOSS_MODELS if m in tags), tags[0] if tags else "")
-    if not _gloss_model:
-        raise ValueError("no ollama model")
+        _gloss_model = _gloss_backend()
+    backend, arg = _gloss_model
     prompt = ("Translate this news headline into plain English: one line, keep names and "
               "numbers, no quotes, no commentary.\n\nHEADLINE: " + title)
-    body = json.dumps({"model": _gloss_model, "prompt": prompt, "stream": False,
-                       "think": False, "options": {"temperature": 0, "num_predict": 60}}).encode()
-    req = urllib.request.Request(f"{OLLAMA}/api/generate", data=body,
-                                 headers={"Content-Type": "application/json"})
+    if backend == "ollama":
+        body = {"model": arg, "prompt": prompt, "stream": False, "think": False,
+                "options": {"temperature": 0, "num_predict": 60}}
+        url, headers = f"{OLLAMA}/api/generate", {}
+    else:
+        body = {"model": OR_MODEL, "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0, "max_tokens": 60, "reasoning": {"enabled": False}}
+        url, headers = OPENROUTER, {"Authorization": f"Bearer {arg}"}
+    req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", **headers})
     with urllib.request.urlopen(req, timeout=25) as r:
-        reply = json.loads(r.read()).get("response", "")
+        data = json.loads(r.read())
+    if backend == "ollama":
+        reply = data.get("response", "")
+    else:
+        reply = data["choices"][0]["message"].get("content") or ""
     line = reply.strip().splitlines()[0].strip(' ".') if reply.strip() else ""
     if not 0 < len(line) <= 200:
         raise ValueError("unusable reply")

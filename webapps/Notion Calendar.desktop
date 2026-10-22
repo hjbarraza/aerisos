@@ -4,5 +4,5 @@ Name=Notion Calendar
 Exec=brave --app=https://calendar.notion.so
 Terminal=false
 Type=Application
-Icon=brave-browser
+Icon=com.brave.Browser
 StartupNotify=true

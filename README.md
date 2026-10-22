@@ -47,6 +47,26 @@ in and run the one command it leaves in the login message:
 `cd ~/aerisos && ./setup.sh`. The ISO carries the repo at the commit it was
 built from, so rebuild it now and then.
 
+### T2 Macs (Intel MacBook Pro 2018–2020 etc.)
+
+The stock Arch kernel has no keyboard, trackpad or Wi-Fi on these, so the
+install needs two extra steps from [`t2/`](t2):
+
+1. **Before rebooting the fresh install**, inside `arch-chroot /mnt`:
+   `bash t2/chroot.sh` adds the arch-mact2 repo, installs `linux-t2` and the
+   firmware fetcher, and writes the default `Arch T2` boot entry. (Partitions
+   default to `nvme0n1p2` root / `nvme0n1p1` EFI; edit the top of the script if
+   yours differ.)
+2. **First boot, no Wi-Fi yet:** enable USB tethering on a phone and run
+   `bash t2/firmware.sh`; it gets the Wi-Fi/Bluetooth firmware from Apple's
+   recovery image (pick Sonoma or any macOS from Monterey on).
+
+After that, `setup.sh` as usual. Its `t2` module (skipped on other machines)
+keeps the arch-mact2 repo in `pacman.conf`, turns off testing repos and stops
+NetworkManager fighting the T2's internal ethernet. Machines without an NVIDIA
+GPU (T2 Macs included) get no Ollama: the lock screen, watchlist and OpenCode
+use OpenRouter (`opencode auth login`).
+
 ## Quick start (already on Arch + Hyprland)
 
 ```bash

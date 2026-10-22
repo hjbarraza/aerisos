@@ -4,5 +4,5 @@ Name=Google
 Exec=brave --app=https://www.google.com
 Terminal=false
 Type=Application
-Icon=brave-browser
+Icon=com.brave.Browser
 StartupNotify=true

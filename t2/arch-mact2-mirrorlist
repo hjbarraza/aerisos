@@ -1,0 +1,5 @@
+Server = https://arch-mact2.miningtcup.me/os/$arch
+Server = https://mirror.funami.tech/arch-mact2/os/$arch
+Server = https://mirror.syn-flut.de/arch-mact2/os/$arch
+Server = https://t2mirror.01110011.eu.cc/arch-mact2/os/$arch
+Server = https://arch-t2.slsrepo.com/

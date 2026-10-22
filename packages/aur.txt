@@ -1,6 +1,4 @@
-brave-bin
 envycontrol
-nodejs-all-the-package-names
 sublime-text-4
 usbimager
 vicinae-bin
