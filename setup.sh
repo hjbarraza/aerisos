@@ -66,6 +66,7 @@ HOME_PATHS=(
     .local/bin/screenshot
     .local/bin/stay-awake
     .local/bin/screen-off
+    .local/bin/display-scale
     .local/bin/tailscale-status
     .local/bin/aeris-watch
     .local/bin/aeris-inbox

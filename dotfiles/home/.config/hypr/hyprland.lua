@@ -440,6 +440,14 @@ hl.bind(mainMod .. " + CTRL + left",  hl.dsp.window.resize({ x = -60, y = 0, rel
 hl.bind(mainMod .. " + CTRL + right", hl.dsp.window.resize({ x = 60, y = 0, relative = true }), { description = "Resize: wider", repeating = true })
 hl.bind(mainMod .. " + CTRL + up",    hl.dsp.window.resize({ x = 0, y = -60, relative = true }), { description = "Resize: shorter", repeating = true })
 hl.bind(mainMod .. " + CTRL + down",  hl.dsp.window.resize({ x = 0, y = 60, relative = true }), { description = "Resize: taller", repeating = true })
+-- Display scale stepper (runtime; a config reload returns to the saved scale).
+-- plus/equal and minus/underscore both bound: with SHIFT held the keysym differs by layout.
+hl.bind(mainMod .. " + SHIFT + plus",        hl.dsp.exec_cmd("~/.local/bin/display-scale up"), { description = "Display scale: larger UI" })
+hl.bind(mainMod .. " + SHIFT + equal",       hl.dsp.exec_cmd("~/.local/bin/display-scale up"))
+hl.bind(mainMod .. " + SHIFT + KP_Add",      hl.dsp.exec_cmd("~/.local/bin/display-scale up"))
+hl.bind(mainMod .. " + SHIFT + minus",       hl.dsp.exec_cmd("~/.local/bin/display-scale down"), { description = "Display scale: more real estate" })
+hl.bind(mainMod .. " + SHIFT + underscore",  hl.dsp.exec_cmd("~/.local/bin/display-scale down"))
+hl.bind(mainMod .. " + SHIFT + KP_Subtract", hl.dsp.exec_cmd("~/.local/bin/display-scale down"))
 
 -- Switch workspaces with mainMod + [0-9]
 -- Move active window to a workspace with mainMod + SHIFT + [0-9]

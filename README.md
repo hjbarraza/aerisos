@@ -211,6 +211,7 @@ change rewrites it anyway.
 | `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize |
 | `SUPER+P` · `SUPER+J` | Pseudo-tile · flip split rows/columns |
 | `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag) |
+| `SUPER+SHIFT+PLUS` · `SUPER+SHIFT+MINUS` | Display scale: larger UI · more real estate (steps 1 → 1.2 → 1.25 → 1.33 → 1.5 → 1.6 → 2; runtime, reload returns to the saved scale) |
 | `SUPER+SHIFT+B` · `N` · `O` · `M` | Brave · Sublime Text · Obsidian · Signal |
 | `SUPER+SHIFT+C` · `Y` · `I` · `G` · `/` | Notion Calendar · YouTube · Claude · Gemini · Google (web apps) |
 | `SUPER+CTRL+A` · `W` · `B` | Audio · Wi-Fi · Bluetooth |

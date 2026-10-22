@@ -1,0 +1,32 @@
+#!/bin/bash
+# display-scale up|down — step the focused monitor's scale through sane values.
+# "up" = larger UI (higher scale, less real estate), "down" = more real estate.
+# Runtime only: a Hyprland config reload returns to the configured scale.
+set -euo pipefail
+dir=${1:-}
+[[ $dir == up || $dir == down ]] || { echo "usage: display-scale up|down" >&2; exit 2; }
+
+read -r name w h hz x y scale < <(hyprctl monitors -j | python3 -c '
+import json, sys
+for m in json.load(sys.stdin):
+    if m.get("focused"):
+        print(m["name"], m["width"], m["height"], round(m["refreshRate"]),
+              m["x"], m["y"], m["scale"])
+        break
+')
+
+steps=(1.0 1.2 1.25 1.333333 1.5 1.6 2.0)
+new=$(python3 - "$scale" "$dir" <<'EOF'
+import sys
+steps = [1.0, 1.2, 1.25, 1.333333, 1.5, 1.6, 2.0]
+cur, d = float(sys.argv[1]), sys.argv[2]
+# nearest step to the current scale, then move one up or down
+i = min(range(len(steps)), key=lambda i: abs(steps[i] - cur))
+i = min(i + 1, len(steps) - 1) if d == "up" else max(i - 1, 0)
+print(steps[i])
+EOF
+)
+
+hyprctl eval "hl.monitor({ output = \"$name\", mode = \"${w}x${h}@${hz}\", position = \"${x}x${y}\", scale = $new })" >/dev/null
+logical="$(python3 -c "print(f'{round($w/$new)}x{round($h/$new)}')")"
+notify-send -u low "Display scale" "$name: scale $new · $logical logical"
