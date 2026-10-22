@@ -520,8 +520,10 @@ def _tg_generate(prompt, max_tokens, timeout):
                 "options": {"temperature": 0, "num_predict": max_tokens}}
         url, headers = f"{OLLAMA}/api/generate", {}
     else:
+        # provider.zdr: route only to Zero Data Retention endpoints (prompts never stored)
         body = {"model": OR_MODEL, "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0, "max_tokens": max_tokens, "reasoning": {"enabled": False}}
+                "temperature": 0, "max_tokens": max_tokens, "reasoning": {"enabled": False},
+                "provider": {"zdr": True}}
         url, headers = OPENROUTER, {"Authorization": f"Bearer {arg}"}
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json", **headers})
