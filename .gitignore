@@ -10,3 +10,4 @@ node_modules/
 # Machine-local secrets: OpenCode service passwords are generated per machine
 dotfiles/home/.config/opencode/service.json
 dotfiles/home/.config/opencode/service-aeris.json
+iso/out/

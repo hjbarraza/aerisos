@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# AerisOS guided installer — runs as root on the AerisOS live USB.
+# Asks: disk, timezone, username + password. Installs a minimal Arch with
+# systemd-boot, copies the aerisos repo (baked into the ISO) into the new
+# user's home, and leaves one command for after the reboot: ./setup.sh
+set -euo pipefail
+
+say()  { printf '\n\033[1;37m■ %s\033[0m\n' "$*"; }
+die()  { printf '\033[1;31m! %s\033[0m\n' "$*" >&2; exit 1; }
+
+[[ $EUID -eq 0 ]] || die "run as root (you are root on the live USB by default)"
+[[ -d /sys/firmware/efi ]] || die "BIOS/legacy boot detected; AerisOS expects UEFI"
+[[ -d /root/aerisos ]] || die "/root/aerisos missing from the ISO; rebuild it (iso/build.sh)"
+
+say "AerisOS installer"
+
+# --- network ----------------------------------------------------------------
+if ! ping -c1 -W3 archlinux.org >/dev/null 2>&1; then
+    echo "No internet. For Wi-Fi:  iwctl → station wlan0 connect \"SSID\"  — then re-run: aeris-installer"
+    die "network required (pacstrap downloads packages)"
+fi
+
+# --- disk -------------------------------------------------------------------
+say "Target disk — EVERYTHING ON IT WILL BE ERASED"
+mapfile -t DISKS < <(lsblk -dpno NAME,SIZE,MODEL,TYPE | awk '$NF=="disk" && $1 !~ /loop|sr/ {NF--; print}')
+(( ${#DISKS[@]} )) || die "no disks found"
+for i in "${!DISKS[@]}"; do printf '  %d) %s\n' "$((i+1))" "${DISKS[$i]}"; done
+read -rp "Disk number: " N
+[[ $N =~ ^[0-9]+$ && $N -ge 1 && $N -le ${#DISKS[@]} ]] || die "invalid choice"
+DISK=$(awk '{print $1}' <<<"${DISKS[$((N-1))]}")
+read -rp "Type ERASE to wipe $DISK: " CONFIRM
+[[ $CONFIRM == ERASE ]] || die "aborted"
+
+# --- answers up front ---------------------------------------------------------
+read -rp "Timezone [Europe/Madrid]: " TZ; TZ=${TZ:-Europe/Madrid}
+[[ -f /usr/share/zoneinfo/$TZ ]] || die "unknown timezone: $TZ"
+read -rp "Username for your account: " NEW_USER
+[[ $NEW_USER =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "invalid username (lowercase, no spaces)"
+while :; do
+    read -rsp "Password for $NEW_USER: " PW1; echo
+    read -rsp "Repeat: " PW2; echo
+    [[ $PW1 == "$PW2" && -n $PW1 ]] && break
+    echo "Passwords differ or empty; again."
+done
+
+# --- partition: 1G ESP (mounted at /boot) + btrfs root (@ and @home) ---------
+say "Partitioning $DISK"
+umount -R /mnt 2>/dev/null || true
+wipefs -af "$DISK"
+parted -s "$DISK" mklabel gpt \
+    mkpart ESP fat32 1MiB 1GiB set 1 esp on \
+    mkpart root btrfs 1GiB 100%
+sleep 1; partprobe "$DISK"; sleep 1
+ESP=$(lsblk -pnro NAME "$DISK" | sed -n 2p)
+ROOT=$(lsblk -pnro NAME "$DISK" | sed -n 3p)
+mkfs.fat -F32 -n AERISESP "$ESP"
+mkfs.btrfs -f -L aerisos "$ROOT"
+
+mount "$ROOT" /mnt
+btrfs subvolume create /mnt/@
+btrfs subvolume create /mnt/@home
+umount /mnt
+mount -o subvol=@,compress=zstd,noatime "$ROOT" /mnt
+mkdir -p /mnt/home /mnt/boot
+mount -o subvol=@home,compress=zstd,noatime "$ROOT" /mnt/home
+mount "$ESP" /mnt/boot
+
+# --- base system --------------------------------------------------------------
+say "Installing the base system (pacstrap)"
+pacstrap -K /mnt base linux linux-firmware btrfs-progs networkmanager sudo git \
+    intel-ucode amd-ucode nano
+genfstab -U /mnt >> /mnt/etc/fstab
+
+# --- the repo -----------------------------------------------------------------
+cp -a /root/aerisos "/mnt/home/.aerisos-seed"
+
+# --- configure in chroot -------------------------------------------------------
+say "Configuring (timezone, locale, user, systemd-boot)"
+arch-chroot /mnt /bin/bash -e <<CHROOT
+ln -sf /usr/share/zoneinfo/$TZ /etc/localtime
+hwclock --systohc
+sed -i 's/^#en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
+locale-gen
+echo LANG=en_US.UTF-8 > /etc/locale.conf
+echo aerisos > /etc/hostname     # the setup wizard asks for the real name
+systemctl enable NetworkManager
+
+useradd -m -G wheel -s /bin/bash "$NEW_USER"
+echo '%wheel ALL=(ALL:ALL) ALL' > /etc/sudoers.d/10-wheel
+chmod 440 /etc/sudoers.d/10-wheel
+
+mv /home/.aerisos-seed "/home/$NEW_USER/aerisos"
+chown -R "$NEW_USER:$NEW_USER" "/home/$NEW_USER/aerisos"
+
+bootctl install
+mkdir -p /boot/loader/entries
+cat > /boot/loader/loader.conf <<EOF
+default aerisos.conf
+timeout 0
+EOF
+cat > /boot/loader/entries/aerisos.conf <<EOF
+title   AerisOS
+linux   /vmlinuz-linux
+initrd  /intel-ucode.img
+initrd  /amd-ucode.img
+initrd  /initramfs-linux.img
+options root=LABEL=aerisos rootflags=subvol=@ rw quiet loglevel=3
+EOF
+
+cat > /etc/motd <<'EOF'
+
+  AerisOS: one step left. Log in and run:
+
+      cd ~/aerisos && ./setup.sh
+
+EOF
+CHROOT
+
+# Password set outside the heredoc so special characters survive untouched
+printf '%s:%s\n' "$NEW_USER" "$PW1" | arch-chroot /mnt chpasswd
+
+say "Done. Remove the USB and reboot:  reboot"
+echo "Then log in as $NEW_USER and run:  cd ~/aerisos && ./setup.sh"

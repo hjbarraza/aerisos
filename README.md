@@ -29,6 +29,24 @@ and hands over to `setup.sh`, which runs the wizard and installs everything
 The **defence-maps app is optional** and lives in its own private repo; say yes
 in the wizard (or run `./setup.sh maps` later) and it's cloned to `~/maps`.
 
+### Or: bootable AerisOS USB
+
+Build an installer ISO with the repo baked in (no GitHub access needed on the
+new machine):
+
+```bash
+sudo ~/aerisos/iso/build.sh                            # → iso/out/aerisos-*.iso
+sudo cp iso/out/aerisos-*.iso /dev/sdX && sync         # write to USB (ERASES it)
+```
+
+Boot the USB (UEFI), connect Wi-Fi if needed (`iwctl`), and run
+**`aeris-installer`**: it asks for the disk (typed `ERASE` to confirm),
+timezone, and your **username + password**, installs a minimal Arch with
+systemd-boot on btrfs, and puts the repo in your home. After the reboot, log
+in and run the one command it leaves in the login message:
+`cd ~/aerisos && ./setup.sh`. The ISO carries the repo at the commit it was
+built from, so rebuild it now and then.
+
 ## Quick start (already on Arch + Hyprland)
 
 ```bash
