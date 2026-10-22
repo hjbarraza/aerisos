@@ -42,7 +42,7 @@ ShellRoot {
         property var onClick: null
         property var onRightClick: null
         property string klass: ""
-        color: klass === "off" ? root.dim : root.fg
+        color: (klass === "off" || klass === "disconnected") ? root.dim : root.fg
         font.family: root.nerd
         font.pixelSize: 12
         visible: text !== ""
