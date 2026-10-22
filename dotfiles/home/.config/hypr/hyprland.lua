@@ -146,11 +146,11 @@ hl.config({
         gaps_in  = 2,
         gaps_out = 2,
 
-        border_size = 1,
+        border_size = 2,
 
         col = {
-            active_border   = "rgba(ffffffff)",   -- ÆrisOS: white
-            inactive_border = "rgba(2a2a2aaa)",   -- ÆrisOS: charcoal
+            active_border   = { colors = { "rgba(f2f2ffff)", "rgba(39ff88ff)", "rgba(b44dffff)" }, angle = 45 },   -- cyberpunk: white, green, purple
+            inactive_border = "rgba(000000ff)",   -- AerisOS: black
         },
 
         -- Set to true to enable resizing windows by clicking and dragging on borders and gaps
@@ -171,10 +171,11 @@ hl.config({
         inactive_opacity = .9,
 
         shadow = {
-            enabled      = true,
-            range        = 6,
-            render_power = 3,
-            color        = 0xee1a1a1a,
+            enabled      = false,
+            range          = 5,
+            render_power   = 2,
+            color          = 0x99b44dff,   -- purple glow on the focused window
+            color_inactive = 0x00000000,   -- no glow on unfocused windows
         },
 
         blur = {
@@ -202,6 +203,7 @@ hl.curve("easy",           { type = "spring", mass = 1, stiffness = 238.1191, da
 
 hl.animation({ leaf = "global",        enabled = true,  speed = 10,   bezier = "default" })
 hl.animation({ leaf = "border",        enabled = true,  speed = 5.39, bezier = "easeOutQuint" })
+hl.animation({ leaf = "borderangle",   enabled = true,  speed = 10,   bezier = "linear",       style = "loop" })
 hl.animation({ leaf = "windows",       enabled = true,  speed = 4.79, spring = "easy" })
 hl.animation({ leaf = "windowsIn",     enabled = true,  speed = 4.1,  spring = "easy",         style = "popin 87%" })
 hl.animation({ leaf = "windowsOut",    enabled = true,  speed = 1.49, bezier = "linear",       style = "popin 87%" })

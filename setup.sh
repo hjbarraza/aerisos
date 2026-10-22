@@ -665,14 +665,14 @@ mod_aeris() {
 }
 
 mod_theme() {
-    log "Monochrome theme: white window borders, greyscale icons, one text size"
+    log "Monochrome theme: neon gradient focus border, black inactive border, greyscale icons, one text size"
 
-    # Window borders: white active, charcoal inactive
+    # Window borders: rotating white/green/purple gradient active (2 px), black inactive
     local hypr="$HOME/.config/hypr/hyprland.lua"
     if [[ -f $hypr ]]; then
         run sed -i -E \
-            -e 's|^(\s*active_border\s*=\s*).*|\1"rgba(ffffffff)",   -- AerisOS: white|' \
-            -e 's|^(\s*inactive_border\s*=\s*).*|\1"rgba(2a2a2aaa)",   -- AerisOS: charcoal|' \
+            -e 's|^(\s*active_border\s*=\s*).*|\1{ colors = { "rgba(f2f2ffff)", "rgba(39ff88ff)", "rgba(b44dffff)" }, angle = 45 },   -- cyberpunk: white, green, purple|' \
+            -e 's|^(\s*inactive_border\s*=\s*).*|\1"rgba(000000ff)",   -- AerisOS: black|' \
             "$hypr"
     fi
 
