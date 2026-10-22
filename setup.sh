@@ -268,6 +268,16 @@ mod_packages() {
     as_root pacman -Syu --noconfirm
     pacman_install base-devel git
 
+    # AUR builds without -debug packages: the binary ones have no symbols (a screen of
+    # errors per package) and the rest aren't worth a second package each
+    if ! grep -qs '^OPTIONS+=(!debug)' "$HOME/.config/pacman/makepkg.conf"; then
+        run mkdir -p "$HOME/.config/pacman"
+        run sh -c "echo 'OPTIONS+=(!debug)' >> \"\$HOME/.config/pacman/makepkg.conf\""
+    fi
+    local debug; debug=$(pacman -Qqm | grep -- '-debug$' || true)
+    # shellcheck disable=SC2086
+    [[ -z $debug ]] || as_root pacman -Rns --noconfirm $debug
+
     if ! have yay; then
         info "Bootstrapping yay from the AUR"
         local tmp; tmp=$(mktemp -d)
@@ -298,7 +308,7 @@ mod_packages() {
 }
 
 mod_hardware() {
-    log "Hardware: NVIDIA hybrid graphics, stable GPU names, laptop mic fix"
+    log "Hardware: GPU drivers, stable GPU names, early graphics, laptop fixes"
     local rebuild=0
 
     # hyprpolkitagent handles password prompts; the KDE agent would double up
