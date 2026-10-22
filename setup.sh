@@ -284,8 +284,8 @@ mod_packages() {
         [[ -n $missing ]] && warn "Not in repos, skipped: $(echo $missing)"
         # NVIDIA drivers, CUDA and local models only where there's an NVIDIA GPU
         if ! local_llm; then
-            wanted=$(grep -vE '^(lib32-)?nvidia|^libva-nvidia|^ollama' <<<"$wanted" || true)
-            info "No NVIDIA GPU: skipping NVIDIA drivers and Ollama (AI runs on OpenRouter)"
+            wanted=$(grep -vE '^(lib32-)?nvidia|^libva-nvidia|^ollama|^steam$' <<<"$wanted" || true)
+            info "No NVIDIA GPU: skipping NVIDIA drivers, Ollama (AI runs on OpenRouter) and Steam"
         fi
         # shellcheck disable=SC2086
         pacman_install $wanted
@@ -354,6 +354,10 @@ EOF
 
 mod_steam() {
     log "Steam + 32-bit graphics drivers"
+    if ! gpu_has nvidia; then
+        info "No NVIDIA GPU: Steam skipped (gaming machines only)"
+        return 0
+    fi
     grep -q '^\[multilib\]' /etc/pacman.conf || { warn "multilib is off; run the 'packages' module first"; return 1; }
 
     local pkgs=(steam ttf-liberation)
@@ -361,7 +365,7 @@ mod_steam() {
     gpu_has 'amd|ati'  && pkgs+=(vulkan-radeon lib32-vulkan-radeon lib32-mesa)
     gpu_has nvidia     && pkgs+=(nvidia-utils lib32-nvidia-utils nvidia-prime)
     pacman_install "${pkgs[@]}"
-    gpu_has nvidia && info "Run Steam on the NVIDIA GPU with: prime-run steam"
+    info "Run Steam on the NVIDIA GPU with: prime-run steam"
 }
 
 mod_controller() {
