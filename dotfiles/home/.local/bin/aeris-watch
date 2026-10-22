@@ -32,6 +32,7 @@ Every bare word must match, so long lists of words return almost nothing. Use th
 language and region for non-English subjects (es-MX, pl-PL, lt-LT, uk-UA, ru-RU, fi-FI, ...).
 """
 import argparse
+import email.utils
 import fcntl
 import hashlib
 import html
@@ -91,36 +92,293 @@ def wescape(text):
     return html.escape(str(text or ""), quote=True)
 
 
+def wdate(raw):
+    """'Thu, 26 Feb 2026 08:00:00 GMT' or ISO -> '26 FEB 2026'; unparseable shown raw."""
+    raw = re.sub(r"\s*\[.*?\]\s*$", "", str(raw or ""))
+    try:
+        t = email.utils.parsedate_to_datetime(raw)
+    except Exception:
+        t = None
+    if t is None:
+        try:
+            from datetime import datetime
+            t = datetime.fromisoformat(raw)
+        except ValueError:
+            return (raw or "—").upper()
+    return t.strftime("%d %b %Y").upper()
+
+
+# ---------- English gloss for foreign-language findings, via the local Ollama ----------
+# Memoized on disk like aeris-status's telegram cache: the model is asked once per title,
+# and only for findings inside the feed window. If Ollama is down the gloss is simply absent.
+GLOSS_CACHE = os.path.join(DATA_DIR, "gloss-cache.json")
+GLOSS_KEEP = 600
+OLLAMA = "http://127.0.0.1:11434"
+GLOSS_MODELS = ("qwen3.5:9b", "qwen3.5-9b-16k:latest", "gemma4:12b")
+
+_gloss_memo = None
+_gloss_down = False
+_gloss_model = None
+
+
+def _gloss_ask(title):
+    global _gloss_model
+    if _gloss_model is None:
+        with urllib.request.urlopen(f"{OLLAMA}/api/tags", timeout=3) as r:
+            tags = [m.get("name", "") for m in json.loads(r.read()).get("models", [])]
+        _gloss_model = next((m for m in GLOSS_MODELS if m in tags), tags[0] if tags else "")
+    if not _gloss_model:
+        raise ValueError("no ollama model")
+    prompt = ("Translate this news headline into plain English: one line, keep names and "
+              "numbers, no quotes, no commentary.\n\nHEADLINE: " + title)
+    body = json.dumps({"model": _gloss_model, "prompt": prompt, "stream": False,
+                       "think": False, "options": {"temperature": 0, "num_predict": 60}}).encode()
+    req = urllib.request.Request(f"{OLLAMA}/api/generate", data=body,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=25) as r:
+        reply = json.loads(r.read()).get("response", "")
+    line = reply.strip().splitlines()[0].strip(' ".') if reply.strip() else ""
+    if not 0 < len(line) <= 200:
+        raise ValueError("unusable reply")
+    return line
+
+
+def gloss(title):
+    """English rendering of a non-English headline, or "" (never blocks the page)."""
+    global _gloss_memo, _gloss_down
+    if _gloss_memo is None:
+        try:
+            with open(GLOSS_CACHE) as f:
+                _gloss_memo = dict(json.load(f))
+        except (OSError, ValueError):
+            _gloss_memo = {}
+    key = title.strip().lower()[:160]
+    if not key or key in _gloss_memo:
+        return _gloss_memo.get(key, "")
+    if _gloss_down:
+        return ""
+    try:
+        value = _gloss_ask(title)
+    except (TimeoutError, OSError):   # Ollama down or stuck: one attempt per run, no memo
+        _gloss_down = True
+        return ""
+    except Exception:                 # unusable reply for THIS title: remember, show raw
+        value = ""
+    _gloss_memo[key] = value
+    while len(_gloss_memo) > GLOSS_KEEP:
+        _gloss_memo.pop(next(iter(_gloss_memo)))
+    try:
+        tmp = GLOSS_CACHE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(_gloss_memo, f, ensure_ascii=False)
+        os.replace(tmp, GLOSS_CACHE)
+    except OSError:
+        pass
+    return value
+
+
+def wtitle(a, pending, want_gloss=False, extra=0):
+    """A finding's title cell: headline (linked, opens a new tab), outlet as a muted
+    tail (with +N when near-duplicates were folded into this row), and an English
+    gloss under non-English headlines."""
+    raw = str(a.get("title") or "")
+    m = re.match(r"^\[([A-Za-z]{2})(?:-[A-Za-z]{2})?\]\s*(.*)", raw)
+    lang, raw = (m.group(1).lower(), m.group(2)) if m else ("en", raw)
+    m = re.search(r"\s+-\s+([^-]{2,40})$", raw)   # trailing "- Outlet"
+    raw, src = (raw[:m.start()], m.group(1)) if m else (raw, "")
+    text = wescape(raw)
+    link = a.get("link") or ""
+    if link.startswith("http"):
+        text = f'<a href="{wescape(link)}" target=_blank rel=noopener>{text}</a>'
+    cell = f'<span class={"live" if pending else "seen"}>{text}</span>'
+    if src or extra:
+        tail = wescape(src).upper() + (f" +{extra}" if extra else "")
+        cell += f' <span class="src mono">{tail.strip()}</span>'
+    if want_gloss and lang != "en":
+        g = gloss(raw)
+        if g:
+            cell += f"<div class=gloss>EN &middot; {wescape(g)}</div>"
+    return cell
+
+
+def wsig(title, topic):
+    """A title's significant words minus the topic's own name, for spotting the same
+    story told by different outlets (as the lock screen feed does)."""
+    drop = set(re.findall(r"[A-Z0-9ÄÖÜ]{3,}", topic.upper().replace("-", " ")))
+    t = re.sub(r"^\[[A-Za-z-]+\]\s*", "", str(title or ""))
+    t = re.sub(r"\s+-\s+[^-]{2,40}$", "", t)
+    return {w for w in re.findall(r"[A-Z0-9ÄÖÜ]{4,}", t.upper())} - drop
+
+
+def wfoldsig(title, topic):
+    """Fold words for a finding: a non-English title compares through its English
+    gloss (already memoized for display), so the same story folds across languages.
+    Returns (words, glossed) — glossed pairs get a looser match, translations being
+    paraphrases rather than copies."""
+    m = re.match(r"^\[([A-Za-z]{2})(?:-[A-Za-z]{2})?\]\s*(.*)", str(title or ""))
+    if m and m.group(1).lower() != "en":
+        body = re.sub(r"\s+-\s+[^-]{2,40}$", "", m.group(2))
+        g = gloss(body)
+        if g:
+            return wsig(g, topic), True
+    return wsig(title, topic), False
+
+
+def wwhen(f):
+    """A finding's timestamp for feed order; undated sorts last."""
+    raw = re.sub(r"\s*\[.*?\]\s*$", "", str(f.get("date") or ""))
+    try:
+        return email.utils.parsedate_to_datetime(raw).timestamp()
+    except Exception:
+        try:
+            from datetime import datetime
+            return datetime.fromisoformat(raw).timestamp()
+        except ValueError:
+            return 0.0
+
+
+FEED_DAYS = 30  # the page shows this window; everything older is one EARLIER line
+
+
 def write_html(data):
-    """Readable page with every finding per item: unacknowledged first, then archive."""
-    out = ["<!doctype html><meta charset=utf-8><title>AERIS watchlist</title><style>"
-           "body{font:14px/1.45 system-ui,sans-serif;margin:24px auto;max-width:1000px;color:#eee;background:#161616}"
-           "a{color:#8ab4f8}h2{margin:28px 0 4px}small{color:#999}table{border-collapse:collapse;width:100%}"
-           "td{padding:3px 10px 3px 0;border-top:1px solid #2a2a2a;vertical-align:top;white-space:nowrap}"
-           "td.t{white-space:normal}.new{color:#ffd54f;font-weight:bold;padding-right:6px}"
-           ".note{color:#bbb;margin:2px 0 8px}.chip{background:#333;border-radius:4px;padding:0 6px;margin-left:8px;font-size:12px}</style>"]
-    out.append("<h1>AERIS watchlist</h1><small>regenerated %s &middot; yellow date = unacknowledged</small>"
-               % wescape(time.strftime("%Y-%m-%d %H:%M")))
+    """One chronological feed of every finding across all topics (a news feed, newest
+    day first, last FEED_DAYS days), set like the AERIS screens: black, greyscale,
+    Söhne / Söhne Mono. Topic chips filter the feed; non-English headlines carry an
+    English gloss from the local Ollama."""
+    new_total = sum(len(i.get("new") or []) for i in data["items"])
+    out = ['<!doctype html><html lang=en><head><meta charset=utf-8>'
+           '<meta name=viewport content="width=device-width, initial-scale=1">'
+           "<title>AERIS WATCH</title><style>"
+           ":root{--fg:#e6e6e6;--grey:#7a7a7a;--dim:#3a3a3a;--hair:#1c1c1c;color-scheme:dark}"
+           "*{margin:0;box-sizing:border-box}::selection{background:#fff;color:#000}"
+           'body{background:#000;color:var(--fg);font:14px/1.5 "Söhne",system-ui,sans-serif;'
+           "max-width:1080px;margin:56px auto 112px;padding:0 40px}"
+           '.mono{font-family:"Söhne Mono",monospace}'
+           ".top{display:flex;justify-content:space-between;font-size:11px;letter-spacing:2px;color:var(--grey)}"
+           ".top b{color:#fff;font-weight:normal}"
+           "h1{font-size:46px;font-weight:400;letter-spacing:-1px;color:#fff;margin:34px 0 10px}"
+           ".tagline{font-size:11px;letter-spacing:2px;color:#fff;margin-bottom:14px}"
+           ".tagline span{color:var(--grey)}"
+           "hr{border:0;border-top:1px solid #fff;margin:0 0 8px}"
+           ".topics{display:flex;flex-wrap:wrap;gap:6px 26px;margin:22px 0 0;"
+           "font-size:11px;letter-spacing:1px;color:var(--grey)}"
+           ".topics b{color:#fff;font-weight:normal}"
+           ".topics span{cursor:pointer;user-select:none}"
+           ".topics span:hover{color:#fff}"
+           ".topics .sel{background:#fff;color:#000;padding:0 6px}.topics .sel b{color:#000}"
+           ".topics .err{background:#fff;color:#000;padding:0 6px}"
+           "section{margin-top:44px}"
+           ".head{display:flex;align-items:baseline;font-size:11px;letter-spacing:2px}"
+           ".head .sl{color:#fff;font-size:13px;letter-spacing:0}"
+           ".head .nm{color:#fff;margin-left:9px}"
+           ".head .meta{margin-left:auto;color:var(--grey);letter-spacing:1px}"
+           "table{width:100%;border-collapse:collapse;margin-top:12px}"
+           "td{border-top:1px solid var(--hair);padding:6px 0;vertical-align:baseline}"
+           "td.m{width:24px;color:#fff}td.m.dot{color:var(--dim)}"
+           "td.k{width:138px;font-size:11px;letter-spacing:1px;color:var(--grey);"
+           "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:14px}"
+           "td.t{padding-left:4px}"
+           ".live{color:#fff}.seen{color:#8f8f8f}"
+           ".src{color:var(--dim);font-size:11px;letter-spacing:1px;margin-left:8px;white-space:nowrap}"
+           ".gloss{color:var(--grey);font-size:12px;margin-top:1px}"
+           # a repeated topic label is hidden, ledger-style, unless the feed is filtered
+           "body:not(.filtered) tr.rep td.k{visibility:hidden}"
+           "a{color:inherit;text-decoration:none}"
+           "a:hover{color:#fff;text-decoration:underline;text-underline-offset:3px}"
+           "</style></head><body>"]
+    out.append('<div class="top mono"><span>SYS/00 &middot; <b>WATCHLIST</b></span>'
+               f"<span>REGENERATED {wescape(time.strftime('%a %d %b %Y   %H:%M').upper())}</span></div>")
+    out.append("<h1>WATCHLIST</h1>")
+    out.append(f'<div class="tagline mono">AERIS STANDING COLLECTION REQUIREMENTS <span>&middot; '
+               f"{len(data['items'])} ITEMS &middot; {new_total} UNACKNOWLEDGED (&#9733;)"
+               f" &middot; LAST {FEED_DAYS} DAYS &middot; CLICK A TOPIC TO FILTER</span></div>")
+    out.append("<hr>")
+    # Topic chips: click to filter the feed; note on hover; collection errors inverted
+    out.append('<div class="topics mono">')
+    if new_total:
+        out.append(f'<span data-f="*new">NEW <b>{new_total}&#9733;</b></span>')
+    for i in data["items"]:
+        n = len(i.get("new") or [])
+        cls = " err" if i.get("error") else ""
+        out.append(f'<span class="t{cls}" data-f="{wescape(i["name"])}" '
+                   f'title="{wescape(i.get("note") or i.get("error") or "")}">'
+                   f'{wescape(i["name"]).upper()}{f" <b>{n}&#9733;</b>" if n else ""}</span>')
+    out.append("</div>")
+    # One flat feed, newest first, grouped by day; a finding carries its topic
+    rows_all = []
     for i in data["items"]:
         pend = i.get("new", []) or []
-        arch = i.get("archive", []) or []
-        out.append(f"<h2>{wescape(i['name'])}<span class=chip>{wescape(i['type'])}"
-                   f" &middot; {len(pend)} unack &middot; {len(arch)} archived</span></h2>")
-        if i.get("note"):
-            out.append(f"<div class=note>{wescape(i['note'])}</div>")
-        if i.get("error"):
-            out.append(f"<div class=note>last error: {wescape(i['error'])}</div>")
-        out.append("<table>")
-        for a in pend + arch:
-            pending = a in pend
-            title = wescape(a.get("title"))
-            link = a.get("link") or ""
-            if link.startswith("http"):
-                title = f'<a href="{wescape(link)}">{title}</a>'
-            out.append(("<tr><td>%s%s</td><td class=t>%s</td></tr>"
-                        % ("<span class=new>&#9733;</span>" if pending else "",
-                           wescape(a.get("date", "")), title)))
-        out.append("</table>")
+        ids = {a.get("id") for a in pend}
+        for a in pend:
+            rows_all.append((wwhen(a), i["name"], a, True))
+        for a in i.get("archive", []) or []:
+            if a.get("id") not in ids:
+                rows_all.append((wwhen(a), i["name"], a, False))
+    rows_all.sort(key=lambda r: r[0], reverse=True)
+    cutoff = time.time() - FEED_DAYS * 86400
+    recent = [r for r in rows_all if r[0] >= cutoff]
+    # Near-duplicates (same story, different outlets or languages) fold into the newest
+    # row, which stays starred while any folded copy is unacknowledged
+    kept = []
+    for ts, name, a, pending in recent:
+        sig, glossed = wfoldsig(a.get("title"), name)
+        dup = next((k for k in kept if sig and k["sig"] and len(sig & k["sig"]) >= 3
+                    and len(sig & k["sig"]) >=
+                    (0.5 if glossed or k["glossed"] else 0.6) * min(len(sig), len(k["sig"]))),
+                   None)
+        if dup is not None:
+            dup["extra"] += 1
+            dup["pending"] = dup["pending"] or pending
+        else:
+            kept.append({"sig": sig, "glossed": glossed, "ts": ts, "name": name, "a": a,
+                         "pending": pending, "extra": 0})
+    days = {}   # insertion order = feed order
+    for k in kept:
+        label = time.strftime("%a %d %b %Y", time.localtime(k["ts"])).upper()
+        days.setdefault(label, []).append(k)
+    for label, rows in days.items():
+        # Feed dates carry no real time of day, so unacknowledged findings lead the day
+        rows.sort(key=lambda k: not k["pending"])
+        stars = sum(1 for k in rows if k["pending"])
+        folded = sum(k["extra"] for k in rows)
+        out.append('<section><div class="head mono"><span class=sl>//</span>'
+                   f"<span class=nm>{wescape(label)}</span>"
+                   f"<span class=meta>{len(rows)} FINDINGS"
+                   + (f" &middot; {stars} NEW" if stars else "")
+                   + (f" &middot; {folded} FOLDED" if folded else "") + "</span></div><table>")
+        last = None
+        for k in rows:
+            name, pending = k["name"], k["pending"]
+            out.append('<tr class="%s" data-t="%s" data-n="%d">'
+                       '<td class="m mono%s">%s</td><td class="k mono">%s</td><td class=t>%s</td></tr>'
+                       % ("rep" if name == last else "", wescape(name), int(pending),
+                          "" if pending else " dot", "&#9733;" if pending else "&middot;",
+                          wescape(name).upper(),
+                          wtitle(k["a"], pending, want_gloss=True, extra=k["extra"])))
+            last = name
+        out.append("</table></section>")
+    if len(recent) < len(rows_all):
+        out.append('<section><div class="head mono"><span class=sl>//</span><span class=nm>EARLIER</span>'
+                   f"<span class=meta>{len(rows_all) - len(recent)} OLDER FINDINGS &middot; "
+                   "AERIS-WATCH LOG</span></div></section>")
+    # Topic chips filter the feed; clicking the active chip clears it
+    out.append("""<script>
+const chips = document.querySelectorAll('.topics span[data-f]')
+chips.forEach(ch => ch.onclick = () => {
+  const on = !ch.classList.contains('sel')
+  chips.forEach(o => o.classList.remove('sel'))
+  if (on) ch.classList.add('sel')
+  const f = on ? ch.dataset.f : ''
+  document.body.classList.toggle('filtered', !!f)
+  document.querySelectorAll('tr[data-t]').forEach(tr => {
+    tr.style.display = !f || (f === '*new' ? tr.dataset.n === '1' : tr.dataset.t === f) ? '' : 'none'
+  })
+  document.querySelectorAll('section').forEach(s => {
+    const trs = [...s.querySelectorAll('tr')]
+    if (trs.length) s.style.display = trs.some(tr => tr.style.display !== 'none') ? '' : 'none'
+  })
+})
+</script></body></html>""")
     with open(HISTORY_FILE, "w") as f:
         f.write("\n".join(out))
     os.chmod(HISTORY_FILE, 0o644)
@@ -438,6 +696,8 @@ def main():
     s = sub.add_parser("log"); s.add_argument("name", nargs="?"); s.set_defaults(fn=cmd_log)
     s = sub.add_parser("ack"); s.add_argument("name", nargs="?"); s.add_argument("--all", action="store_true")
     s.set_defaults(fn=cmd_ack)
+    s = sub.add_parser("html")   # rewrite the reader page without changing state
+    s.set_defaults(fn=lambda args: (write_html(load()), print("wrote " + HISTORY_FILE)))
     args = p.parse_args()
     args.fn(args)
 

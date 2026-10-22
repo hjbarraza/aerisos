@@ -80,11 +80,11 @@ Run only some parts by naming modules:
 | `hardware` | NVIDIA hybrid graphics: open NVIDIA driver, keeps nouveau out of the boot image, suspend/resume services, stable `/dev/dri/intel-igpu` and `/dev/dri/nvidia-dgpu` names, [EnvyControl](https://github.com/bayasdev/envycontrol) for GPU modes (see [GPU modes](#gpu-modes)), and early Intel graphics (`i915` in the boot image, so the boot animation draws from the start and the firmware logo doesn't reappear). Removes the KDE password agent (Hyprland's is used). On a **Razer Blade 17 (2022)** it also fixes the built-in microphone. Everything is generated from the detected hardware, so it's safe on other machines. |
 | `steam` | Steam plus 32-bit Vulkan drivers for whatever GPUs it finds. |
 | `controller` | Xbox controllers: USB works out of the box; Bluetooth via `xpadneo`; the Xbox Wireless Adapter dongle via `xone`. Enables Bluetooth and loads `uinput` for Steam Input. |
-| `dotfiles` | Copies the saved configs in `dotfiles/home/` into place: shell (`.bashrc`), Hyprland (including two terminals opened at login), Quickshell (the top bar and the pill dock, QML in `~/.config/quickshell/`: a bold Æ mark on the left that opens the AerisOS menu, monochrome throughout; Stay Awake is on by default at login), ghostty (padded, AERIS theme), GTK, Voxtype, Vicinae, swayosd, fonts, default apps and the `~/.local/bin` helper scripts (incl. `aeris-watch`, `aeris-inbox`, `aeris-onto`), the OpenCode config (`~/.config/opencode`: AERIS agent, board plugin, `/watch` `/inbox` commands — without `node_modules`), the Claude Code skills (`~/.claude/skills`) and `~/AGENTS.md`, the watchlist data, and the `aeris-watch`/`defence-maps` user units. Anything it overwrites is backed up first to `~/.local/state/aerisos/backup-<date>/`. |
-| `login` | SDDM login screen with the **aeris** theme (`sddm/aeris/`): full screen, on one grid: wordmark and the live information as cards stacked one per row in the left two-thirds, the right third holds the login on one row (user | password) with the latest world news below it, section heads marked with a slash, a clock, session and power controls, and quiet animation (a light sweeping the rule, a fade-in from black). Installs Söhne system-wide and Source Han Sans JP, and the `aeris-status` service that feeds the live information (see [Login screen information](#login-screen-information)). Keeps the old `monochrome` theme as a fallback. On Intel + NVIDIA laptops it pins the login screen to the Intel GPU. |
+| `dotfiles` | Copies the saved configs in `dotfiles/home/` into place: shell (`.bashrc`), Hyprland (including two terminals opened at login), Quickshell (the top bar and the pill dock, QML in `~/.config/quickshell/`: a bold Æ mark on the left that opens the AerisOS menu, monochrome throughout; Stay Awake is on by default at login — its coffee-cup icon stays visible dimmed when off, so one click re-arms it; an **AERIS alerts pill** that reads inverted when `status.json` raises an alert, and a **watchlist counter** — the eye icon — showing unacknowledged findings: click opens the watch page and marks it read, middle-click acknowledges without opening, right-click floats the inbox), ghostty (padded, AERIS theme; `performable:ctrl+v` so an image-only clipboard reaches the app, e.g. pasting screenshots into Claude Code), GTK, Voxtype, Vicinae, swayosd, fonts, default apps and the `~/.local/bin` helper scripts (incl. `aeris-watch`, `aeris-inbox`, `aeris-onto`, `watch-open`, `aeris-alerts`, `screen-off`), the autostart override that keeps nm-applet off (the bar's wifi icon + nmtui replace it), the OpenCode config (`~/.config/opencode`: AERIS agent, board plugin, `/watch` `/inbox` commands — without `node_modules`), the Claude Code skills (`~/.claude/skills`) and `~/AGENTS.md`, the watchlist data, and the `aeris-watch`/`defence-maps` user units. Anything it overwrites is backed up first to `~/.local/state/aerisos/backup-<date>/`. |
+| `login` | SDDM login screen with the **aeris** theme (`sddm/aeris/`), on the same layout as the lock screen: wordmark, tagline and rule top left with the **WATCHLIST** and **WORLD** feeds under them (telegram-compressed one-liners, `★` = unacknowledged), the login (user | password) at the top of the right column with the LOCATION / AIRSPACE / ORBIT / INTERNET cards stacked under it, section heads marked with a slash, a clock, and quiet animation (a light sweeping the rule, a fade-in from black). Installs Söhne system-wide and Source Han Sans JP, and the `aeris-status` service that feeds the live information (see [Login screen information](#login-screen-information)). Keeps the old `monochrome` theme as a fallback. On Intel + NVIDIA laptops it pins the login screen to the Intel GPU. |
 | `voxtype` | Voice dictation: installs Voxtype, downloads the `small.en` speech model, turns on GPU acceleration, and keeps only the top-bar icon (no floating overlay). Hold **Right Ctrl**, speak, release. |
 | `tools` | Omarchy-style tools, minus the gimmicks: **AerisOS menu** (`SUPER+ALT+SPACE` or click Æ: a Vicinae extension with sections, monochrome icons, live ON/OFF and battery/GPU state, shortcuts, and a confirmation before log out, restart or shut down), **`aeris-update`** (one command for everything), low-battery alerts (15% and 7%), a one-line terminal greeting (ÆRIS OS · おはようございます, こんにちは or こんばんは by time of day), web apps in their own windows, media codecs, Node with global npm packages in `~/.local`, Git defaults and GitHub CLI. Set `AERIS_GIT_NAME` / `AERIS_GIT_EMAIL` to configure your Git identity. See [Shortcuts](#shortcuts). |
-| `aeris` | The AERIS intelligence layer: enables the hourly watchlist timer (`aeris-watch`, Google News queries per topic) and the local defence-maps server (`~/maps` at 127.0.0.1:8765), installs Ollama (+CUDA on NVIDIA) and pulls `qwen3.5:9b` for the lock screen's telegram-style headline compression and the AERIS board, and installs Claude Code if missing. OpenCode is the AERIS fork, installed by hand; its config arrives with `dotfiles`. **`~/maps` itself is data — restore it from a backup.** |
+| `aeris` | The AERIS intelligence layer: enables the hourly watchlist timer (`aeris-watch`, Google News queries per topic) and the local defence-maps server (`~/maps` at 127.0.0.1:8765), installs Ollama (+CUDA on NVIDIA) and pulls `qwen3.5:9b` for the telegram-style headline compression on the lock and login feeds, the English glosses of foreign-language findings on the watch page, and the AERIS board, and installs Claude Code if missing. OpenCode is the AERIS fork, installed by hand; its config arrives with `dotfiles`. **`~/maps` itself is data — restore it from a backup.** |
 | `maps` | The defence-maps app: clones its **separate private repo** to `~/maps` and starts the local server (127.0.0.1:8765). Only runs if you said yes in the wizard (or name it: `./setup.sh maps`); skipped quietly otherwise. Needs access to that repo. |
 | `theme` | The monochrome look: white active-window border, charcoal inactive border, greyscale app icons (the **Mono** icon theme, built by `~/.local/bin/make-mono-icons`), dark GTK, and one text size everywhere (Söhne 9 pt = 12 px). Applies live. |
 | `safety` | Btrfs snapshots before and after every package install (Snapper + snap-pac, last 10 kept), a firewall that blocks incoming connections except LocalSend, and a check for BIOS/SSD firmware updates (reports only, installs nothing). |
@@ -99,7 +99,11 @@ All modules except `snapshot` need `sudo` for at least one step.
 ## Login screen information
 
 `aeris-status` (`status/aeris-status`, run as root by `aeris-status.timer` at boot and
-every minute) writes `/var/lib/aeris/status.json`, and the login screen re-reads it every 15 seconds.
+every minute) writes `/var/lib/aeris/status.json` (and `lock.tsv` for the lock screen); the
+login screen re-reads it every 15 seconds and the top bar watches it via inotify. The login
+and lock screens show the feeds (WATCHLIST + WORLD) and the trimmed LOCATION / AIRSPACE /
+ORBIT / INTERNET cards; IDENTITY, STATUS, WEATHER and SECURITY stay on the AERIS board —
+an unattended screen doesn't need them. The sections:
 
 | Section | Shows |
 |---|---|
@@ -111,7 +115,8 @@ every minute) writes `/var/lib/aeris/status.json`, and the login screen re-reads
 | AIRSPACE | Aircraft within 50 km and the nearest one (adsb.fi), military aircraft, emergency squawks, GPS accuracy of aircraft overhead, GPS-jamming zones worldwide (GPSJAM, yesterday) |
 | ORBIT | Next ISS and Tiangong (CSS) pass above 10°: time, highest elevation, duration (CelesTrak elements, computed locally), Kp index, latest solar flare, NOAA R/S/G scales (SWPC) |
 | INTERNET | Countries with major internet outages in the last day and the top three (IODA); ping and DNS response time to 1.1.1.1, measured here |
-| WORLD (right column, under the login) | As many distinct conflict/security headlines as fit (5–6), in full on up to three lines, of the last 3 hours, each with source and time (GDELT, or the BBC and Al Jazeera RSS feeds when GDELT refuses; the card says which; the same story from several outlets is shown once) |
+| WORLD | Conflict/security headlines from nine RSS feeds (Breaking Defense, Defense News, Defense One, War on the Rocks, The Record, CyberScoop, The Hacker News, BBC, Al Jazeera), telegram-compressed by the local Ollama into bulleted one-liners; near-duplicates shown once |
+| WATCH | The week's watchlist findings (`aeris-watch`, hourly), one compressed line each, newest first, `★` = unacknowledged, near-duplicates folded into the newest copy |
 
 Location and weather come from ipinfo.io and Open-Meteo (no account needed), cached for
 15 minutes, like space weather, the news and outages; aircraft refresh every minute,
@@ -122,8 +127,26 @@ Every card shows, under its name, when its data was fetched (`STALE` after a fai
 
 **Privacy:** the login screen is visible to anyone holding the laptop, including the city and
 coordinates. The serial number and public IP are kept off it: they go only to
-`/var/lib/aeris/private.json`, readable by you alone. Remove a line by deleting it from `sections`
-in `sddm/aeris/Main.qml`, then `./setup.sh login`.
+`/var/lib/aeris/private.json`, readable by you alone. Remove a line by deleting it from the `cards`
+property in `sddm/aeris/Main.qml`, then `./setup.sh login`.
+
+## Watchlist
+
+`aeris-watch` (hourly user timer) collects findings per watched topic (Google News
+queries, TLS-certificate and page-change watches). They surface in four places: the
+lock and login screen **WATCHLIST** feed, the top bar's **eye counter** (unacknowledged
+findings; 99+ capped), the **inbox** (`aeris-inbox`, also `/watch-inbox` in Claude Code),
+and **`~/.local/share/aeris/watch.html`** — a chronological news feed, newest day first,
+each row carrying its topic. The page folds near-duplicate stories into the newest copy
+(`OUTLET +N`), compares non-English findings through their Ollama-translated English
+gloss so the same story folds across languages, shows that gloss under the original
+headline, and filters by topic or NEW when a chip is clicked.
+
+**Reading counts:** left-click the eye to open (or focus) the page — everything shown is
+acknowledged a moment later and the counter clears; middle-click acknowledges without
+opening; right-click floats the inbox. Acknowledged findings stay in each topic's archive
+(last 500) and on the page as dots. `aeris-watch html` regenerates the page; every state
+change rewrites it anyway.
 
 ## Shortcuts
 
@@ -140,6 +163,7 @@ in `sddm/aeris/Main.qml`, then `./setup.sh login`.
 | `SUPER+SHIFT+C` · `Y` · `I` · `G` · `/` | Notion Calendar · YouTube · Claude · Gemini · Google (web apps) |
 | `SUPER+CTRL+A` · `W` · `B` | Audio · Wi-Fi · Bluetooth |
 | `SUPER+CTRL+N` · `S` · `I` · `C` | Do Not Disturb · Night light · Stay awake · Colour picker |
+| `SUPER+L` · `SUPER+SHIFT+L` | Lock · Lock + screen off (laptop stays awake until unlock) |
 | `Print` · `CTRL+Print` · `ALT+Print` | Screenshot · annotate · record |
 | Right `Ctrl` (hold) | Dictate |
 
@@ -219,7 +243,7 @@ This is specific to this laptop, so it's not part of the default run.
 | What | Where |
 |---|---|
 | Boot splash + Plymouth | Edit `splash.svg`, then `./setup.sh boot`. Everything is rendered from it at the screen's native size. |
-| Login screen | `sddm/aeris/Main.qml` (1600×900 design grid: margins 96; one card per row from y 402, 50 apart, lines 18; card tables of key/value pairs in three columns, keys flush right at x 284/594/894 against values at 294/604/904, a hairline between cards; login and news column at x 1120) and `sddm/aeris/theme.conf`, then `./setup.sh login`. Preview without logging out: `QML_XHR_ALLOW_FILE_READ=1 sddm-greeter-qt6 --test-mode --theme ~/aerisos/sddm/aeris` |
+| Login screen | `sddm/aeris/Main.qml` (1600×900 design grid, same plan as the lock screen: margins 96, feeds in the wide left column to x 1120, divider at 1160, login + cards in the right column at x 1224, keys flush right at 1320 against values at 1330, lines 18 apart) and `sddm/aeris/theme.conf`, then `./setup.sh login`. Preview without logging out: `QML_XHR_ALLOW_FILE_READ=1 sddm-greeter-qt6 --test-mode --theme ~/aerisos/sddm/aeris` |
 | Boot animation | `plymouth/aeris/aeris.script` (timing of the sweep), then `./setup.sh boot` |
 | Boot menu name | `OS_NAME` at the top of `setup.sh`, then `./setup.sh boot`. Kept ASCII (`AerisOS`) because firmware menus often can't draw `Æ`. |
 | AerisOS menu | `vicinae/aerisos/src/menu.tsx` (sections, items, commands), then `./setup.sh tools`. `bin/aeris-menu` opens it, with a plain list as fallback |

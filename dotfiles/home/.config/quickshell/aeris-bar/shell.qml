@@ -42,8 +42,7 @@ ShellRoot {
         property var onClick: null
         property var onRightClick: null
         property string klass: ""
-        property string tip: ""
-        color: root.fg
+        color: klass === "off" ? root.dim : root.fg
         font.family: root.nerd
         font.pixelSize: 12
         visible: text !== ""
@@ -61,8 +60,7 @@ ShellRoot {
                     try {
                         const j = JSON.parse(text.trim() || "{}")
                         mod.text = j.text ?? ""
-                        mod.klass = j.class ?? ""
-                        mod.tip = j.tooltip ?? ""
+                        mod.klass = j.class ?? ""   // "off" renders dim (e.g. Stay Awake)
                     } catch (e) { mod.text = "" }
                 }
             }
@@ -187,6 +185,101 @@ ShellRoot {
                 }
             }
 
+            // ---- AERIS alerts pill + watchlist, from status.json (inotify, no polling)
+            Item {
+                id: aeris
+                property var d: ({})
+                property int tick: 0   // re-checks staleness once a minute
+                visible: false; width: 0; height: 0
+                Timer { interval: 60000; running: true; repeat: true; onTriggered: aeris.tick++ }
+                FileView {
+                    path: "/var/lib/aeris/status.json"
+                    watchChanges: true
+                    onFileChanged: this.reload()
+                    onLoaded: parse()
+                    onTextChanged: parse()
+                    function parse() { try { aeris.d = JSON.parse(this.text()) } catch (e) { aeris.d = ({}) } }
+                    Component.onCompleted: parse()
+                }
+                // One short label per status.json alert
+                readonly property var labels: {
+                    const out = []
+                    for (const a of d.alerts || []) {
+                        if (a === "air.gnss") out.push("GNSS " + String(d.air?.gnss ?? "JAMMED").split(" ")[0])
+                        else if (a === "air.emergency") out.push("SQUAWK " + String(d.air?.emergency ?? "").split(" ")[0])
+                        else if (a === "space.iss") out.push("ISS OVERHEAD")
+                        else if (a === "space.css") out.push("CSS OVERHEAD")
+                        else if (a === "space.scales") out.push((/G\d/.exec(String(d.space?.scales ?? ""))?.[0] ?? "G?") + " STORM")
+                        else if (a === "world.outages") out.push("NET OUTAGE " + (String(d.net?.city ?? "").split(", ").pop() ?? ""))
+                        else out.push(a.toUpperCase())
+                    }
+                    return out
+                }
+                readonly property int watchNew:
+                    (d.watch?.items ?? []).reduce((n, i) => n + (i.new?.length ?? 0), 0)
+                // Reading counts: after an ack the counter drops to 0 at once and stays
+                // there until the collector's next run moves the real number
+                property int ackedAt: -1
+                readonly property int watchShown: watchNew === ackedAt ? 0 : watchNew
+                // Collector writes every minute; much older than 10 min means it is down
+                readonly property bool stale: {
+                    tick
+                    const m = /^(\d\d):(\d\d)$/.exec(d.updated ?? "")
+                    if (!m) return true
+                    const now = new Date()
+                    return ((now.getHours() * 60 + now.getMinutes()
+                             - parseInt(m[1]) * 60 - parseInt(m[2])) + 1440) % 1440 > 10
+                }
+            }
+            Rectangle {   // alerts read inverted, as on the lock and login screens
+                visible: aeris.labels.length > 0
+                color: "#ffffff"; radius: 3
+                implicitWidth: alertText.implicitWidth + 12
+                implicitHeight: 16
+                Text {
+                    id: alertText
+                    anchors.centerIn: parent
+                    text: aeris.labels.join(" · ")
+                    color: "#000000"
+                    font { family: root.sans; pixelSize: 11; letterSpacing: 1 }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: root.sh("ghostty --class=aeris.tui-float -e ~/.local/bin/aeris-alerts")
+                }
+            }
+            Text {   // unacknowledged watchlist findings
+                visible: aeris.watchShown > 0
+                text: "\u{F0208} " + (aeris.watchShown > 99 ? "99+" : aeris.watchShown)
+                color: root.fg
+                font { family: root.nerd; pixelSize: 12 }
+                leftPadding: 7; rightPadding: 8
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                    // left: show the watch page (focus an open one); middle: mark all
+                    // watched (counter clears on the collector's next run); right: inbox
+                    onClicked: ev => {
+                        if (ev.button === Qt.MiddleButton) {
+                            root.sh("~/.local/bin/aeris-watch ack --all && notify-send 'AERIS' 'Watchlist acknowledged'")
+                            aeris.ackedAt = aeris.watchNew
+                        } else if (ev.button === Qt.RightButton)
+                            root.sh("ghostty --class=aeris.tui-float -e sh -c '~/.local/bin/aeris-inbox; printf \"\\n[enter to close] \"; read -r'")
+                        else {   // opening the page is reading it: watch-open acks after load
+                            root.sh("~/.local/bin/watch-open")
+                            aeris.ackedAt = aeris.watchNew
+                        }
+                    }
+                }
+            }
+            Text {   // the collector stopped writing: everything above is old
+                visible: aeris.stale
+                text: "STALE"
+                color: root.dim
+                font { family: root.sans; pixelSize: 11; letterSpacing: 1 }
+                leftPadding: 7; rightPadding: 8
+            }
+
             Item { Layout.fillWidth: true }
 
             // ---- right: tailscale, net, audio, battery, drawer -----------
@@ -286,9 +379,12 @@ ShellRoot {
                             anchors.fill: parent
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
                             onClicked: ev => {
-                                // menu-only items (e.g. LocalSend) have no activate action
+                                // menu-only items have no activate action: ones that say so
+                                // (LocalSend) and ayatana items that only carry a menu (nm-applet)
+                                const menuOnly = trayItem.modelData.onlyMenu ||
+                                                 trayItem.modelData.id === "nm-applet"
                                 if (trayItem.modelData.hasMenu &&
-                                    (ev.button === Qt.RightButton || trayItem.modelData.onlyMenu))
+                                    (ev.button === Qt.RightButton || menuOnly))
                                     menuAnchor.open()
                                 else trayItem.modelData.activate()
                             }

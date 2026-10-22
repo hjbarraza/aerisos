@@ -253,6 +253,7 @@ hl.config({
         disable_hyprland_logo   = true,
         disable_splash_rendering = true,  -- no random splash text on the wallpaper
         background_color        = 0x000000, -- plain black wallpaper
+        key_press_enables_dpms  = true,     -- a key press re-lights a screen turned off by screen-off/hypridle
     },
 })
 
@@ -335,6 +336,7 @@ hl.bind(mainMod .. " + CTRL + I", hl.dsp.exec_cmd("~/.local/bin/stay-awake toggl
 hl.bind(mainMod .. " + CTRL + S", hl.dsp.exec_cmd("~/.local/bin/nightlight toggle"), { description = "Night light on / off" })
 hl.bind(mainMod .. " + CTRL + C", hl.dsp.exec_cmd("hyprpicker -a"), { description = "Pick a colour (copies hex)" })
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("loginctl lock-session"), { description = "Lock screen" })
+hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), { description = "Lock + screen off (laptop stays awake)" })
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
 hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })
 hl.bind("CTRL + Print", hl.dsp.exec_cmd("~/.local/bin/screenshot annotate"), { description = "Screenshot: select area and annotate" })

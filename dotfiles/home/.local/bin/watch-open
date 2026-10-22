@@ -1,0 +1,15 @@
+#!/bin/bash
+# watch-open - show the AERIS watch page: focus the browser window that already has it
+# (Hyprland switches workspace as needed), or open it in the default browser. Opening
+# counts as reading: everything shown is acknowledged a moment later, so the bar's
+# counter clears and the next page render turns the stars into dots.
+page="$HOME/.local/share/aeris/watch.html"
+if hyprctl clients -j | python3 -c '
+import json, sys
+sys.exit(0 if any("AERIS WATCH" in (c.get("title") or "") for c in json.load(sys.stdin)) else 1)'; then
+  hyprctl dispatch "hl.dsp.focus({ window = 'title:.*AERIS WATCH.*' })"
+else
+  xdg-open "$page"
+fi
+# After the browser has loaded the page as rendered (stars intact): mark it all read
+(sleep 3; "$HOME/.local/bin/aeris-watch" ack --all >/dev/null 2>&1) &

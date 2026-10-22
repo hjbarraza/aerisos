@@ -1,0 +1,25 @@
+#!/bin/bash
+# aeris-alerts - readable summary of the AERIS alert fields (bar pill click target).
+# Alerting rows (status.json "alerts") are marked with *.
+python3 - <<'EOF'
+import json
+
+s = json.load(open("/var/lib/aeris/status.json"))
+alerts = s.get("alerts") or []
+print(("ACTIVE ALERTS" if alerts else "NO ACTIVE ALERTS") + " · COLLECTED " + s.get("updated", "—"))
+print()
+rows = [("GNSS", "air", "gnss", "air.gnss"),
+        ("SQUAWK", "air", "emergency", "air.emergency"),
+        ("ISS", "space", "iss", "space.iss"),
+        ("CSS", "space", "css", "space.css"),
+        ("KP", "space", "kp", None),
+        ("NOAA", "space", "scales", "space.scales"),
+        ("OUTAGES", "world", "outages", "world.outages")]
+for name, sec, key, flag in rows:
+    v = (s.get(sec) or {}).get(key) or "—"
+    print(f'{"*" if flag in alerts else " "} {name:8} {v}')
+new = sum(len(i.get("new") or []) for i in (s.get("watch") or {}).get("items") or [])
+print(f'\n  WATCH    {new} unacknowledged finding(s)')
+EOF
+printf '\n[enter to close] '
+read -r

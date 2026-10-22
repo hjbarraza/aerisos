@@ -18,5 +18,5 @@ fi
 if running; then
   printf '{"text":"󰅶","class":"on","tooltip":"Stay Awake is on - screen won'"'"'t lock or sleep"}\n'
 else
-  printf '{"text":""}\n'
+  printf '{"text":"󰅶","class":"off","tooltip":"Stay Awake is off - click to keep the laptop awake"}\n'
 fi

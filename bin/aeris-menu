@@ -10,6 +10,7 @@ fi
 
 entries=(
     "Power — Lock|loginctl lock-session"
+    "Power — Screen off, stay awake|~/.local/bin/screen-off"
     "Power — Suspend|systemctl suspend"
     "Power — Log out|command -v hyprshutdown >/dev/null && hyprshutdown || hyprctl dispatch exit"
     "Power — Restart|systemctl reboot"

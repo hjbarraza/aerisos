@@ -128,6 +128,7 @@ export default function Command() {
 
   const power: Entry[] = [
     { title: "Lock", icon: Icon.Lock, keys: "SUPER L", run: () => runClosed("loginctl lock-session") },
+    { title: "Screen Off, Stay Awake", icon: Icon.Lock, keys: "SUPER SHIFT L", run: () => runClosed("~/.local/bin/screen-off"), keywords: ["dpms", "dark"] },
     { title: "Suspend", icon: Icon.Moon, run: () => runClosed("systemctl suspend"), keywords: ["sleep"] },
     {
       title: "Log Out",

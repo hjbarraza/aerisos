@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Network Manager Applet
+# The aeris-bar wifi module + nmtui replace it; this hides the stock autostart
+Hidden=true

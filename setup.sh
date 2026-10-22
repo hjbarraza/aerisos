@@ -62,10 +62,14 @@ HOME_PATHS=(
     .local/bin/screenrecord
     .local/bin/screenshot
     .local/bin/stay-awake
+    .local/bin/screen-off
     .local/bin/tailscale-status
     .local/bin/aeris-watch
     .local/bin/aeris-inbox
     .local/bin/aeris-onto
+    .local/bin/aeris-alerts
+    .local/bin/watch-open
+    .config/autostart/nm-applet.desktop
     .local/share/aeris/watchlist.json
     .config/opencode
     .config/systemd/user/aeris-watch.service

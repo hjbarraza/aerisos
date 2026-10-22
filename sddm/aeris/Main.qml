@@ -1,18 +1,19 @@
 // AerisOS login screen.
 //
-// One grid in a 1600x900 design space, scaled to fill the screen; fades in from black:
+// One grid in a 1600x900 design space, scaled to fill the screen; fades in from black.
+// Same layout as the lock screen (lock/make-hyprlock), so both screens line up:
 //   margins 96 left/right, text rows at y=96 (top) and y=820 (bottom)
-//   left two-thirds  x 96–960: wordmark, tagline, rule, then the info cards stacked one per row
-//   right third     x 1120–1504, beside a hairline at x=1040: the login on one row (user | password)
-//                   beside the wordmark (status on its baseline), then the Iran digest from the
-//                   ontology map, and the news from the tagline's baseline down to the power row
-// Every card is a row: its head (white) at x=96, then a two-line table of key/value pairs in three
-// columns. Keys are flush right against their value (10 apart) so each pair reads as one; pairs are
-// 40 apart; values start at 294, 604 and 904. Lines are 18 apart; the cards spread down to 820
-// with a hairline between. Under each card's name: when its data was fetched. Alerts from
-// status.json (GNSS jammed, emergency squawk, ISS/CSS overhead, geomagnetic storm, an outage
-// in this country) read inverted. The news wraps full headlines at 44 characters: Söhne Mono at 12 px
-// + 1.5 tracking is ~8.65 per character, and the column is 384 wide.
+//   left two-thirds  x 96–1120: wordmark, tagline and rule, then the feeds under them —
+//                    WATCHLIST (the week's findings, one telegraphed line each, * = new)
+//                    and WORLD (bulleted telegrams, whole stories only)
+//   right third      x 1224–1504, beside a hairline at x=1160: the login on one row
+//                    (user | password) beside the wordmark (status on its baseline), then
+//                    the cards stacked under it, one key/value per row — LOCATION,
+//                    AIRSPACE, ORBIT, INTERNET, each trimmed to its essential fields.
+// IDENTITY, WEATHER, NETWORK and SECURITY are left out on purpose: the login screen is
+// what people see when the laptop is left unattended. Keys are flush right against their
+// values (10 apart); lines are 18 apart. Alerts from status.json (GNSS jammed, emergency
+// squawk, ISS/CSS overhead, geomagnetic storm, an outage in this country) read inverted.
 // Type scale: wordmark 144 · heads 13 (//)/11 white · values 12 · keys and labels 11.
 
 import QtQuick 2.15
@@ -34,32 +35,24 @@ Rectangle {
     readonly property string mono: config.MonoFont || "Söhne Mono"
     readonly property string jp: config.JapaneseFont || "Source Han Sans JP"
 
-    // Grid
+    // Grid, as in lock/make-hyprlock (the wordmark sits lower here: 280/324/364)
     readonly property real gridLeft: 96
     readonly property real gridRight: 1504
-    readonly property real infoRight: 960
-    readonly property real panel: 1120              // login and news column
-    readonly property var keyEnd: [284, 594, 894]   // card table: keys end here,
-    readonly property var valueAt: [294, 604, 904]  // values start here,
-    readonly property real headIndent: 25.6         // a head's name, after its slashes
-    readonly property var valueRoom: [220, 210, 56] // and fit this (to the next column's longest key)
+    readonly property real panel: 1224               // login and cards column
+    readonly property real keyEnd: 1320              // right-column cards: keys end here,
+    readonly property real valueAt: 1330             // values start here
+    readonly property real feedRight: 1120           // the feeds' fresh timestamps right-align here
     readonly property real lineGap: 18
-    readonly property real headGap: 26              // a column head (AUTHENTICATE, WORLD) to its first line
-    readonly property real cardTop: 402             // first card line, 38 under the rule
-    // Cards spread over the whole height: the last card's second line lands on 820
-    readonly property real cardGap: (820 - lineGap - cardTop) / Math.max(1, cards.length - 1)
-    readonly property real loginHead: 178           // beside the wordmark: head at its cap height,
-    readonly property real statusBy: 280            // typed text on 240, status on its baseline
-    readonly property real newsHead: 324            // the Iran digest, and the news below, from the tagline's baseline down
-    readonly property real fieldWidth: 176          // user | 32 | password = 384
-    readonly property real newsBottom: 784          // last news line, 36 above the power row
-    // The Iran digest: the map's curated recent developments, one pre-wrapped line per row,
-    // then a hairline and the news. The digest's height sets where WORLD starts.
-    readonly property var iranItems: (d.iran && d.iran.items) || []
-    readonly property int iranLines: Math.min(14, iranItems.reduce((n, it) => n + (it.lines ? it.lines.length : 1), 0))
-    readonly property real iranLastBy: newsHead + headGap + (Math.max(iranLines, 1) - 1) * lineGap
-    readonly property real worldHead: iranLines ? iranLastBy + 27 : newsHead
-    readonly property int newsRows: Math.floor((newsBottom - worldHead - headGap) / lineGap) + 1
+    readonly property real headGap: 26               // a column head (WATCHLIST, WORLD) to its first line
+    readonly property real cardGap: 30               // vertical space between stacked cards
+    readonly property real loginHead: 178            // beside the wordmark: head at its cap height,
+    readonly property real statusBy: 280             // typed text on 240, status on its baseline
+    readonly property real cardTop: 324              // first card head, under the status row
+    readonly property real fieldWidth: 128           // user | gap | password across the column
+    readonly property real watchHead: 404            // watchlist feed, 40 under the rule
+    readonly property int watchRows: 14              // the lock shows 16; the lower wordmark costs two
+    readonly property real worldHead: watchHead + headGap + watchRows * lineGap + 44   // 726
+    readonly property int newsRows: 4                // last line lands on 806, above the power row
 
     property int sessionIndex: sessionModel.lastIndex >= 0 ? sessionModel.lastIndex : 0
     property string status: "AWAITING AUTHENTICATION"
@@ -91,70 +84,64 @@ Rectangle {
     }
     Timer { interval: 15000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.loadStatus() }
 
-    function outage(i) {
-        const o = ((d.world && d.world.outage_top) || [])[i]
-        return o ? c(o[0], o[1]) : null
+    // The right-column cards, trimmed to their essential fields, as on the lock screen
+    readonly property var cards: [
+        { en: "LOCATION", fresh: g("net", "fresh"), pairs: [
+            c("LAT", g("net", "coords").split("  ")[0] || "—"),
+            c("LON", g("net", "coords").split("  ")[1] || "—"),
+            c("UTC", g("local", "utc")) ] },
+        { en: "AIRSPACE", fresh: g("air", "fresh"), pairs: [
+            c("TRAFFIC", g("air", "traffic")),
+            c("NEAREST", g("air", "nearest")),
+            c("GNSS", first(g("air", "gnss")), "air.gnss"),
+            c("SQUAWK", g("air", "emergency"), "air.emergency") ] },
+        { en: "ORBIT", fresh: g("space", "fresh"), pairs: [
+            c("ISS", g("space", "iss"), "space.iss"),
+            c("CSS", g("space", "css"), "space.css"),
+            c("KP", first(g("space", "kp"))),
+            c("NOAA", g("space", "scales") + " · " + rest(g("space", "kp")), "space.scales"),
+            c("SATS", g("space", "sats")),
+            c("LAUNCH", g("space", "launch")),
+            c("T-0", g("space", "launch_t0")) ] },
+        { en: "INTERNET", fresh: g("world", "fresh_outages"), pairs: [
+            c("OUTAGES", g("world", "outages"), "world.outages"),
+            c("PING", g("local", "ping")) ] }
+    ]
+    // Each card's head baseline: stacked from cardTop, cardGap apart
+    readonly property var cardTops: {
+        const tops = []
+        let cy = cardTop
+        for (const card of cards) {
+            tops.push(cy)
+            cy += headGap + card.pairs.length * lineGap + cardGap
+        }
+        return tops
     }
 
-    // One row per card; each line has three cells (null leaves one empty)
-    readonly property var cards: [
-        { en: "IDENTITY", fresh: d.updated || "—", lines: [
-            [c("MODEL", g("identity", "model")), c("GPU", g("identity", "gpu")), c("HOST", g("identity", "host"))],
-            [c("CPU", g("identity", "cpu")), null, c("RAM", g("identity", "ram"))] ] },
-        { en: "STATUS", fresh: d.updated || "—", lines: [
-            [c("POWER", g("state", "battery") + " · " + g("state", "power")), c("DISK", g("state", "disk")), c("CPU", g("state", "cpu_temp"))],
-            [c("KERNEL", g("identity", "kernel").split("-")[0]), c("UP", g("state", "uptime")), c("BOOT", g("identity", "boot"))] ] },
-        { en: "LOCATION", fresh: g("net", "fresh"), lines: [
-            [c("CITY", g("net", "city")), c("LAT", g("net", "coords").split("  ")[0] || "—"), c("ALT", g("net", "alt"))],
-            [c("TZ", g("net", "timezone")), c("LON", g("net", "coords").split("  ")[1] || "—"), c("UTC", g("local", "utc"))] ] },
-        { en: "WEATHER", fresh: g("net", "fresh"), lines: [
-            [c("SKY", g("net", "sky")), c("WIND", g("net", "wind")), c("TEMP", g("net", "temp"))],
-            [c("RISE", g("net", "sunrise")), c("SET", g("net", "sunset")), c("HUM", g("net", "humidity"))] ] },
-        { en: "SECURITY", fresh: d.updated || "—", lines: [
-            [c("LAST", g("security", "last_login")),
-             c("SYNC", (d.updated || "—") + (["net", "air", "space", "world"].some(k => d[k] && d[k].stale) ? " · OFFLINE" : "")),
-             c("FAILED", g("security", "failed"))],
-            [c("SNAPSHOT", g("security", "snapshot")), c("UPDATES", g("security", "updates")),
-             c("FIREWALL", g("security", "firewall") === "ACTIVE" ? "ON" : g("security", "firewall"))] ] },
-        { en: "AIRSPACE", fresh: g("air", "fresh"), lines: [
-            [c("TRAFFIC", g("air", "traffic")), c("NEAREST", g("air", "nearest")), c("MIL", g("air", "mil"))],
-            [c("GNSS", first(g("air", "gnss")), "air.gnss"), c("SQUAWK", g("air", "emergency"), "air.emergency"),
-             c("GPSJAM", first(g("air", "jam_zones")))] ] },
-        { en: "ORBIT", fresh: g("space", "fresh"), lines: [
-            [c("ISS", g("space", "iss"), "space.iss"), c("CSS", g("space", "css"), "space.css"), c("KP", first(g("space", "kp")))],
-            [c("NOAA", g("space", "scales") + " · " + rest(g("space", "kp")), "space.scales"), c("FLARE", g("space", "flare")), null] ] },
-        { en: "INTERNET", fresh: g("world", "fresh_outages"), lines: [
-            [c("OUTAGES", g("world", "outages"), "world.outages"), outage(0), c("PING", g("local", "ping"))],
-            [outage(1), outage(2), c("DNS", g("local", "dns"))] ] }
-    ]
+    // Watchlist rows: pre-formatted by aeris-status (status.json watch.rows), the same
+    // lines the lock screen shows; * marks unacknowledged findings
+    readonly property var watch: {
+        const rows = ((d.watch && d.watch.rows) || []).slice(0, watchRows)
+        return rows.length ? rows : ["—"]
+    }
+    readonly property string watchFresh: {
+        if (d.watch && d.watch.fresh)
+            return String(d.watch.fresh)
+        const checked = ((d.watch && d.watch.items) || []).map(i => i.checked || "").sort().pop()
+        return checked ? checked.slice(-5) : "—"
+    }
 
-    // Iran digest rows: white, one line each, no blanks; the map supplies them pre-wrapped
-    readonly property var iran: {
+    // News rows: the pre-telegraphed stories (status.json world.telegrams), whole
+    // stories only, as many as fit
+    readonly property var news: {
         const rows = []
-        for (const it of iranItems) {
-            const lines = it.lines && it.lines.length ? it.lines : [`${it.k} · ${it.v}`]
-            if (rows.length + lines.length > 14)
+        for (const lines of (d.world && d.world.telegrams) || []) {
+            if (rows.length + lines.length > newsRows)
                 break
             for (const l of lines)
                 rows.push(l)
         }
-        return rows
-    }
-
-    // News rows: each story's wrapped headline (white), a blank line between; no source line;
-    // only whole stories that fit in newsRows
-    readonly property var news: {
-        const rows = []
-        for (const item of (d.world && d.world.items) || []) {
-            const lines = item.lines || [item.title || ""]
-            if (rows.length + lines.length > newsRows)
-                break
-            for (const l of lines)
-                rows.push({ t: l, source: false })
-            if (rows.length < newsRows)
-                rows.push({ t: "", source: false })
-        }
-        return rows.length ? rows : [{ t: "—", source: false }]
+        return rows.length ? rows : ["—"]
     }
 
     // ---- building blocks ----
@@ -319,109 +306,88 @@ Rectangle {
             }
         }
 
-        // Divider between the information and the login
-        Rectangle { x: 1040 * root.s; y: 80 * root.s; width: Math.max(1, root.s); height: 756 * root.s; color: root.hairline }
+        // Divider between the feeds and the login column
+        Rectangle { x: 1160 * root.s; y: 80 * root.s; width: Math.max(1, root.s); height: 756 * root.s; color: root.hairline }
 
-        // ---- live information: cards stacked under the rule, news in the right column ----
+        // ---- live information: feeds in the wide left column, cards under the login ----
 
         Item {
             id: info
             opacity: 0
             width: parent.width; height: parent.height
 
+            // Feed line: white, one row, cut by the collector to the column
+            component FeedRow: Label {
+                width: Math.min(implicitWidth, (root.feedRight - root.gridLeft) * root.s)
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+                font.pixelSize: 12 * root.s
+                font.letterSpacing: 1.5 * root.s
+                color: root.white
+            }
+
+            Head { bx: root.gridLeft; by: root.watchHead; en: "WATCHLIST" }
+            Label { bx: root.feedRight; by: root.watchHead; alignRight: true; text: root.watchFresh }
+            Repeater {
+                model: root.watch
+                delegate: FeedRow {
+                    bx: root.gridLeft; by: root.watchHead + root.headGap + index * root.lineGap
+                    text: modelData
+                }
+            }
+
+            Head { bx: root.gridLeft; by: root.worldHead; en: "WORLD" }
+            Label { bx: root.feedRight; by: root.worldHead; alignRight: true; text: g("world", "fresh_news") + " · " + g("world", "via") }
+            Repeater {
+                model: root.news
+                delegate: FeedRow {
+                    bx: root.gridLeft; by: root.worldHead + root.headGap + index * root.lineGap
+                    text: modelData
+                }
+            }
+
+            // Cards stacked in the right column, under the login
             Repeater {
                 model: root.cards
                 delegate: Item {
                     id: card
-                    readonly property real cy: root.cardTop + index * root.cardGap
-                    Head { bx: root.gridLeft; by: card.cy; en: modelData.en }
-                    // When this card's data was fetched, under its name
-                    Label { bx: root.gridLeft + root.headIndent; by: card.cy + root.lineGap; text: modelData.fresh }
-                    // Hairline halfway between this card's last baseline and the next card's cap height
-                    Rectangle {
-                        visible: index < root.cards.length - 1
-                        x: root.gridLeft * root.s; y: (card.cy + (9 + root.cardGap) / 2) * root.s
-                        width: (root.infoRight - root.gridLeft) * root.s; height: Math.max(1, root.s)
-                        color: root.hairline
-                    }
+                    readonly property real cy: root.cardTops[index]
+                    Head { bx: root.panel; by: card.cy; en: modelData.en }
+                    // When this card's data was fetched, on its head's baseline
+                    Label { bx: root.gridRight; by: card.cy; alignRight: true; text: modelData.fresh }
                     Repeater {
-                        model: modelData.lines
+                        model: modelData.pairs
                         delegate: Item {
-                            id: line
-                            readonly property real ly: card.cy + index * root.lineGap
-                            readonly property var cells: modelData
-                            Repeater {
-                                model: 3
-                                delegate: Item {
-                                    readonly property var cell: line.cells[index]
-                                    // Key (grey, 11), flush right against its value
-                                    Label { visible: !!cell; bx: root.keyEnd[index]; by: line.ly; alignRight: true; text: cell ? cell.k : "" }
-                                    // Value (white, 12)
-                                    Label {
-                                        visible: !!cell
-                                        bx: root.valueAt[index]; by: line.ly
-                                        width: Math.min(implicitWidth, root.valueRoom[index] * root.s)
-                                        elide: Text.ElideRight
-                                        textFormat: Text.PlainText
-                                        font.pixelSize: 12 * root.s
-                                        font.letterSpacing: 1.5 * root.s
-                                        color: cell && cell.alert ? "#000000" : root.white
-                                        text: cell ? cell.v : ""
-                                        // Alerts read inverted: black on white
-                                        Rectangle {
-                                            z: -1
-                                            visible: !!cell && cell.alert
-                                            anchors.fill: parent
-                                            anchors.leftMargin: -4 * root.s; anchors.rightMargin: -4 * root.s
-                                            color: root.white
-                                        }
-                                    }
+                            readonly property real ly: card.cy + root.headGap + index * root.lineGap
+                            readonly property var cell: modelData
+                            // Key (grey, 11), flush right against its value
+                            Label { bx: root.keyEnd; by: parent.ly; alignRight: true; text: cell.k }
+                            // Value (white, 12)
+                            Label {
+                                bx: root.valueAt; by: parent.ly
+                                width: Math.min(implicitWidth, (root.gridRight - root.valueAt) * root.s)
+                                elide: Text.ElideRight
+                                textFormat: Text.PlainText
+                                font.pixelSize: 12 * root.s
+                                font.letterSpacing: 1.5 * root.s
+                                color: cell.alert ? "#000000" : root.white
+                                text: cell.v
+                                // Alerts read inverted: black on white
+                                Rectangle {
+                                    z: -1
+                                    visible: cell.alert
+                                    anchors.fill: parent
+                                    anchors.leftMargin: -4 * root.s; anchors.rightMargin: -4 * root.s
+                                    color: root.white
                                 }
                             }
                         }
                     }
                 }
             }
-
-            // Right column: the Iran ontology digest, then the news
-            Head { bx: root.panel; by: root.newsHead; en: "IRAN" }
-            Label { bx: root.gridRight; by: root.newsHead; alignRight: true; text: g("iran", "fresh") + " · " + g("iran", "via") }
-            Repeater {
-                model: root.iran
-                delegate: Label {
-                    bx: root.panel; by: root.newsHead + root.headGap + index * root.lineGap
-                    width: Math.min(implicitWidth, (root.gridRight - root.panel) * root.s)
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
-                    text: modelData
-                }
-            }
-            Rectangle {
-                visible: root.worldHead > root.newsHead
-                x: root.panel * root.s; y: (root.iranLastBy + 13.5) * root.s
-                width: (root.gridRight - root.panel) * root.s; height: Math.max(1, root.s)
-                color: root.hairline
-            }
-
-            // News: below the digest, down to the power row
-            Head { bx: root.panel; by: root.worldHead; en: "WORLD" }
-            Label { bx: root.gridRight; by: root.worldHead; alignRight: true; text: g("world", "fresh_news") + " · " + g("world", "via") }
-            Repeater {
-                model: root.news
-                delegate: Label {
-                    bx: root.panel; by: root.worldHead + root.headGap + index * root.lineGap
-                    width: Math.min(implicitWidth, (root.gridRight - root.panel) * root.s)
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
-                    font.pixelSize: (modelData.source ? 11 : 12) * root.s
-                    font.letterSpacing: (modelData.source ? 2 : 1.5) * root.s
-                    color: modelData.source ? root.grey : root.white
-                    text: modelData.t
-                }
-            }
         }
 
-        // ---- login: right third ----
+        // ---- login: right third, beside the wordmark ----
 
         Item {
             id: loginPanel
@@ -433,7 +399,7 @@ Rectangle {
 
             Field {
                 id: userField
-                bx: root.panel; by: root.loginHead + root.headGap + 2 * root.lineGap   // 324, caption on 288
+                bx: root.panel; by: root.loginHead + root.headGap + 2 * root.lineGap   // 240, caption on 204
                 w: root.fieldWidth
                 caption: "USER"
                 input.text: userModel.lastUser
@@ -465,7 +431,7 @@ Rectangle {
             }
         }
 
-        // ---- bottom row: power, under the login (the session is always the last one used) ----
+        // ---- bottom row: power, under the cards (the session is always the last one used) ----
 
         Item {
             id: controls
