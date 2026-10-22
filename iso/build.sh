@@ -40,6 +40,12 @@ cat > "$PROFILE/airootfs/etc/profile.d/aerisos.sh" <<'EOF'
 printf '\n  \033[1mAerisOS\033[0m — to install, run:  \033[1maeris-installer\033[0m\n  (Wi-Fi first if needed: iwctl)\n\n'
 EOF
 
+# Boot menu says AerisOS, not "Arch Linux install medium" (GRUB on UEFI —
+# what a Mac shows — plus systemd-boot entries and BIOS syslinux)
+grep -rlZ "Arch Linux install medium" "$PROFILE/grub" "$PROFILE/efiboot" "$PROFILE/syslinux" 2>/dev/null \
+    | xargs -r0 sed -i 's/Arch Linux install medium/AerisOS installer/g'
+sed -i 's/Arch Linux/AerisOS/g' "$PROFILE/syslinux/archiso_head.cfg" 2>/dev/null || true
+
 # Branding + permissions in profiledef.sh
 sed -i \
     -e 's/^iso_name=.*/iso_name="aerisos"/' \
