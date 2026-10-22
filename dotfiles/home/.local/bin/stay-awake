@@ -4,18 +4,19 @@
 pidfile="${XDG_RUNTIME_DIR:-/tmp}/stay-awake.pid"
 running() { [[ -f $pidfile ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; }
 
-if [[ ${1:-} == toggle ]]; then
+if [[ ${1:-} == toggle || ${1:-} == on ]]; then
   if running; then
+    [[ $1 == on ]] && exit 0          # already on; "on" is idempotent
     kill "$(cat "$pidfile")"; rm -f "$pidfile"
   else
     systemd-inhibit --what=idle:sleep --who="Stay Awake" --why="Toggled from the bar" sleep infinity &
     echo $! > "$pidfile"
   fi
-  pkill -RTMIN+9 waybar
+  qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
   exit
 fi
 if running; then
-  printf '{"text":"","class":"on","tooltip":"Stay Awake is on - screen won'"'"'t lock or sleep"}\n'
+  printf '{"text":"󰅶","class":"on","tooltip":"Stay Awake is on - screen won'"'"'t lock or sleep"}\n'
 else
   printf '{"text":""}\n'
 fi

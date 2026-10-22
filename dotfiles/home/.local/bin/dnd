@@ -2,11 +2,11 @@
 # Do Not Disturb (dunst). `dnd toggle` flips it; `dnd` prints Waybar JSON (hidden when off).
 if [[ ${1:-} == toggle ]]; then
   dunstctl set-paused toggle
-  pkill -RTMIN+8 waybar
+  qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
   exit
 fi
 if [[ $(dunstctl is-paused) == true ]]; then
-  printf '{"text":"","class":"on","tooltip":"Do Not Disturb is on - click to turn off"}\n'
+  printf '{"text":"󰂛","class":"on","tooltip":"Do Not Disturb is on - click to turn off"}\n'
 else
   printf '{"text":""}\n'
 fi

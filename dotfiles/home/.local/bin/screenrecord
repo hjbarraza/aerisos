@@ -11,7 +11,7 @@ fi
 
 if pgrep -x gpu-screen-reco >/dev/null; then
   pkill -SIGINT -x gpu-screen-reco          # SIGINT = stop and finalize the file
-  sleep 0.5; pkill -RTMIN+10 waybar
+  sleep 0.5; qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
   notify-send "Screen recording saved" "~/Videos/Screenrecordings"
   exit
 fi
@@ -27,4 +27,4 @@ case "${1:-area}" in
 esac
 
 gpu-screen-recorder "${args[@]}" -f 60 -a default_output -o "$file" >/dev/null 2>&1 &
-sleep 0.5; pkill -RTMIN+10 waybar
+sleep 0.5; qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true

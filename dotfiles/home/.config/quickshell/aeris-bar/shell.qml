@@ -1,0 +1,358 @@
+// AerisOS top bar — quickshell 0.3.x. Replaces waybar.
+// Hide/show:   qs ipc -p ~/.config/quickshell/aeris-bar/shell.qml call bar toggle
+// Refresh now: qs ipc -p ~/.config/quickshell/aeris-bar/shell.qml call bar refresh
+//@ pragma IconTheme Mono
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+import Quickshell.Hyprland
+import Quickshell.Wayland
+import Quickshell.Services.UPower
+import Quickshell.Services.Pipewire
+import Quickshell.Services.SystemTray
+import Quickshell.Widgets
+
+ShellRoot {
+    id: root
+    readonly property color bg:   "#0a0a0a"
+    readonly property color fg:   "#e6e6e6"
+    readonly property color dim:  "#7a7a7a"
+    readonly property color warn: "#ffffff"
+    readonly property string sans: "Söhne"
+    readonly property string nerd: "NotoSansM Nerd Font"
+    property bool shown: true
+    property int refreshTick: 0        // bumped by IPC; StatusModules re-run on change
+
+    IpcHandler {
+        target: "bar"
+        function toggle(): void { root.shown = !root.shown }
+        function refresh(): void { root.refreshTick++ }
+    }
+
+    SystemClock { id: clock; precision: SystemClock.Minutes }
+    PwObjectTracker { objects: [ Pipewire.defaultAudioSink ] }
+
+    // A waybar-style custom module: runs `cmd`, expects {text, class, tooltip} JSON.
+    // Re-runs every `interval` ms (0 = only on refreshTick) and on refreshTick.
+    component StatusModule: Text {
+        id: mod
+        property list<string> cmd
+        property int interval: 0
+        property var onClick: null
+        property var onRightClick: null
+        property string klass: ""
+        property string tip: ""
+        color: root.fg
+        font.family: root.nerd
+        font.pixelSize: 12
+        visible: text !== ""
+        leftPadding: visible ? 7 : 0
+        rightPadding: visible ? 8 : 0
+
+        property int _tick: root.refreshTick
+        on_TickChanged: proc.running = true
+        Process {
+            id: proc
+            command: mod.cmd
+            running: true
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    try {
+                        const j = JSON.parse(text.trim() || "{}")
+                        mod.text = j.text ?? ""
+                        mod.klass = j.class ?? ""
+                        mod.tip = j.tooltip ?? ""
+                    } catch (e) { mod.text = "" }
+                }
+            }
+        }
+        Timer {
+            interval: mod.interval; running: mod.interval > 0; repeat: true
+            onTriggered: proc.running = true
+        }
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onClicked: ev => {
+                const f = ev.button === Qt.RightButton ? mod.onRightClick : mod.onClick
+                if (f) { f(); Qt.callLater(() => proc.running = true) }
+            }
+        }
+    }
+
+    function sh(c) { Quickshell.execDetached(["sh", "-c", c]) }
+
+    PanelWindow {
+        id: bar
+        visible: root.shown
+        anchors { top: true; left: true; right: true }
+        implicitHeight: 26
+        color: root.bg
+        WlrLayershell.layer: WlrLayer.Top
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 16
+            spacing: 0
+
+            // ---- left: Æ mark + workspaces -------------------------------
+            Text {
+                text: "Æ"
+                color: "#ffffff"
+                font { family: root.sans; weight: Font.Bold; pixelSize: 15 }
+                rightPadding: 10
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.sh("~/.local/bin/aeris-menu")
+                }
+            }
+            Repeater {   // persistent 1–5
+                model: 5
+                Text {
+                    required property int index
+                    readonly property int ws: index + 1
+                    readonly property bool focused: (Hyprland.focusedWorkspace?.id ?? 1) === ws
+                    readonly property bool exists: Hyprland.workspaces.values.some(w => w.id === ws)
+                    text: focused ? "󱓻" : String(ws)
+                    color: focused ? "#ffffff" : (exists ? root.fg : root.dim)
+                    font { family: focused ? root.nerd : root.sans; pixelSize: 12 }
+                    leftPadding: 6; rightPadding: 6
+                    MouseArea { anchors.fill: parent; onClicked: Hyprland.dispatch("workspace " + parent.ws) }
+                }
+            }
+            Repeater {   // any extra workspaces beyond 5
+                model: ScriptModel { values: Hyprland.workspaces.values.filter(w => w.id > 5) }
+                Text {
+                    required property var modelData
+                    readonly property bool focused: Hyprland.focusedWorkspace?.id === modelData.id
+                    text: focused ? "󱓻" : String(modelData.id % 10)
+                    color: focused ? "#ffffff" : root.fg
+                    font { family: focused ? root.nerd : root.sans; pixelSize: 12 }
+                    leftPadding: 6; rightPadding: 6
+                    MouseArea { anchors.fill: parent; onClicked: Hyprland.dispatch("workspace " + parent.modelData.id) }
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+
+            // ---- center: toggles + clock ---------------------------------
+            StatusModule { cmd: ["sh", "-c", "~/.local/bin/screenrecord status"]; interval: 10000
+                onClick: () => root.sh("~/.local/bin/screenrecord") }
+            StatusModule { cmd: ["sh", "-c", "~/.local/bin/nightlight"]; interval: 10000
+                onClick: () => root.sh("~/.local/bin/nightlight toggle") }
+            StatusModule { cmd: ["sh", "-c", "~/.local/bin/dnd"]; interval: 10000
+                onClick: () => root.sh("~/.local/bin/dnd toggle") }
+            StatusModule { cmd: ["sh", "-c", "~/.local/bin/stay-awake"]; interval: 10000
+                onClick: () => root.sh("~/.local/bin/stay-awake toggle") }
+            Text {
+                property bool alt: false
+                text: alt ? Qt.formatDateTime(clock.date, "dd MMMM") + "  W" + root.isoWeek(clock.date) + " " + Qt.formatDateTime(clock.date, "yyyy")
+                          : Qt.formatDateTime(clock.date, "dddd HH:mm")
+                color: root.fg
+                font { family: root.sans; pixelSize: 12 }
+                leftPadding: 7
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.RightButton
+                    onClicked: parent.alt = !parent.alt
+                }
+            }
+            Text {   // voxtype, streaming — centred, right of the clock
+                id: vox
+                property string state: "stopped"
+                readonly property var icons: ({ idle: "", recording: "", transcribing: "", stopped: "" })
+                text: icons[state] ?? ""
+                color: state === "recording" ? root.warn : root.fg
+                font { family: root.nerd; pixelSize: 12 }
+                leftPadding: 7; rightPadding: 8
+                Process {
+                    command: ["voxtype", "status", "--follow", "--format", "json"]
+                    running: true
+                    stdout: SplitParser {
+                        onRead: line => {
+                            try { vox.state = JSON.parse(line).alt ?? "stopped" } catch (e) {}
+                        }
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: ev => ev.button === Qt.RightButton
+                        ? root.sh("systemctl --user restart voxtype")
+                        : root.sh("kitty voxtype configure")
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+
+            // ---- right: tailscale, net, audio, battery, drawer -----------
+            StatusModule { cmd: ["sh", "-c", "~/.local/bin/tailscale-status"]; interval: 10000
+                onClick: () => root.sh("~/.local/bin/tailscale-status toggle")
+                onRightClick: () => root.sh("~/.local/bin/tailscale-status admin") }
+            Text {   // network: type + wifi signal tiers, like waybar
+                id: net
+                property string icon: "󰤮"
+                text: icon
+                color: icon === "󰤮" ? root.dim : root.fg
+                font { family: root.nerd; pixelSize: 12 }
+                leftPadding: 7; rightPadding: 8
+                Process {
+                    id: netProc
+                    command: ["sh", "-c",
+                        "t=$(nmcli -t -f TYPE,STATE device | grep ':connected' | cut -d: -f1 | head -1); " +
+                        "if [ \"$t\" = wifi ]; then s=$(nmcli -t -f ACTIVE,SIGNAL device wifi | grep '^yes' | cut -d: -f2 | head -1); echo wifi ${s:-0}; " +
+                        "elif [ -n \"$t\" ]; then echo ethernet; else echo none; fi"]
+                    running: true
+                    stdout: StdioCollector {
+                        onStreamFinished: {
+                            const p = text.trim().split(" ")
+                            if (p[0] === "ethernet") net.icon = "󰀂"
+                            else if (p[0] === "wifi") {
+                                const s = parseInt(p[1] ?? "0")
+                                net.icon = s > 75 ? "󰤨" : s > 50 ? "󰤥" : s > 25 ? "󰤢" : "󰤟"
+                            } else net.icon = "󰤮"
+                        }
+                    }
+                }
+                Timer { interval: 3000; running: true; repeat: true; onTriggered: netProc.running = true }
+                MouseArea { anchors.fill: parent; onClicked: root.sh("kitty --class tui-float nmtui") }
+            }
+            Text {   // volume, live via PipeWire
+                readonly property var audio: Pipewire.defaultAudioSink?.audio ?? null
+                readonly property real vol: audio?.volume ?? 0
+                readonly property bool muted: audio?.muted ?? true
+                text: muted ? "󰝟" : vol < 0.34 ? "󰕿" : vol < 0.67 ? "󰖀" : "󰕾"
+                color: muted ? root.dim : root.fg
+                font { family: root.nerd; pixelSize: 12 }
+                leftPadding: 7; rightPadding: 8
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                    onClicked: ev => {
+                        if (ev.button === Qt.RightButton) root.sh("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+                        else if (ev.button === Qt.MiddleButton) root.sh("pavucontrol")
+                        else root.sh("kitty --class tui-float wiremix")
+                    }
+                    onWheel: w => root.sh("wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%" + (w.angleDelta.y > 0 ? "+" : "-"))
+                }
+            }
+            Text {   // battery via UPower
+                readonly property var dev: UPower.displayDevice
+                readonly property real pct: (dev?.percentage ?? 0) * 100
+                readonly property bool charging: dev != null &&
+                    (dev.state === UPowerDeviceState.Charging || dev.state === UPowerDeviceState.FullyCharged)
+                readonly property var icons: ["󰁺","󰁻","󰁼","󰁽","󰁾","󰁿","󰂀","󰂁","󰂂","󰁹"]
+                readonly property var cicons: ["󰢜","󰂆","󰂇","󰂈","󰢝","󰂉","󰢞","󰂊","󰂋","󰂅"]
+                readonly property int idx: Math.max(0, Math.min(9, Math.floor(pct / 10)))
+                visible: dev?.isLaptopBattery ?? false
+                text: (charging ? cicons[idx] : icons[idx]) + (pct <= 20 && !charging ? " " + Math.round(pct) + "%" : "")
+                color: pct <= 20 && !charging ? root.warn : root.fg
+                font { family: root.nerd; pixelSize: 12 }
+                leftPadding: 7; rightPadding: 8
+            }
+
+            // ---- tray drawer: 󰅁 expands tray + bt + backlight + cpu + power
+            Text {
+                id: expander
+                property bool open: false
+                text: open ? "󰅂" : "󰅁"
+                color: root.dim
+                font { family: root.nerd; pixelSize: 12 }
+                leftPadding: 4; rightPadding: 6
+                MouseArea { anchors.fill: parent; onClicked: expander.open = !expander.open }
+            }
+            RowLayout {
+                spacing: 0
+                visible: expander.open
+                Repeater {   // system tray
+                    model: SystemTray.items
+                    Item {
+                        id: trayItem
+                        required property var modelData
+                        implicitWidth: 24; implicitHeight: 16
+                        IconImage {
+                            anchors.centerIn: parent
+                            implicitSize: 12
+                            source: trayItem.modelData.icon
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onClicked: ev => {
+                                if (ev.button === Qt.RightButton && trayItem.modelData.hasMenu)
+                                    menuAnchor.open()
+                                else trayItem.modelData.activate()
+                            }
+                        }
+                        QsMenuAnchor {
+                            id: menuAnchor
+                            menu: trayItem.modelData.menu
+                            anchor.window: bar
+                            anchor.rect.x: trayItem.mapToItem(null, 0, 0).x
+                            anchor.rect.y: bar.implicitHeight
+                        }
+                    }
+                }
+                StatusModule {   // bluetooth
+                    cmd: ["sh", "-c",
+                        "if ! bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then echo '{\"text\":\"󰂲\"}'; " +
+                        "elif [ \"$(bluetoothctl devices Connected 2>/dev/null | wc -l)\" -gt 0 ]; then echo '{\"text\":\"󰂱\"}'; " +
+                        "else echo '{\"text\":\"󰂯\"}'; fi"]
+                    interval: 10000
+                    onClick: () => root.sh("kitty --class tui-float bluetui")
+                }
+                Text {   // backlight
+                    id: backlight
+                    property int pct: -1
+                    visible: pct >= 0
+                    text: pct > 66 ? "󰃠" : pct > 33 ? "󰃟" : "󰃞"
+                    color: root.fg
+                    font { family: root.nerd; pixelSize: 12 }
+                    leftPadding: 7; rightPadding: 8
+                    Process {
+                        id: blProc
+                        command: ["sh", "-c", "brightnessctl -m 2>/dev/null | cut -d, -f4 | tr -d %"]
+                        running: true
+                        stdout: StdioCollector {
+                            onStreamFinished: backlight.pct = text.trim() === "" ? -1 : parseInt(text.trim())
+                        }
+                    }
+                    Timer { interval: 5000; running: expander.open; repeat: true; onTriggered: blProc.running = true }
+                    MouseArea {
+                        anchors.fill: parent
+                        onWheel: w => {
+                            root.sh("brightnessctl -e4 -n2 set 5%" + (w.angleDelta.y > 0 ? "+" : "-"))
+                            Qt.callLater(() => blProc.running = true)
+                        }
+                    }
+                }
+                Text {   // cpu
+                    text: "󰍛"
+                    color: root.fg
+                    font { family: root.nerd; pixelSize: 12 }
+                    leftPadding: 7; rightPadding: 8
+                    MouseArea { anchors.fill: parent; onClicked: root.sh("command -v btop >/dev/null && kitty btop || kitty top") }
+                }
+                StatusModule {   // power profile; click cycles
+                    cmd: ["sh", "-c",
+                        "p=$(powerprofilesctl get 2>/dev/null); case $p in performance) echo '{\"text\":\"\"}';; " +
+                        "power-saver) echo '{\"text\":\"\"}';; balanced) echo '{\"text\":\"\"}';; *) echo '{\"text\":\"\"}';; esac"]
+                    interval: 10000
+                    onClick: () => root.sh(
+                        "p=$(powerprofilesctl get); case $p in balanced) n=performance;; performance) n=power-saver;; *) n=balanced;; esac; powerprofilesctl set $n")
+                }
+            }
+        }
+    }
+
+    function isoWeek(d) {
+        const t = new Date(d.getTime())
+        t.setHours(0, 0, 0, 0)
+        t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7))
+        const w1 = new Date(t.getFullYear(), 0, 4)
+        return 1 + Math.round(((t - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7)
+    }
+}

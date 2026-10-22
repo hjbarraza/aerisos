@@ -1,16 +1,20 @@
 #!/bin/bash
-# Auto-hide for nwg-dock-hyprland: show when the cursor touches the bottom edge
-# (anywhere along it), hide once it leaves the dock area. Replaces the dock's own
-# -d hotspot, which could get stuck open and blocked clicks along the bottom.
-#
-# The dock's right-click menus are popups that Hyprland doesn't list, so the
-# dock stays open while the cursor is in the zone above it where menus open.
-DOCK_ARGS=(-r -i 36 -mb 8 -nolauncher)
+# Auto-hide for the AerisOS pill dock (quickshell): show/hide via quickshell IPC.
+# Show when the cursor touches the bottom edge (anywhere along it); hide once
+# it leaves the pill area. Drives ~/.config/quickshell/aeris-dock/shell.qml.
+QSCONF="$HOME/.config/quickshell/aeris-dock/shell.qml"
 EDGE=2           # how close to the bottom edge counts as "hit"
-MENU_H=420       # height above the dock kept open for its popup menus
-MENU_PAD=160     # extra width either side (menus can be wider than an icon)
+XPAD=48          # extra width either side still counts as "on the dock"
+YPAD=56          # extra height above the pill still counts as "on the dock"
 
-start_dock() { nwg-dock-hyprland "${DOCK_ARGS[@]}" >/dev/null 2>&1 & sleep 1; shown=1; }
+ipc() { QT_QPA_PLATFORMTHEME=gtk3 qs ipc -p "$QSCONF" call dock "$1" >/dev/null 2>&1; }
+
+start_dock() {
+  setsid env QT_QPA_PLATFORMTHEME=gtk3 qs -p "$QSCONF" >/dev/null 2>&1 &
+  sleep 1.5
+  pid=$(pgrep -nf "qs -p $QSCONF")
+  shown=0
+}
 
 # Monitor rectangles in logical px: "x0 y0 x1 y1" per line
 read_monitors() {
@@ -21,14 +25,14 @@ for m in json.load(sys.stdin):
     print(m["x"], m["y"], int(m["x"]+w), int(m["y"]+h))')
 }
 
-pkill -x nwg-dock-hyprla
-start_dock
+pid=$(pgrep -nf "qs -p $QSCONF") || start_dock
 read_monitors
 tick=0
+shown=0
 dx=0; dy=0; dw=0; dh=0
 
 while sleep 0.15; do
-  pid=$(pgrep -x nwg-dock-hyprla) || { start_dock; continue; }
+  kill -0 "$pid" 2>/dev/null || start_dock
   (( ++tick % 30 == 0 )) && read_monitors     # pick up monitor changes every ~5s
 
   IFS=', ' read -r x y < <(hyprctl cursorpos)
@@ -40,18 +44,18 @@ while sleep 0.15; do
   [[ -z $bottom ]] && continue
 
   if (( y >= bottom - EDGE )); then
-    (( shown )) || { kill -36 "$pid"; shown=1; }
+    (( shown )) || { ipc reveal; shown=1; }
     continue
   fi
   (( shown )) || continue
 
-  # Dock geometry while it's visible: "xywh: X Y W H"
-  read -r dx dy dw dh < <(hyprctl layers | grep -B0 'namespace: nwg-dock' | grep -oP 'xywh: \K[0-9-]+ [0-9-]+ [0-9]+ [0-9]+')
+  # Pill geometry while visible: hyprctl layers line "xywh: X Y W H" for our surface
+  read -r dx dy dw dh < <(hyprctl layers | grep "namespace: quickshell" | grep -oP 'xywh: \K[0-9-]+ [0-9-]+ [0-9]+ [0-9]+')
   [[ -z $dw ]] && continue
 
-  inside_x=$(( x >= dx - MENU_PAD && x <= dx + dw + MENU_PAD ))
-  inside_y=$(( y >= dy - MENU_H ))
+  inside_x=$(( x >= dx - XPAD && x <= dx + dw + XPAD ))
+  inside_y=$(( y >= dy - YPAD ))
   if (( ! inside_x || ! inside_y )); then
-    kill -37 "$pid"; shown=0
+    ipc conceal; shown=0
   fi
 done

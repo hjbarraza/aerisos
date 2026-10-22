@@ -17,7 +17,7 @@ entries=(
     "Toggle — Do Not Disturb|~/.local/bin/dnd toggle"
     "Toggle — Night light|~/.local/bin/nightlight toggle"
     "Toggle — Stay awake|~/.local/bin/stay-awake toggle"
-    "Toggle — Top bar|pkill -SIGUSR1 waybar"
+    "Toggle — Top bar|qs ipc -p ~/.config/quickshell/aeris-bar/shell.qml call bar toggle"
     "Capture — Screenshot: area|~/.local/bin/screenshot area"
     "Capture — Screenshot: area + annotate|~/.local/bin/screenshot annotate"
     "Capture — Screenshot: screen|~/.local/bin/screenshot screen"

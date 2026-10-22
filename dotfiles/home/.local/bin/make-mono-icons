@@ -6,6 +6,10 @@ SVGs get their colors rewritten to luminance gray; PNGs are decoded and
 re-encoded as grayscale with a pure-stdlib PNG codec. Non-app icons (folders,
 file types, ...) are inherited from breeze-dark.
 
+For every PNG-only app icon the largest available variant is also placed in
+scalable/apps, so GTK scales DOWN from a crisp source instead of upscaling a
+small threshold match (dock icons at fractional scale).
+
 Re-run after installing new apps:  make-mono-icons
 """
 import os
@@ -143,6 +147,7 @@ def main():
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
     seen, dirs = set(), {}
+    best_png = {}  # stem -> (file_size, path): largest raster per icon name
     stats = {"svg": 0, "png": 0, "copied": 0}
 
     for theme in SOURCES:
@@ -158,19 +163,45 @@ def main():
                 if key in seen:
                     continue  # breeze-dark wins over the app's own icon
                 seen.add(key)
-                dst = OUT / d / f.name
-                dst.parent.mkdir(parents=True, exist_ok=True)
                 real = f.resolve()
                 if not real.is_file():
                     continue
+                dst = OUT / d / f.name
+                dst.parent.mkdir(parents=True, exist_ok=True)
                 if f.suffix == ".svg":
+                    best_png.pop(f.stem, None)  # svg beats any earlier png
                     convert_svg(real, dst)
                     stats["svg"] += 1
                 elif f.suffix == ".png" and convert_png(real, dst):
+                    sz = real.stat().st_size
+                    if f.stem not in best_png or sz > best_png[f.stem][0]:
+                        best_png[f.stem] = (sz, real)
                     stats["png"] += 1
                 else:
                     shutil.copy(real, dst)
                     stats["copied"] += 1
+
+    # Hand-drawn SVG overrides: explicit, generic-source SVGs kept in
+    # ~/.local/share/icons/mono-src beat any raster for the same icon name.
+    sd = OUT / "scalable/apps"
+    sd.mkdir(parents=True, exist_ok=True)
+    src_dir = Path.home() / ".local/share/icons/mono-src"
+    if src_dir.is_dir():
+        for f in src_dir.glob("*.svg"):
+            if (f.stem in best_png) or (f.stem + ".png" in {p.name for p in sd.glob("*.png")}):
+                best_png.pop(f.stem, None)
+            shutil.copy(f, sd / f.name)
+
+    # High-res fallbacks: every big-raster PNG-only icon also goes into
+    n_hi = 0
+    for stem, (sz, src) in best_png.items():
+        if convert_png(src, sd / (stem + ".png")):
+            n_hi += 1
+
+    # Make sure scalable/apps is declared in the index (Size 128, MaxSize 512).
+    if "scalable/apps" not in dirs:
+        dirs["scalable/apps"] = ("MinSize=8\nSize=128\nMaxSize=512\n"
+                                 "Context=Applications\nType=Scalable")
 
     index = [
         "[Icon Theme]",
@@ -184,8 +215,9 @@ def main():
         index += ["[%s]" % d, dirs[d], ""]
     (OUT / "index.theme").write_text("\n".join(index))
     os.system("gtk-update-icon-cache -q -f -t %s 2>/dev/null" % OUT)
-    print("Mono icon theme: %d svg, %d png converted, %d copied as-is -> %s"
-          % (stats["svg"], stats["png"], stats["copied"], OUT))
+    print("Mono icon theme: %d svg, %d png converted, %d copied as-is, "
+          "%d hi-res scalable treatment -> %s"
+          % (stats["svg"], stats["png"], stats["copied"], n_hi, OUT))
 
 
 if __name__ == "__main__":

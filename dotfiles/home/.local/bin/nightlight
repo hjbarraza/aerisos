@@ -5,9 +5,9 @@ if [[ ${1:-} == toggle ]]; then
   if pgrep -x hyprsunset >/dev/null; then pkill -x hyprsunset
   else hyprsunset -t 4000 >/dev/null 2>&1 & disown
   fi
-  sleep 0.3; pkill -RTMIN+11 waybar
+  sleep 0.3; qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
   exit
 fi
 pgrep -x hyprsunset >/dev/null \
-  && printf '{"text":"","class":"on","tooltip":"Night light is on - click to turn off"}\n' \
+  && printf '{"text":"󰖔","class":"on","tooltip":"Night light is on - click to turn off"}\n' \
   || printf '{"text":""}\n'

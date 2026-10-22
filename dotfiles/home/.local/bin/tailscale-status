@@ -13,7 +13,7 @@ case ${1:-} in
     else
       tailscale up 2>/dev/null || notify-send "Tailscale" "Could not connect. Run: sudo tailscale up"
     fi
-    pkill -RTMIN+10 waybar
+    qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
     exit ;;
 esac
 if ! systemctl is-active -q tailscaled; then

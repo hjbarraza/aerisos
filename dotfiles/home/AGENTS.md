@@ -49,6 +49,17 @@ sudo install after editing).
 - To inspect now: `cd /var/lib/aeris && python3 -c "import json; s=json.load(open('status.json'))`
   and read `air-cache.json` / `gpsjam-cache.json`.
 
+## Dock (since 2026-10-22)
+- Bottom pill dock = quickshell 0.3.2 (replaces GTK3 nwg-dock-hyprland, which
+  could not render fractional-scale sharp at 1.6x).
+- Config: `~/.config/quickshell/aeris-dock/shell.qml` (running-apps pill, icons
+  via the Mono icon theme, hidden by sliding below the bottom edge).
+- Driver: `~/.local/bin/dock-autohide` now launches quickshell and drives
+  show/hide through IPC (`qs ipc -p <shell.qml> call dock reveal|conceal`;
+  note `show`/`hide` are reserved `qs ipc` subcommands). Backed up as
+  `dock-autohide.nwg.bak`. Launched at login from `~/.config/hypr/hyprland.lua`.
+- A parallel Claude Code session may run `~/quickshell-test/shell.qml` (test bar).
+
 ## Other standing infrastructure
 - Watchlist (news topics, feeds, real-time collection): manage with
   `/home/h/.local/bin/aeris-watch`; findings in `/home/h/.local/share/aeris/watchlist.json`.

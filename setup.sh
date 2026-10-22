@@ -42,10 +42,9 @@ OPTIONAL=(gamesdrive razer titan snapshot)
 HOME_PATHS=(
     .bashrc
     .config/hypr
-    .config/waybar
+    .config/quickshell
     .config/kitty
     .config/swayosd
-    .config/nwg-dock-hyprland
     .config/gtk-3.0
     .config/gtk-4.0
     .config/mimeapps.list
@@ -541,7 +540,7 @@ mod_theme() {
     if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
         run hyprctl reload >/dev/null
         run pkill -USR1 -x kitty || true         # kitty reloads its config
-        run pkill -x nwg-dock-hyprla || true     # dock-autohide relaunches it
+        run pkill -f "^qs -p.*aeris-dock" || true     # dock-autohide relaunches it with the new icon theme
     fi
 }
 
