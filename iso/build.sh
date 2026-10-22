@@ -9,10 +9,22 @@
 #   - the guided installer (aeris-installer) + a login hint to run it
 # Output: ~/aerisos/iso/out/aerisos-<date>-x86_64.iso  (~1.2 GB, gitignored)
 #
+# T2 Macs:  sudo ~/aerisos/iso/build.sh --t2   (build it ON a working T2 Mac)
+#   live system on the linux-t2 kernel (internal keyboard/trackpad work), the
+#   arch-mact2 repo, and this Mac's fetched Apple Wi-Fi/Bluetooth firmware baked
+#   in, so Wi-Fi works on the USB and on the installed system without tethering.
+#   The firmware is Apple's: keep that ISO to yourself.
+#
 # Write it to a USB stick (ERASES the stick):
 #   sudo cp iso/out/aerisos-*.iso /dev/sdX && sync
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
+T2=0
+case ${1:-} in
+    --t2) T2=1 ;;
+    "")   lspci | grep -i 'T2 Bridge' >/dev/null && echo "Note: this is a T2 Mac; for a T2 installer use --t2" ;;
+    *)    echo "usage: build.sh [--t2]" >&2; exit 1 ;;
+esac
 
 AERIS="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 WORK=/var/tmp/aerisos-iso-work          # mkarchiso scratch (needs a few GB)
@@ -54,6 +66,28 @@ sed -i \
     -e 's/^iso_application=.*/iso_application="AerisOS installer"/' \
     "$PROFILE/profiledef.sh"
 sed -i '/^file_permissions=(/a\  ["/usr/local/bin/aeris-installer"]="0:0:755"' "$PROFILE/profiledef.sh"
+
+if (( T2 )); then
+    echo "== T2 variant: linux-t2 kernel, arch-mact2 repo, Apple Wi-Fi firmware =="
+    printf '\n[arch-mact2]\nInclude = %s\nSigLevel = Never\n' "$AERIS/t2/arch-mact2-mirrorlist" >> "$PROFILE/pacman.conf"
+    sed -i 's/^linux$/linux-t2/' "$PROFILE/packages.x86_64"
+    grep -rlZ 'vmlinuz-linux' "$PROFILE/grub" "$PROFILE/efiboot" "$PROFILE/syslinux" \
+        | xargs -r0 sed -i 's/vmlinuz-linux/vmlinuz-linux-t2/g; s/initramfs-linux\.img/initramfs-linux-t2.img/g'
+    echo 'kernel_params_x86_64="intel_iommu=on iommu=pt pcie_ports=compat"' >> "$PROFILE/profiledef.sh"
+    sed -i 's/^iso_name=.*/iso_name="aerisos-t2"/' "$PROFILE/profiledef.sh"
+
+    # Firmware the fetcher put in /usr/lib/firmware/brcm (no package owns it). The list
+    # tells aeris-installer what to copy onto the new system
+    mapfile -t FW < <(comm -23 <(find /usr/lib/firmware/brcm -type f | sort) <(pacman -Qlq | sort))
+    if (( ${#FW[@]} )); then
+        mkdir -p "$PROFILE/airootfs/usr/lib/firmware/brcm" "$PROFILE/airootfs/usr/local/share/aerisos"
+        cp -a "${FW[@]}" "$PROFILE/airootfs/usr/lib/firmware/brcm/"
+        printf '%s\n' "${FW[@]}" > "$PROFILE/airootfs/usr/local/share/aerisos/t2-firmware.list"
+        echo "   ${#FW[@]} firmware files baked in"
+    else
+        echo "   ! no fetched Apple firmware here: Wi-Fi on the USB will need t2/firmware.sh (phone tethering)"
+    fi
+fi
 
 echo "== 3/4 mkarchiso (downloads packages; takes a while) =="
 mkarchiso -v -w "$WORK/build" -o "$OUT" "$PROFILE"

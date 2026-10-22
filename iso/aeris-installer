@@ -14,9 +14,26 @@ die()  { printf '\033[1;31m! %s\033[0m\n' "$*" >&2; exit 1; }
 
 say "AerisOS installer"
 
+# T2 Mac: linux-t2 kernel from arch-mact2 instead of the stock one (no keyboard,
+# trackpad or Wi-Fi on stock), plus the firmware the T2 ISO carries
+T2=0
+lspci | grep -i 'T2 Bridge' >/dev/null && T2=1
+KERNEL=linux
+EXTRA=()
+PACSTRAP_CONF=()
+if (( T2 )); then
+    say "T2 Mac detected: installing the linux-t2 kernel"
+    KERNEL=linux-t2
+    EXTRA=(linux-t2-headers apple-t2-audio-config apple-bcm-firmware-fetcher iwd)
+    cp /etc/pacman.conf /tmp/pacman-t2.conf
+    printf '\n[arch-mact2]\nInclude = /root/aerisos/t2/arch-mact2-mirrorlist\nSigLevel = Never\n' >> /tmp/pacman-t2.conf
+    PACSTRAP_CONF=(-C /tmp/pacman-t2.conf)
+fi
+
 # --- network ----------------------------------------------------------------
 if ! ping -c1 -W3 archlinux.org >/dev/null 2>&1; then
     echo "No internet. For Wi-Fi:  iwctl → station wlan0 connect \"SSID\"  — then re-run: aeris-installer"
+    (( T2 )) && echo "T2 Mac with no wlan0: tether a phone over USB and run  bash /root/aerisos/t2/firmware.sh"
     die "network required (pacstrap downloads packages)"
 fi
 
@@ -67,9 +84,28 @@ mount "$ESP" /mnt/boot
 
 # --- base system --------------------------------------------------------------
 say "Installing the base system (pacstrap)"
-pacstrap -K /mnt base linux linux-firmware btrfs-progs networkmanager sudo git w3m \
-    intel-ucode amd-ucode nano
+pacstrap "${PACSTRAP_CONF[@]}" -K /mnt base "$KERNEL" linux-firmware btrfs-progs networkmanager \
+    sudo git w3m intel-ucode amd-ucode nano "${EXTRA[@]}"
 genfstab -U /mnt >> /mnt/etc/fstab
+
+BOOT_OPTS="quiet loglevel=3"
+if (( T2 )); then
+    # Keep linux-t2 updatable, and carry over the Wi-Fi/Bluetooth firmware
+    install -Dm644 /root/aerisos/t2/arch-mact2-mirrorlist /mnt/etc/pacman.d/arch-mact2-mirrorlist
+    grep -q '^\[arch-mact2\]' /mnt/etc/pacman.conf ||
+    printf '\n[arch-mact2]\nInclude = /etc/pacman.d/arch-mact2-mirrorlist\nSigLevel = Never\n' >> /mnt/etc/pacman.conf
+    if [[ -s /usr/local/share/aerisos/t2-firmware.list ]]; then
+        mkdir -p /mnt/usr/lib/firmware/brcm
+        xargs -a /usr/local/share/aerisos/t2-firmware.list cp -t /mnt/usr/lib/firmware/brcm/
+    else
+        echo "No firmware on this USB: after the reboot, Wi-Fi needs  bash ~/aerisos/t2/firmware.sh  (phone tethering)"
+    fi
+    # Wi-Fi through iwd; the internal iBridge ethernet never gets an address, so ignore it
+    mkdir -p /mnt/etc/NetworkManager/conf.d
+    printf '[device]\nwifi.backend=iwd\n' > /mnt/etc/NetworkManager/conf.d/wifi_backend.conf
+    printf '[keyfile]\nunmanaged-devices=mac:ac:de:48:00:11:22\n' > /mnt/etc/NetworkManager/conf.d/t2-ibridge.conf
+    BOOT_OPTS+=" intel_iommu=on iommu=pt pcie_ports=compat"
+fi
 
 # --- the repo -----------------------------------------------------------------
 cp -a /root/aerisos "/mnt/home/.aerisos-seed"
@@ -84,6 +120,7 @@ locale-gen
 echo LANG=en_US.UTF-8 > /etc/locale.conf
 echo aerisos > /etc/hostname     # the setup wizard asks for the real name
 systemctl enable NetworkManager
+if [ $T2 = 1 ]; then systemctl enable iwd; fi
 
 useradd -m -G wheel -s /bin/bash "$NEW_USER"
 echo '%wheel ALL=(ALL:ALL) ALL' > /etc/sudoers.d/10-wheel
@@ -100,11 +137,11 @@ timeout 0
 EOF
 cat > /boot/loader/entries/aerisos.conf <<EOF
 title   AerisOS
-linux   /vmlinuz-linux
+linux   /vmlinuz-$KERNEL
 initrd  /intel-ucode.img
 initrd  /amd-ucode.img
-initrd  /initramfs-linux.img
-options root=LABEL=aerisos rootflags=subvol=@ rw quiet loglevel=3
+initrd  /initramfs-$KERNEL.img
+options root=LABEL=aerisos rootflags=subvol=@ rw $BOOT_OPTS
 EOF
 
 cat > /etc/motd <<'EOF'

@@ -1,23 +1,22 @@
 #!/bin/bash
 set -e
-# Run INSIDE the chroot of the installed system (or booted into it).
-# Fixes mirrorlist, installs t2 kernel + wifi fetcher, writes boot entry.
-# Does NOT reboot.
+# T2 Mac, MANUAL path only (stock Arch ISO + archinstall). The AerisOS T2 USB
+# (iso/build.sh --t2) does all of this by itself; use that when you can.
+#
+# Run INSIDE the chroot of the fresh install (arch-chroot /mnt, with the EFI
+# partition mounted at /mnt/boot), or booted into it. Adds the arch-mact2 repo,
+# installs the t2 kernel + firmware fetcher, writes the default boot entry.
+# Does NOT reboot.  Usage: bash chroot.sh [root-partition]
 
-R=/dev/nvme0n1p2
-E=/dev/nvme0n1p1
+R=${1:-$(findmnt -no SOURCE / | sed 's/\[.*//')}
 P="intel_iommu=on iommu=pt pcie_ports=compat"
 
-mountpoint -q /boot || mount $E /boot
+mountpoint -q /boot || { echo "/boot is not mounted: mount the EFI partition at /mnt/boot before arch-chroot"; exit 1; }
+[ -b "$R" ] || { echo "root partition '$R' not found; pass it: bash chroot.sh /dev/nvme0n1p2"; exit 1; }
+echo "root: $R"
 
-# official arch-mact2 mirrorlist (from arch-mact2-mirrorlist v3 package)
-cat > /etc/pacman.d/arch-mact2-mirrorlist <<'EOF'
-Server = https://arch-mact2.miningtcup.me/os/$arch
-Server = https://mirror.funami.tech/arch-mact2/os/$arch
-Server = https://mirror.syn-flut.de/arch-mact2/os/$arch
-Server = https://t2mirror.01110011.eu.cc/arch-mact2/os/$arch
-Server = https://arch-t2.slsrepo.com/
-EOF
+# official arch-mact2 mirrorlist (kept next to this script)
+install -Dm644 "$(dirname "$(readlink -f "$0")")/arch-mact2-mirrorlist" /etc/pacman.d/arch-mact2-mirrorlist
 grep -q '^\[arch-mact2\]' /etc/pacman.conf || \
   printf '\n[arch-mact2]\nInclude = /etc/pacman.d/arch-mact2-mirrorlist\nSigLevel = Never\n' >> /etc/pacman.conf
 
