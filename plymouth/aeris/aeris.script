@@ -1,0 +1,44 @@
+# AerisOS Plymouth theme.
+# bg.png is splash.svg (1600x900 design space) rendered at the panel's native size:
+# the centred wordmark. The one moving part is a light gliding along the short
+# hairline under the tagline, as a quiet loading indicator.
+
+Window.SetBackgroundTopColor(0, 0, 0);
+Window.SetBackgroundBottomColor(0, 0, 0);
+
+W = Window.GetWidth();
+H = Window.GetHeight();
+s = Math.Min(W / 1600, H / 900);
+ox = (W - 1600 * s) / 2;
+oy = (H - 900 * s) / 2;
+
+bg = Sprite(Image("bg.png").Scale(1600 * s, 900 * s));
+bg.SetPosition(ox, oy, 0);
+
+sweep_w = 80 * s;
+sweep = Sprite(Image("sweep.png").Scale(sweep_w, 4 * s));
+sweep.SetY(oy + 542.5 * s);
+sweep.SetZ(3);
+
+rule_x = ox + 680 * s;
+rule_w = 240 * s;
+
+frame = 0;
+fun refresh() {
+    frame++;
+
+    # Light: 90 frames across the hairline (~1.8 s at 50 fps), then 60 frames of rest
+    t = frame % 150;
+    if (t < 90) {
+        p = t / 90;
+        p = p * p * (3 - 2 * p);          # ease in-out
+        x = rule_x - sweep_w + p * (rule_w + sweep_w);
+        sweep.SetX(x);
+        # Fade near the ends so the light never hangs past the hairline
+        edge = Math.Min(x + sweep_w - rule_x, rule_x + rule_w - x);
+        sweep.SetOpacity(Math.Clamp(edge / sweep_w, 0, 1));
+    } else {
+        sweep.SetOpacity(0);
+    }
+}
+Plymouth.SetRefreshFunction(refresh);

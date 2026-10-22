@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "theme": {
+    "name": "AERIS",
+    "mode": "dark"
+  },
+  "session": {
+    "sidebar": "auto",
+    "thinking": "show",
+    "verbosity": "low",
+    "permissions": "autoaccept",
+    "scrollbar": false
+  },
+  "animations": true,
+  "tabs": {
+    "scope": "global",
+    "mode": "auto",
+    "layout": "horizontal",
+    "indicators": "status"
+  }
+}

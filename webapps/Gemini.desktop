@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Name=Gemini
+Exec=brave --app=https://gemini.google.com
+Terminal=false
+Type=Application
+Icon=brave-browser
+StartupNotify=true

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <!-- AerisOS boot splash (also the Plymouth background): the wordmark alone, centred.
+       Plymouth sweeps a light along the short hairline under the tagline.
+       Fonts: Söhne, Söhne Mono -->
+  <rect width="1600" height="900" fill="#000"/>
+
+  <!-- Wordmark: ÆRIS regular (with the Æ ligature), OS bold; optically centred (group 343–545) -->
+  <text x="525" y="448" font-family="Söhne" font-weight="400" font-size="144"
+        letter-spacing="-6" fill="#fff">ÆRIS</text>
+  <text x="891" y="448" font-family="Söhne" font-weight="700" font-size="144"
+        letter-spacing="-6" fill="#fff">OS</text>
+
+  <!-- Tagline -->
+  <text x="800" y="500" font-family="Söhne Mono" font-size="12" letter-spacing="3"
+        fill="#7a7a7a" text-anchor="middle">INTELLIGENCE OPERATING SYSTEM</text>
+
+  <!-- Hairline (Plymouth's loading light runs along it) -->
+  <rect x="680" y="544" width="240" height="1" fill="#262626"/>
+</svg>

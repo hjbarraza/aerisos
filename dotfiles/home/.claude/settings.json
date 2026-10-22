@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "enabledPlugins": {
+    "gitlab@anthropic-plugin-directory": true
+  },
+  "promptSuggestionEnabled": false,
+  "tui": "fullscreen",
+  "theme": "custom:aeris",
+  "editorMode": "normal",
+  "autoMode": {
+    "environment": [
+      "### Org-wide",
+      "**Organization**: None configured",
+      "**Cloud provider(s)**: None configured",
+      "**Repository visibility**: Not queryable here (no git remotes configured in this repo) — assume private unless otherwise indicated",
+      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: None configured",
+      "**Default / protected branches**: Not queryable here (no remotes, origin/HEAD unset)",
+      "**CI/CD deploy targets**: None configured",
+      "**Network posture**: None configured",
+      "**Host containment**: None configured — assume Claude Code runs on an ordinary developer machine or CI runner with open internet",
+      "**Source control**: The trusted repo and its remote(s) only — this repo has no remotes configured",
+      "**Trusted internal domains**: None configured",
+      "**Trusted cloud buckets**: None configured",
+      "**Key internal services**: None configured",
+      "**Internal package registry**: None configured",
+      "**Sensitive data locations & audiences**: any file or store holding personal data, confidential business data, credentials, regulated data, or similarly sensitive material; preserve exact handles when known and share only with audiences cleared at the [named+specifics] bar — note: .claude/.credentials.json detected in this repo as a sensitive-looking path",
+      "**Data retention / declassification**: None configured",
+      "**Sensitive remote targets**: any namespace, host, or container whose name carries `prod` or `production` as a whole word or name segment",
+      "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
+      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries `prod` or `production` as a whole word or name segment",
+      "### User-specific",
+      "**Primary use of Claude Code**: personal/hobby use (desktop environment tooling, system administration) on this machine — no tracked files or remotes found in this repo",
+      "**Trusted repo**: The git repository at /home/h (its working directory) — no remotes configured, so no remote trust extends beyond local work",
+      "**Org-specific CLIs**: None configured — observed CLIs (pacman, voxtype, vicinae, hyprctl, yay, systemctl, wpctl, dunstctl, etc.) appear to be personal desktop/system-administration tools, not org-specific"
+    ]
+  },
+  "model": "claude-fable-5"
+}

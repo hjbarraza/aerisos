@@ -1,0 +1,10 @@
+[Unit]
+Description=Hold the battery between 90 and 95% (Razer Battery Health Optimizer)
+After=razercontrol.service
+Requires=razercontrol.service
+
+[Service]
+Type=oneshot
+Environment=AERIS_CHARGE_HIGH=95
+Environment=AERIS_CHARGE_LOW=90
+ExecStart=%h/.local/bin/aeris-charge-limit

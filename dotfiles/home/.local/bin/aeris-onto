@@ -1,0 +1,730 @@
+#!/usr/bin/env node
+// AERIS ontology tool: query the defence-map ontologies in ~/maps/<map>/data/data.js.
+// Loads each data.js in an isolated context and applies the ENRICH merge exactly as the
+// map page does, so answers match what the map shows.
+"use strict";
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const vm = require("vm");
+
+const ROOT = process.env.AERIS_MAPS || path.join(os.homedir(), "maps");
+const HELP = `aeris-onto: query the ontology maps in ${ROOT}/<map>/data/data.js
+
+  aeris-onto maps                              maps with snapshot date and counts
+  aeris-onto digest MAP                        the map's recent-developments digest (login/lock screens)
+  aeris-onto schema MAP                        domains, entity kinds, relation types, confidence levels
+  aeris-onto find MAP|all TEXT [--kind K] [--domain D]
+                                               search entities by name, role, note and facts
+  aeris-onto entity MAP NAME                   full dossier: fields, facts, sources, every relation
+  aeris-onto entity all NAME                   cross-map dossier: one entity merged across every map,
+                                               each fact tagged (map, grade + asserter, sources);
+                                               conflicts and recorded research gaps included
+  aeris-onto links MAP [--rel R] [--conf C] [--kind K] [--domain D] [--of NAME]
+                                               list relations, filtered (--kind/--domain match either end)
+  aeris-onto path MAP NAME NAME [--avoid ID,ID] [--max N]
+                                               shortest connection chains between two entities
+  aeris-onto stats MAP                         counts, hubs (degree), brokers (betweenness), clusters
+  aeris-onto weak MAP                          weakest evidence: unverified and single-source links,
+                                               unsourced entities, documented caveats
+  aeris-onto shared                            entities that appear in more than one map
+  aeris-onto dump MAP                          the merged ontology as JSON
+
+Updating a map (proposals are profile files, merged by engine/merge_profiles.py):
+  aeris-onto propose MAP FILE|-                stage a proposal (JSON from a file or stdin); validated
+  aeris-onto proposals MAP                     list proposals (pending, applied, rejected, reverted)
+  aeris-onto review MAP ID                     simulate a proposal and show exactly what would change
+  aeris-onto apply MAP ID                      merge it into the map and rebuild the pages
+  aeris-onto reject MAP ID [REASON]            set it aside unapplied
+  aeris-onto revert MAP ID                     take an applied proposal back out
+
+Proposal JSON (every addition needs a source; conf is doc|ref|press|unv):
+  {"title": "...", "rationale": "why, and from what evidence",
+   "new_entities": [{"id": "lower_snake", "label": "...", "kind": "person|org|company|program|policy|threat",
+                     "domain": "<schema domain>", "status": "active", "role": "...", "note": "...",
+                     "sources": [["title", "url"]]}],
+   "entities": [{"id": "existing_id", "facts": [["key", "value"]], "note": "...", "role": "...",
+                 "status": "active|former|unverified|deceased", "sources": [["title", "url"]]}],
+   "relations": [{"s": "id", "t": "id", "rel": "<schema relation or other: verb phrase>",
+                  "conf": "press", "source": ["title", "url"]}],
+   "drop_relations": [["s", "t", "rel"]]}
+
+NAME can be an entity id or (part of) its name; accents and case are ignored.
+Add --json to any command for machine-readable output.`;
+
+// ---------- loading ----------
+
+function loadMap(name, fileOverride) {
+  name = String(name).toLowerCase();
+  const file = fileOverride || path.join(ROOT, name, "data", "data.js");
+  if (!fs.existsSync(file)) fail(`no map "${name}" (expected ${file}); see: aeris-onto maps`);
+  const code = fs.readFileSync(file, "utf8") +
+    "\n;({CONFIG, SRC, DOMAINS, KINDS, CONF, REL, NODES, E, ENRICH: typeof ENRICH === 'undefined' ? null : ENRICH})";
+  const d = vm.runInNewContext(code, Object.create(null), { filename: file, timeout: 5000 });
+  const X = d.ENRICH || { sources: {}, rels: {}, entities: {}, newNodes: [], relations: [], drop: [] };
+  // same merge as engine/template.html
+  Object.assign(d.SRC, X.sources);
+  Object.assign(d.REL, X.rels);
+  (X.newNodes || []).forEach(n => d.NODES.push(n));
+  d.NODES.forEach(n => {
+    const x = (X.entities || {})[n.id];
+    if (!x) return;
+    ["label", "short", "role", "facts", "note", "status"].forEach(k => { if (x[k]) n[k] = x[k]; });
+    if (x.src) n.src = [...new Set([...(n.src || []), ...x.src])];
+  });
+  const drop = new Set((X.drop || []).map(r => r.join("|")));
+  d.E = d.E.filter(r => !drop.has(r.slice(0, 3).join("|")));
+  (X.relations || []).forEach(r => d.E.push(r));
+
+  d.name = name;
+  d.byId = Object.fromEntries(d.NODES.map(n => [n.id, n]));
+  d.links = d.E.map(([s, t, rel, conf, src]) => ({ s, t, rel, conf, src: src || [] }))
+    .filter(l => d.byId[l.s] && d.byId[l.t]);
+  d.adj = Object.fromEntries(d.NODES.map(n => [n.id, []]));
+  d.links.forEach(l => { d.adj[l.s].push(l); d.adj[l.t].push(l); });
+  return d;
+}
+
+function mapNames() {
+  return fs.readdirSync(ROOT).filter(m => fs.existsSync(path.join(ROOT, m, "data", "data.js"))).sort();
+}
+
+// ---------- helpers ----------
+
+const fold = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const label = (d, id) => d.byId[id] ? d.byId[id].label : id;
+const relText = (d, l, from) => {
+  const r = d.REL[l.rel] || [l.rel, l.rel];
+  return l.s === from ? `${r[0]} → ${label(d, l.t)} [${l.t}]` : `${r[1] || r[0]} ← ${label(d, l.s)} [${l.s}]`;
+};
+const confTag = (d, c) => (d.CONF[c] ? d.CONF[c].tag : c);
+const srcText = (d, ids) => (ids || []).map(id => d.SRC[id] ? `${d.SRC[id][0]} <${d.SRC[id][1]}>` : id);
+
+function resolve(d, q) {
+  if (d.byId[q]) return d.byId[q];
+  const f = fold(q);
+  const exact = d.NODES.filter(n => fold(n.label) === f || fold(n.short) === f);
+  if (exact.length === 1) return exact[0];
+  const hits = d.NODES.filter(n => fold(n.label).includes(f) || fold(n.short).includes(f) || fold(n.id).includes(f));
+  if (hits.length === 1) return hits[0];
+  if (!hits.length) fail(`no entity matching "${q}" in ${d.name}; try: aeris-onto find ${d.name} ${q}`);
+  fail(`"${q}" is ambiguous in ${d.name}: ` + hits.map(n => `${n.label} [${n.id}]`).join(", "));
+}
+
+function opt(args, name, dflt) {
+  const i = args.indexOf(`--${name}`);
+  if (i < 0) return dflt;
+  const v = args[i + 1];
+  args.splice(i, 2);
+  return v;
+}
+
+function fail(msg) {
+  console.error(`aeris-onto: ${msg}`);
+  process.exit(1);
+}
+
+function out(json, text) {
+  console.log(JSON_MODE ? JSON.stringify(json, null, 1) : text);
+}
+
+// ---------- graph analysis ----------
+
+function bfsPaths(d, a, b, avoid, max) {
+  // all shortest paths (undirected), up to `max`
+  const dist = { [a]: 0 }, preds = { [a]: [] }, queue = [a];
+  while (queue.length) {
+    const u = queue.shift();
+    if (u === b) break;
+    for (const l of d.adj[u]) {
+      const v = l.s === u ? l.t : l.s;
+      if (avoid.has(v) && v !== b) continue;
+      if (!(v in dist)) { dist[v] = dist[u] + 1; preds[v] = []; queue.push(v); }
+      if (dist[v] === dist[u] + 1) preds[v].push([u, l]);
+    }
+  }
+  if (!(b in dist)) return [];
+  const paths = [];
+  const walk = (v, acc) => {
+    if (paths.length >= max) return;
+    if (v === a) return paths.push(acc.slice().reverse());
+    for (const [u, l] of preds[v]) walk(u, [...acc, { from: u, to: v, link: l }]);
+  };
+  walk(b, []);
+  return paths;
+}
+
+function betweenness(d) {
+  // Brandes, undirected, unweighted
+  const ids = Object.keys(d.adj), cb = Object.fromEntries(ids.map(i => [i, 0]));
+  for (const s of ids) {
+    const S = [], P = {}, sigma = {}, dist = {};
+    ids.forEach(i => { P[i] = []; sigma[i] = 0; dist[i] = -1; });
+    sigma[s] = 1; dist[s] = 0;
+    const Q = [s];
+    while (Q.length) {
+      const v = Q.shift(); S.push(v);
+      for (const l of d.adj[v]) {
+        const w = l.s === v ? l.t : l.s;
+        if (dist[w] < 0) { dist[w] = dist[v] + 1; Q.push(w); }
+        if (dist[w] === dist[v] + 1) { sigma[w] += sigma[v]; P[w].push(v); }
+      }
+    }
+    const delta = Object.fromEntries(ids.map(i => [i, 0]));
+    while (S.length) {
+      const w = S.pop();
+      for (const v of P[w]) delta[v] += (sigma[v] / sigma[w]) * (1 + delta[w]);
+      if (w !== s) cb[w] += delta[w];
+    }
+  }
+  ids.forEach(i => { cb[i] /= 2; });
+  return cb;
+}
+
+function components(d) {
+  const seen = new Set(), comps = [];
+  for (const id of Object.keys(d.adj)) {
+    if (seen.has(id)) continue;
+    const comp = [], stack = [id];
+    seen.add(id);
+    while (stack.length) {
+      const u = stack.pop(); comp.push(u);
+      for (const l of d.adj[u]) {
+        const v = l.s === u ? l.t : l.s;
+        if (!seen.has(v)) { seen.add(v); stack.push(v); }
+      }
+    }
+    comps.push(comp);
+  }
+  return comps.sort((x, y) => y.length - x.length);
+}
+
+const count = (arr, key) => arr.reduce((m, x) => { const k = key(x); m[k] = (m[k] || 0) + 1; return m; }, {});
+const fmtCounts = o => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(", ");
+
+// ---------- cross-map identity (shared/identity.json, shared/asserters.json) ----------
+
+const readShared = f => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, "shared", f), "utf8")); } catch (e) { return {}; } };
+
+function assertTag(ass, map, conf) {
+  const a = (ass[map] || {})[conf];
+  return a ? `${a.label} · ${a.asserter}` : conf;
+}
+
+function entityAll(q) {
+  const f = fold(q);
+  if (!f) fail("entity all needs a NAME");
+  const identity = readShared("identity.json"), ass = readShared("asserters.json");
+  const canonOf = {}, rejectedWith = {};   // "map/id" -> canon key | Set of "map/id" ruled distinct
+  for (const [k, v] of Object.entries(identity)) {
+    if (k.startsWith("_")) continue;
+    for (const [m, id] of v.members || []) {
+      if (v.status === "confirmed") canonOf[`${m}/${id}`] = k;
+      if (v.status === "rejected") {
+        const me = `${m}/${id}`;
+        rejectedWith[me] ||= new Set();
+        for (const [m2, id2] of v.members) if (`${m2}/${id2}` !== me) rejectedWith[me].add(`${m2}/${id2}`);
+      }
+    }
+  }
+  // candidates across every map
+  const cands = [];
+  for (const m of mapNames()) {
+    const d = loadMap(m);
+    for (const n of d.NODES) {
+      const exact = fold(n.label) === f || fold(n.short) === f || n.id === q;
+      const part = exact || fold(n.label).includes(f) || fold(n.short).includes(f);
+      if (!part) continue;
+      const qid = (n.facts || []).filter(x => Array.isArray(x) && x[0] === "Wikidata").map(x => x[1])[0] || null;
+      cands.push({ m, d, n, qid, exact, key: `${m}/${n.id}` });
+    }
+  }
+  if (!cands.length) fail(`no entity matching "${q}" in any map`);
+  // group: confirmed canon > shared QID > folded label; then split pairs ruled distinct
+  const groups = {};
+  for (const c of cands) {
+    const g = canonOf[c.key] || (c.qid ? `qid:${c.qid}` : `label:${fold(c.n.label)}`);
+    (groups[g] ||= []).push(c);
+  }
+  for (const [g, list] of Object.entries(groups)) {
+    if (g.startsWith("label:") && list.length > 1) {
+      const keep = [], split = [];
+      for (const c of list) (keep.some(k => rejectedWith[c.key]?.has(k.key)) ? split : keep).push(c);
+      if (split.length) { groups[g] = keep; for (const c of split) groups[`distinct:${c.key}`] = [c]; }
+    }
+  }
+  const ranked = Object.entries(groups).sort((a, b) =>
+    (b[1].some(c => c.exact) - a[1].some(c => c.exact)) || (b[1].length - a[1].length));
+  const [gkey, members] = ranked[0];
+  const others = ranked.slice(1);
+  const canon = identity[gkey] || {};
+  const head = members.find(c => c.exact) || members[0];
+  const lines = [
+    `# ${head.n.label}  —  cross-map view (${members.length} map${members.length > 1 ? "s" : ""}: ${members.map(c => c.m).join(", ")})`,
+    canon.qid || head.qid ? `Wikidata: ${canon.qid || head.qid}` : "",
+    identity[gkey] ? `Identity: ${gkey} (${canon.status}, ${canon.decided}) — ${canon.basis}` : (members.length > 1 ? `Identity: grouped by ${gkey.startsWith("qid:") ? "shared Wikidata id" : "exact label"}; no identity.json ruling recorded` : ""),
+  ];
+  const statuses = {}, leadsBy = {};
+  for (const c of members) {
+    const { m, d, n } = c;
+    statuses[n.status || "n/a"] ||= []; statuses[n.status || "n/a"].push(m);
+    lines.push("", `## [${m}] ${n.label} [${n.id}]  (${d.KINDS[n.kind]?.label || n.kind}, ${d.DOMAINS[n.d]?.name || n.d}, ${n.status || "n/a"})`);
+    if (n.role) lines.push(`Role: ${n.role}`);
+    if (n.note) lines.push(`Note: ${n.note}`);
+    for (const x of n.facts || []) lines.push(`- fact: ${Array.isArray(x) ? x.join(": ") : x}`);
+    for (const l of d.adj[n.id] || []) {
+      lines.push(`- ${relText(d, l, n.id)}  {${assertTag(ass, m, l.conf)}}  src: ${srcText(d, l.src).join("; ") || "none"}`);
+      if (l.rel === "leads" && l.t === n.id) (leadsBy[fold(label(d, l.s))] ||= []).push(m);
+    }
+    for (const s of srcText(d, n.src)) lines.push(`- source: ${s}`);
+  }
+  const conflicts = [];
+  if (Object.keys(statuses).length > 1)
+    conflicts.push(`status differs: ${Object.entries(statuses).map(([s, ms]) => `${s} (${ms.join(", ")})`).join(" vs ")}`);
+  if (Object.keys(leadsBy).length > 1)
+    conflicts.push(`led by different persons: ${Object.entries(leadsBy).map(([p, ms]) => `${p} (${ms.join(", ")})`).join(" vs ")}`);
+  lines.push("", "## Conflicts", ...(conflicts.length ? conflicts.map(x => `- ${x}`) : ["- none detected (status and leadership compared; read per-map lines for the rest)"]));
+  const gaps = [];
+  for (const c of members) {
+    try {
+      const log = JSON.parse(fs.readFileSync(path.join(ROOT, c.m, "research", "log.json"), "utf8"));
+      for (const e of log) for (const g of e.gaps || [])
+        if (fold(g).includes(f) || fold(g).includes(fold(c.n.label))) gaps.push(`[${c.m}] ${g} (${(e.date || "").slice(0, 10)})`);
+    } catch (e) { /* no log */ }
+  }
+  lines.push("", "## Recorded research gaps", ...(gaps.length ? gaps.map(x => `- ${x}`) : ["- none recorded"]));
+  if (others.length)
+    lines.push("", "## Not merged (same search, ruled or assumed distinct)",
+      ...others.flatMap(([k, list]) => list.map(c => `- [${c.m}] ${c.n.label} [${c.n.id}]${k.startsWith("distinct:") ? "  (identity.json: rejected merge)" : ""}`)));
+  out({ group: gkey, members: members.map(c => ({ map: c.m, id: c.n.id, label: c.n.label, qid: c.qid })), conflicts, gaps }, lines.filter(x => x !== "").join("\n"));
+}
+
+// ---------- commands ----------
+
+const cmds = {
+  maps() {
+    const rows = mapNames().map(m => {
+      const d = loadMap(m);
+      return { map: m, title: d.CONFIG.title, snapshot: d.CONFIG.snapshot, entities: d.NODES.length, relations: d.links.length };
+    });
+    out(rows, rows.map(r => `${r.map.padEnd(10)} ${r.title} · snapshot ${r.snapshot} · ${r.entities} entities · ${r.relations} relations`).join("\n"));
+  },
+
+  // digest MAP: the map's curated recent-developments list (CONFIG.digest: [[date, line], ...]),
+  // published to the status pipeline and shown on the login, lock and start screens.
+  digest(args) {
+    const d = loadMap(args[0]);
+    const digest = d.CONFIG.digest || [];
+    const j = { map: d.name, title: d.CONFIG.title, snapshot: d.CONFIG.snapshot, items: digest.map(([k, v]) => ({ k, v })) };
+    out(j, j.items.length
+      ? j.items.map(i => `${String(i.k).padEnd(8)} ${i.v}`).join("\n")
+      : "no digest in this map's CONFIG yet");
+  },
+
+  schema(args) {
+    const d = loadMap(args[0]);
+    const used = count(d.links, l => l.rel);
+    const j = { domains: d.DOMAINS, kinds: d.KINDS, confidence: d.CONF, relations: d.REL, relationUse: used };
+    out(j, [
+      `# ${d.CONFIG.title} (snapshot ${d.CONFIG.snapshot})`, "", d.CONFIG.overviewText || "", "",
+      "## Domains", ...Object.entries(d.DOMAINS).map(([k, v]) => `- ${k}: ${v.name}. ${v.desc}`), "",
+      "## Entity kinds", ...Object.entries(d.KINDS).map(([k, v]) => `- ${k}: ${v.label}. ${v.desc}`), "",
+      "## Confidence levels", ...Object.entries(d.CONF).map(([k, v]) => `- ${k}: ${v.label}. ${v.desc}`), "",
+      "## Relation types (used count)",
+      ...Object.entries(d.REL).map(([k, v]) => `- ${k} (${used[k] || 0}): "${v[0]}" / reverse "${v[1]}"; ${v[2]}. ${v[3] || ""}`),
+    ].join("\n"));
+  },
+
+  find(args) {
+    const kind = opt(args, "kind"), domain = opt(args, "domain");
+    const [m, ...words] = args;
+    const q = fold(words.join(" "));
+    const maps = m === "all" ? mapNames() : [m];
+    const hits = [];
+    for (const name of maps) {
+      const d = loadMap(name);
+      for (const n of d.NODES) {
+        if (kind && n.kind !== kind) continue;
+        if (domain && n.d !== domain) continue;
+        const hay = fold([n.id, n.label, n.short, n.role, n.note, ...(n.facts || [])].join(" "));
+        if (!q || hay.includes(q)) hits.push({ map: name, id: n.id, label: n.label, kind: n.kind, domain: n.d, status: n.status, role: n.role || "", degree: d.adj[n.id].length });
+      }
+    }
+    out(hits, hits.length ? hits.map(h => `${h.map}/${h.id}  ${h.label} · ${h.kind} · ${h.domain} · ${h.status || ""} · ${h.degree} links${h.role ? ` · ${h.role}` : ""}`).join("\n") : "no matches");
+  },
+
+  entity(args) {
+    if (String(args[0]).toLowerCase() === "all") return entityAll(args.slice(1).join(" "));
+    const d = loadMap(args[0]);
+    const n = resolve(d, args.slice(1).join(" "));
+    const rels = d.adj[n.id].map(l => ({ text: relText(d, l, n.id), rel: l.rel, conf: l.conf, sources: srcText(d, l.src) }));
+    const j = { ...n, kindLabel: d.KINDS[n.kind]?.label, domainName: d.DOMAINS[n.d]?.name, sources: srcText(d, n.src), relations: rels };
+    out(j, [
+      `# ${n.label} [${n.id}]  (${d.KINDS[n.kind]?.label || n.kind}, ${d.DOMAINS[n.d]?.name || n.d}, ${n.status || "status n/a"})`,
+      n.role ? `Role: ${n.role}` : "", n.note ? `Note: ${n.note}` : "",
+      ...(n.facts || []).map(f => `- ${typeof f === "string" ? f : JSON.stringify(f)}`),
+      "", `## Relations (${rels.length})`,
+      ...rels.map(r => `- ${r.text}  {${confTag(d, r.conf)}}${r.sources.length ? `  src: ${r.sources.join("; ")}` : "  src: none"}`),
+      "", "## Entity sources", ...(j.sources.length ? j.sources.map(s => `- ${s}`) : ["- none"]),
+    ].filter(x => x !== "").join("\n"));
+  },
+
+  links(args) {
+    const rel = opt(args, "rel"), conf = opt(args, "conf"), kind = opt(args, "kind"), domain = opt(args, "domain"), of = opt(args, "of");
+    const d = loadMap(args[0]);
+    const focus = of ? resolve(d, of).id : null;
+    const ls = d.links.filter(l => (!rel || l.rel === rel) && (!conf || l.conf === conf)
+      && (!kind || d.byId[l.s].kind === kind || d.byId[l.t].kind === kind)
+      && (!domain || d.byId[l.s].d === domain || d.byId[l.t].d === domain)
+      && (!focus || l.s === focus || l.t === focus));
+    const rows = ls.map(l => ({ from: l.s, fromLabel: label(d, l.s), rel: l.rel, relText: (d.REL[l.rel] || [l.rel])[0], to: l.t, toLabel: label(d, l.t), conf: l.conf, sources: srcText(d, l.src) }));
+    out(rows, rows.length ? rows.map(r => `${r.fromLabel} [${r.from}] —${r.relText}→ ${r.toLabel} [${r.to}]  {${confTag(d, r.conf)}, ${r.sources.length} src}`).join("\n") + `\n(${rows.length} relations)` : "no matching relations");
+  },
+
+  path(args) {
+    const avoidArg = opt(args, "avoid", ""), max = Number(opt(args, "max", 5));
+    const d = loadMap(args[0]);
+    // names may be several words: split on " to " if given, else first/second arg
+    const rest = args.slice(1).join(" ");
+    const parts = rest.includes(" to ") ? rest.split(" to ") : [args[1], args.slice(2).join(" ")];
+    const a = resolve(d, parts[0].trim()), b = resolve(d, parts[1].trim());
+    const avoid = new Set(avoidArg.split(",").filter(Boolean).map(x => resolve(d, x).id));
+    const paths = bfsPaths(d, a.id, b.id, avoid, max);
+    const j = paths.map(p => p.map(st => ({ from: st.from, to: st.to, rel: st.link.rel, conf: st.link.conf, text: relText(d, st.link, st.from) })));
+    out(j, paths.length
+      ? `${paths.length} shortest chain(s), ${paths[0].length} step(s), ${a.label} → ${b.label}${avoid.size ? ` avoiding ${[...avoid].join(", ")}` : ""}:\n` +
+        j.map((p, i) => `${i + 1}. ${a.label} ` + p.map(s => `—[${s.text.split(/ [→←] /)[0]} {${confTag(d, s.conf)}}]— ${label(d, s.to)}`).join(" ")).join("\n")
+      : `no connection between ${a.label} and ${b.label}${avoid.size ? " with those entities avoided" : ""}`);
+  },
+
+  stats(args) {
+    const d = loadMap(args[0]);
+    const deg = d.NODES.map(n => ({ id: n.id, label: n.label, kind: n.kind, degree: d.adj[n.id].length }));
+    const bc = betweenness(d);
+    const comps = components(d);
+    const crossDomain = count(d.links.filter(l => d.byId[l.s].d !== d.byId[l.t].d), l => [d.byId[l.s].d, d.byId[l.t].d].sort().join(" ↔ "));
+    const j = {
+      entities: d.NODES.length, relations: d.links.length,
+      byKind: count(d.NODES, n => n.kind), byDomain: count(d.NODES, n => n.d), byStatus: count(d.NODES, n => n.status || "n/a"),
+      byConfidence: count(d.links, l => l.conf), byRelation: count(d.links, l => l.rel),
+      hubs: deg.sort((x, y) => y.degree - x.degree).slice(0, 12),
+      brokers: Object.entries(bc).sort((x, y) => y[1] - x[1]).slice(0, 12).map(([id, v]) => ({ id, label: label(d, id), betweenness: Math.round(v) })),
+      components: comps.map(c => c.length), isolated: deg.filter(n => n.degree === 0).map(n => n.id), crossDomain,
+    };
+    out(j, [
+      `# ${d.CONFIG.title}: ${j.entities} entities, ${j.relations} relations`,
+      `Kinds: ${fmtCounts(j.byKind)}`, `Domains: ${fmtCounts(j.byDomain)}`, `Status: ${fmtCounts(j.byStatus)}`,
+      `Evidence: ${fmtCounts(j.byConfidence)}`, `Relations: ${fmtCounts(j.byRelation)}`, "",
+      "## Hubs (most connected)", ...j.hubs.map(h => `- ${h.label} [${h.id}] ${h.degree}`), "",
+      "## Brokers (most shortest paths pass through them)", ...j.brokers.map(b => `- ${b.label} [${b.id}] ${b.betweenness}`), "",
+      `## Structure: ${comps.length} connected component(s), sizes ${j.components.join(", ")}; isolated: ${j.isolated.join(", ") || "none"}`,
+      "## Cross-domain links", fmtCounts(crossDomain),
+    ].join("\n"));
+  },
+
+  weak(args) {
+    const d = loadMap(args[0]);
+    const weakLinks = d.links.filter(l => l.conf === "unv" || !l.src.length);
+    const singlePress = d.links.filter(l => l.conf === "press" && l.src.length === 1);
+    const unsourced = d.NODES.filter(n => !(n.src || []).length);
+    const thin = d.NODES.filter(n => d.adj[n.id].length && d.adj[n.id].every(l => l.conf === "unv" || l.conf === "press"));
+    const j = {
+      caveats: d.CONFIG.caveats || [],
+      weakLinks: weakLinks.map(l => ({ from: l.s, rel: l.rel, to: l.t, conf: l.conf, sources: l.src.length })),
+      singleSourcePress: singlePress.map(l => ({ from: l.s, rel: l.rel, to: l.t, source: srcText(d, l.src)[0] })),
+      unsourcedEntities: unsourced.map(n => n.id), pressOrUnverifiedOnly: thin.map(n => n.id),
+    };
+    out(j, [
+      "## Documented caveats", ...(j.caveats.length ? j.caveats.map(c => `- ${Array.isArray(c) ? c.join(" ") : c}`) : ["- none"]), "",
+      `## Unverified or unsourced relations: ${weakLinks.length} of ${d.links.length}`,
+      ...weakLinks.map(l => `- ${label(d, l.s)} —${(d.REL[l.rel] || [l.rel])[0]}→ ${label(d, l.t)}  {${confTag(d, l.conf)}, ${l.src.length} src}`), "",
+      `## Press reports resting on a single source: ${singlePress.length}`,
+      ...singlePress.map(l => `- ${label(d, l.s)} —${(d.REL[l.rel] || [l.rel])[0]}→ ${label(d, l.t)}  (${(d.SRC[l.src[0]] || [l.src[0]])[0]})`), "",
+      `## Entities with no sources: ${unsourced.length}`, unsourced.map(n => `${n.label} [${n.id}]`).join(", ") || "none", "",
+      `## Entities known only from press or unverified links: ${thin.length}`, thin.map(n => `${n.label} [${n.id}]`).join(", ") || "none",
+    ].join("\n"));
+  },
+
+  shared() {
+    const index = {};
+    for (const m of mapNames()) {
+      const d = loadMap(m);
+      for (const n of d.NODES) (index[fold(n.label)] ||= []).push({ map: m, id: n.id, label: n.label, kind: n.kind });
+    }
+    const rows = Object.values(index).filter(v => new Set(v.map(x => x.map)).size > 1);
+    out(rows, rows.length ? rows.map(v => `${v[0].label}: ` + v.map(x => `${x.map}/${x.id}`).join(", ")).join("\n") : "no entity appears in more than one map (by exact name)");
+  },
+
+  dump(args) {
+    const d = loadMap(args[0]);
+    console.log(JSON.stringify({ config: d.CONFIG, domains: d.DOMAINS, kinds: d.KINDS, confidence: d.CONF, relations: d.REL, sources: d.SRC, entities: d.NODES, links: d.links }, null, 1));
+  },
+};
+
+
+// ---------- proposals ----------
+
+const ENGINE = path.join(ROOT, "engine");
+const STATES = ["pending", "applied", "rejected", "reverted"];
+const propDir = (m, st) => path.join(ROOT, m, "proposals", st);
+const profDir = m => path.join(ROOT, m, "profiles");
+const ALIASES = { appoints: "appointed", member: "member_of", partner: "partners", supply: "supplies", own: "owns" };
+const BASE_RELS = ["appointed", "member_of", "founded", "oversees"];
+
+function readJson(file) {
+  try { return JSON.parse(fs.readFileSync(file === "-" ? 0 : file, "utf8")); }
+  catch (e) { fail(`could not read proposal JSON: ${e.message}`); }
+}
+
+function findProposal(m, id) {
+  for (const st of STATES) {
+    const f = path.join(propDir(m, st), `${id}.json`);
+    if (fs.existsSync(f)) return { state: st, file: f, data: readJson(f) };
+  }
+  fail(`no proposal ${id} for ${m}; see: aeris-onto proposals ${m}`);
+}
+
+// merge order: profiles/ORDER first (reproduces the published map), then any other profile by name
+function profileOrder(m) {
+  const dir = profDir(m);
+  if (!fs.existsSync(dir)) return [];
+  const listed = fs.existsSync(path.join(dir, "ORDER"))
+    ? fs.readFileSync(path.join(dir, "ORDER"), "utf8").split("\n").map(x => x.trim()).filter(Boolean) : [];
+  const all = fs.readdirSync(dir).filter(f => f.endsWith(".json")).sort();
+  return [...listed.filter(f => all.includes(f)), ...all.filter(f => !listed.includes(f))];
+}
+
+function setOrder(m, files) {
+  fs.mkdirSync(profDir(m), { recursive: true });
+  fs.writeFileSync(path.join(profDir(m), "ORDER"), files.join("\n") + "\n");
+}
+
+function merge(m, dataFile, files) {
+  const { spawnSync } = require("child_process");
+  const r = spawnSync("python3", ["-I", path.join(ENGINE, "merge_profiles.py"), dataFile, ...files.map(f => path.join(profDir(m), f))], { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`merge failed: ${r.stderr || r.stdout}`);
+  return r.stdout.trim();
+}
+
+function validate(d, P) {
+  const errors = [], warnings = [];
+  const ids = new Set(d.NODES.map(n => n.id));
+  const newIds = new Set();
+  const hasSrc = arr => Array.isArray(arr) && arr.length && arr.every(x => Array.isArray(x) && x.length >= 2 && x[1]);
+  const FIELDS = {
+    new_entities: ["id", "label", "short", "kind", "domain", "status", "role", "note", "sources"],
+    entities: ["id", "label", "short", "role", "note", "status", "facts", "sources"],
+    relations: ["s", "t", "rel", "conf", "source"],
+  };
+  const HINT = { type: "kind", name: "label", title: "label", description: "note", from: "s", to: "t", source_id: "s", target_id: "t",
+                 relation: "rel", confidence: "conf", url: "sources", src: "sources", sources: "source", domain_id: "domain" };
+  const known = new Set([...Object.keys(FIELDS), "title", "rationale", "domain", "drop_relations", "created"]);
+  for (const k of Object.keys(P)) if (!known.has(k)) errors.push(`unknown top-level key "${k}"; allowed: ${[...known].filter(x => x !== "created").join(", ")}`);
+  for (const [section, allowed] of Object.entries(FIELDS)) {
+    if (P[section] !== undefined && !Array.isArray(P[section])) { errors.push(`"${section}" must be a list`); continue; }
+    for (const x of P[section] || []) for (const k of Object.keys(x || {})) {
+      if (!allowed.includes(k)) errors.push(`${section} item ${x.id || `${x.s}→${x.t}`}: unknown field "${k}"` + (HINT[k] && allowed.includes(HINT[k]) ? `; use "${HINT[k]}"` : `; allowed: ${allowed.join(", ")}`));
+    }
+  }
+  for (const n of P.new_entities || []) {
+    const existing = d.NODES.find(x => x.id === n.id || fold(x.label) === fold(n.label) || fold(x.id) === fold(String(n.id).replace(/[-\s]/g, "")));
+    if (!/^\w+$/.test(n.id || "")) errors.push(`new entity id "${n.id}" must be letters, digits or _ (e.g. "${String(n.id).toLowerCase().replace(/\W+/g, "_")}")`);
+    if (existing) errors.push(`new entity "${n.id}" is already on the map as ${existing.label} [${existing.id}]: do not create it; refer to "${existing.id}" in relations, or put new facts in "entities"`);
+    else if (newIds.has(n.id)) errors.push(`new entity id "${n.id}" is listed twice`);
+    if (!d.KINDS[n.kind]) errors.push(`new entity ${n.id}: kind "${n.kind}" not in ${Object.keys(d.KINDS).join("|")}`);
+    if (!d.DOMAINS[n.domain]) errors.push(`new entity ${n.id}: domain "${n.domain}" not in ${Object.keys(d.DOMAINS).join("|")}`);
+    if (!n.label) errors.push(`new entity ${n.id}: label missing`);
+    if (!hasSrc(n.sources)) errors.push(`new entity ${n.id}: needs sources [["title","url"], ...]`);
+    newIds.add(n.id);
+  }
+  for (const e of P.entities || []) {
+    if (!ids.has(e.id) && !newIds.has(e.id)) errors.push(`entity update "${e.id}": not on the map`);
+    if (!hasSrc(e.sources)) errors.push(`entity update ${e.id}: needs sources for the new information`);
+    if (e.status && !["active", "former", "unverified", "deceased"].includes(e.status)) errors.push(`entity update ${e.id}: bad status "${e.status}"`);
+    const current = (d.byId[e.id]?.facts || []).length;
+    if (e.facts && current + e.facts.length > 12) warnings.push(`${e.id} would have ${current + e.facts.length} facts; the map keeps 12, so some will be cut`);
+  }
+  const edges = new Set(d.links.map(l => `${l.s}|${l.t}|${l.rel}`));
+  for (const r of P.relations || []) {
+    for (const end of [r.s, r.t]) if (!ids.has(end) && !newIds.has(end)) {
+      const guess = d.NODES.filter(x => fold(x.label).includes(fold(end).replace(/[-_]/g, " ")) || fold(x.id).includes(fold(end).replace(/[-_\s]/g, ""))).slice(0, 3);
+      errors.push(`relation ${r.s}→${r.t}: unknown entity "${end}"` + (guess.length ? `; did you mean ${guess.map(x => `"${x.id}" (${x.label})`).join(" or ")}?` : "; add it to new_entities or use `find` to get its id"));
+    }
+    if (r.s === r.t) errors.push(`relation ${r.s}→${r.t}: links an entity to itself`);
+    const rel = ALIASES[r.rel] || r.rel;
+    if (!d.REL[rel] && !BASE_RELS.includes(rel) && !String(r.rel).startsWith("other:"))
+      errors.push(`relation ${r.s}→${r.t}: rel "${r.rel}" is not in the schema; use a schema relation or "other: verb phrase"`);
+    if (!d.CONF[r.conf]) errors.push(`relation ${r.s}→${r.t}: conf "${r.conf}" not in ${Object.keys(d.CONF).join("|")}`);
+    if (!Array.isArray(r.source) || !r.source[1]) errors.push(`relation ${r.s}→${r.t}: needs "source": ["title","url"]`);
+    if (edges.has(`${r.s}|${r.t}|${rel}`)) warnings.push(`relation ${r.s}→${r.t} (${rel}) already exists and will be skipped`);
+  }
+  for (const dr of P.drop_relations || []) {
+    if (!edges.has(dr.join("|"))) errors.push(`drop ${dr.join(" ")}: no such relation`);
+  }
+  if (!(P.new_entities || []).length && !(P.entities || []).length && !(P.relations || []).length && !(P.drop_relations || []).length)
+    errors.push("proposal is empty");
+  if (!P.title) errors.push('proposal needs a "title"');
+  return { errors, warnings };
+}
+
+// build the map with the given profile list into a scratch copy and load it
+function simulate(m, files) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aeris-onto-"));
+  const file = path.join(tmp, "data.js");
+  fs.copyFileSync(path.join(ROOT, m, "data", "data.js"), file);
+  const log = merge(m, file, files);
+  const d = loadMap(m, file);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  return { d, log };
+}
+
+function diffMaps(a, b) {
+  const lines = [];
+  const linkKey = l => `${l.s}|${l.t}|${l.rel}`;
+  const aLinks = new Set(a.links.map(linkKey)), bLinks = new Set(b.links.map(linkKey));
+  for (const n of b.NODES) if (!a.byId[n.id]) lines.push(`+ entity ${n.label} [${n.id}] (${n.kind}, ${n.d}${n.role ? `, ${n.role}` : ""})`);
+  for (const n of a.NODES) if (!b.byId[n.id]) lines.push(`- entity ${n.label} [${n.id}]`);
+  for (const n of b.NODES) {
+    const o = a.byId[n.id];
+    if (!o) continue;
+    for (const k of ["label", "role", "status", "note"]) if ((o[k] || "") !== (n[k] || "")) lines.push(`~ ${n.id}.${k}: "${o[k] || ""}" → "${n[k] || ""}"`);
+    const of = JSON.stringify(o.facts || []), nf = JSON.stringify(n.facts || []);
+    if (of !== nf) (n.facts || []).filter(f => !(o.facts || []).some(g => JSON.stringify(g) === JSON.stringify(f))).forEach(f => lines.push(`~ ${n.id} fact + ${Array.isArray(f) ? f.join(": ") : f}`));
+    const added = (n.src || []).filter(x => !(o.src || []).includes(x));
+    if (added.length) lines.push(`~ ${n.id} sources + ${srcText(b, added).join("; ")}`);
+  }
+  for (const l of b.links) if (!aLinks.has(linkKey(l))) lines.push(`+ ${label(b, l.s)} —${(b.REL[l.rel] || [l.rel])[0]}→ ${label(b, l.t)}  {${confTag(b, l.conf)}}  src: ${srcText(b, l.src).join("; ") || "none"}`);
+  for (const l of a.links) if (!bLinks.has(linkKey(l))) lines.push(`- ${label(a, l.s)} —${(a.REL[l.rel] || [l.rel])[0]}→ ${label(a, l.t)}`);
+  return lines;
+}
+
+function rebuild(m, files) {
+  const { spawnSync } = require("child_process");
+  const log = merge(m, path.join(ROOT, m, "data", "data.js"), files);
+  const r = spawnSync("bash", [path.join(ENGINE, "build-all.sh")], { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`build-all.sh failed: ${r.stderr || r.stdout}`);
+  loadMap(m); // sanity: the merged data must still load
+  return log;
+}
+
+function move(m, id, from, to, extra) {
+  const src = path.join(propDir(m, from), `${id}.json`);
+  const data = { ...readJson(src), ...extra };
+  fs.mkdirSync(propDir(m, to), { recursive: true });
+  fs.writeFileSync(path.join(propDir(m, to), `${id}.json`), JSON.stringify(data, null, 1));
+  fs.rmSync(src);
+}
+
+// local time: "YYYY-MM-DD HH:MM"
+const now = () => { const t = new Date(); return new Date(t - t.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace("T", " "); };
+
+Object.assign(cmds, {
+  propose(args) {
+    const m = String(args[0]).toLowerCase();
+    const P = readJson(args[1] || "-");
+    const d = loadMap(m);
+    const { errors, warnings } = validate(d, P);
+    if (errors.length) fail("proposal rejected by validation:\n- " + errors.join("\n- "));
+    const id = now().replace(/[-:]/g, "").replace(" ", "-") + "-" +
+      (String(P.title).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "proposal");
+    fs.mkdirSync(propDir(m, "pending"), { recursive: true });
+    fs.writeFileSync(path.join(propDir(m, "pending"), `${id}.json`), JSON.stringify({ ...P, created: now() }, null, 1));
+    const { d: after } = simulate(m, [...profileOrder(m), `../proposals/pending/${id}.json`]);
+    const changes = diffMaps(d, after);
+    out({ id, warnings, changes }, [`staged proposal ${id} for ${m}: ${changes.length} change(s)`, ...warnings.map(w => `warning: ${w}`),
+      ...changes.slice(0, 40), changes.length > 40 ? `… ${changes.length - 40} more (aeris-onto review ${m} ${id})` : "",
+      `The principal approves with: aeris-onto apply ${m} ${id}`].filter(Boolean).join("\n"));
+  },
+
+  proposals(args) {
+    const m = String(args[0]).toLowerCase();
+    const rows = [];
+    for (const st of STATES) {
+      if (!fs.existsSync(propDir(m, st))) continue;
+      for (const f of fs.readdirSync(propDir(m, st)).filter(f => f.endsWith(".json")).sort()) {
+        const P = readJson(path.join(propDir(m, st), f));
+        rows.push({ id: f.slice(0, -5), state: st, title: P.title, created: P.created, entities: (P.new_entities || []).length, updates: (P.entities || []).length, relations: (P.relations || []).length, drops: (P.drop_relations || []).length });
+      }
+    }
+    out(rows, rows.length ? rows.map(r => `${r.state.padEnd(9)} ${r.id}  "${r.title}"  (+${r.entities} entities, ${r.updates} updates, +${r.relations} relations, -${r.drops})`).join("\n") : `no proposals for ${m}`);
+  },
+
+  review(args) {
+    const m = String(args[0]).toLowerCase(), id = args[1];
+    const pr = findProposal(m, id);
+    const d = loadMap(m);
+    const order = profileOrder(m);
+    let before = d, afterFiles;
+    if (pr.state === "applied") {
+      before = simulate(m, order.filter(f => f !== `${id}.json`)).d;
+      afterFiles = order;
+    } else {
+      afterFiles = [...order, `../proposals/${pr.state}/${id}.json`];
+    }
+    const { errors, warnings } = pr.state === "applied" ? { errors: [], warnings: [] } : validate(d, pr.data);
+    const { d: after, log } = simulate(m, afterFiles);
+    const changes = diffMaps(before, after);
+    out({ id, state: pr.state, title: pr.data.title, rationale: pr.data.rationale, errors, warnings, changes, mergeLog: log },
+      [`# ${pr.data.title}  [${id}, ${pr.state}]`, pr.data.rationale ? `Rationale: ${pr.data.rationale}` : "",
+       ...errors.map(e => `ERROR: ${e}`), ...warnings.map(w => `warning: ${w}`), "", `## Changes to ${m} (${changes.length})`, ...changes].filter(x => x !== "").join("\n"));
+  },
+
+  apply(args) {
+    const m = String(args[0]).toLowerCase(), id = args[1];
+    const pr = findProposal(m, id);
+    if (pr.state !== "pending") fail(`${id} is ${pr.state}, not pending`);
+    const d = loadMap(m);
+    const { errors } = validate(d, pr.data);
+    if (errors.length) fail("proposal no longer validates (the map changed?):\n- " + errors.join("\n- "));
+    const order = profileOrder(m);
+    const file = `${id}.json`;
+    fs.mkdirSync(profDir(m), { recursive: true });
+    const profile = { ...pr.data };
+    fs.writeFileSync(path.join(profDir(m), file), JSON.stringify(profile, null, 1));
+    try {
+      const log = rebuild(m, [...order, file]);
+      setOrder(m, [...order, file]);
+      move(m, id, "pending", "applied", { applied: now() });
+      const after = loadMap(m);
+      out({ id, applied: true, merge: log }, `applied ${id} to ${m}: now ${after.NODES.length} entities, ${after.links.length} relations; pages rebuilt.\n${log}`);
+    } catch (e) {
+      fs.rmSync(path.join(profDir(m), file), { force: true });
+      try { rebuild(m, order); } catch (_) { /* report the original error */ }
+      fail(`apply failed and was rolled back: ${e.message}`);
+    }
+  },
+
+  reject(args) {
+    const m = String(args[0]).toLowerCase(), id = args[1];
+    const pr = findProposal(m, id);
+    if (pr.state !== "pending") fail(`${id} is ${pr.state}, not pending`);
+    move(m, id, "pending", "rejected", { rejected: now(), reason: args.slice(2).join(" ") });
+    out({ id, rejected: true }, `rejected ${id}`);
+  },
+
+  revert(args) {
+    const m = String(args[0]).toLowerCase(), id = args[1];
+    const pr = findProposal(m, id);
+    if (pr.state !== "applied") fail(`${id} is ${pr.state}, not applied`);
+    const order = profileOrder(m).filter(f => f !== `${id}.json`);
+    fs.rmSync(path.join(profDir(m), `${id}.json`), { force: true });
+    rebuild(m, order);
+    setOrder(m, order);
+    move(m, id, "applied", "reverted", { reverted: now() });
+    const after = loadMap(m);
+    out({ id, reverted: true }, `reverted ${id}: ${m} back to ${after.NODES.length} entities, ${after.links.length} relations; pages rebuilt.`);
+  },
+});
+
+// ---------- main ----------
+
+const argv = process.argv.slice(2);
+const JSON_MODE = argv.includes("--json");
+const args = argv.filter(a => a !== "--json");
+const cmd = args.shift();
+if (!cmd || cmd === "-h" || cmd === "--help" || !cmds[cmd]) {
+  console.log(HELP);
+  process.exit(cmd && !["-h", "--help"].includes(cmd) ? 1 : 0);
+}
+if (!["maps", "shared"].includes(cmd) && !args[0]) fail(`${cmd} needs a MAP (one of: ${mapNames().join(", ")})`);
+cmds[cmd](args);

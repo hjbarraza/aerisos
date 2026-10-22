@@ -1,0 +1,81 @@
+@define-color bg #0a0a0a;
+@define-color fg #e6e6e6;
+@define-color dim #7a7a7a;
+@define-color warn #ffffff;
+
+* {
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+  font-family: "Söhne", "NotoSansM Nerd Font", sans-serif;
+  font-size: 12px;
+}
+
+window#waybar { background-color: @bg; color: @fg; }
+
+.modules-left  { margin-left: 8px; }
+.modules-right { margin-right: 8px; }
+
+#custom-logo { font-family: "Söhne"; font-weight: 700; font-size: 15px; color: #ffffff; margin: 0 10px 0 4px; }  /* AerisOS Æ mark */
+
+#workspaces button {
+  all: initial;            /* drop GTK button styling */
+  padding: 0 6px;
+  margin: 0 1.5px;
+  min-width: 9px;
+  color: @fg;
+  font-family: "Söhne", "NotoSansM Nerd Font", sans-serif;
+  font-size: 12px;
+}
+#workspaces button.empty { color: @dim; }
+#workspaces button:hover { color: #ffffff; }
+
+#tray, #custom-tailscale, #bluetooth, #network, #pulseaudio, #cpu, #battery, #custom-expand-icon {
+  min-width: 12px;
+  margin: 0 7.5px;
+}
+#custom-expand-icon { margin-left: 4px; }
+
+#battery.warning:not(.charging), #battery.critical:not(.charging) { color: @warn; }
+#bluetooth.disabled, #bluetooth.off, #network.disconnected,
+#custom-tailscale.off, #custom-tailscale.disconnected { color: @dim; }
+
+tooltip { background: @bg; border: 1px solid #262626; border-radius: 6px; padding: 4px; }
+tooltip label { color: @fg; }
+
+/* Voxtype dictation status (Lucide icons) */
+#custom-voxtype {
+  font-family: "lucide";
+  font-size: 13px;
+  min-width: 12px;
+  margin: 0 7.5px;
+  color: @dim;
+}
+#custom-voxtype.recording    { color: #ffffff; }
+#custom-voxtype.transcribing { color: #b0b0b0; }
+#custom-voxtype.stopped      { color: #3a3a3a; }
+
+/* Center indicators (Omarchy-style): only visible while active */
+#custom-dnd, #custom-stay-awake {
+  font-family: "lucide";
+  font-size: 12px;
+  color: @fg;
+}
+#custom-dnd.on, #custom-stay-awake.on { margin: 0 8px; }
+
+/* Microphone + brightness */
+#pulseaudio.mic { font-family: "lucide"; font-size: 13px; }
+#pulseaudio.mic.source-muted { color: @dim; }
+#backlight { margin: 0 7.5px; min-width: 12px; }
+#clock { margin: 0 6px; }
+
+/* Recording + night light indicators */
+#custom-recording, #custom-nightlight { font-family: "lucide"; font-size: 12px; color: @fg; }
+#custom-recording.on, #custom-nightlight.on { margin: 0 8px; }
+#custom-recording.on { color: #ffffff; }
+
+/* Power mode: icon brightness shows the mode */
+#power-profiles-daemon { font-family: "lucide"; font-size: 12px; margin: 0 7.5px; min-width: 12px; }
+#power-profiles-daemon.power-saver { color: @dim; }
+#power-profiles-daemon.balanced    { color: @fg; }
+#power-profiles-daemon.performance { color: #ffffff; }

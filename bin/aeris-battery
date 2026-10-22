@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Low-battery alerts (run every minute by aeris-battery.timer): a notice at 15%,
+# a critical alert at 7%, each once per discharge.
+
+bat=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1)
+[[ -n $bat ]] || exit 0
+capacity=$(cat "$bat/capacity")
+status=$(cat "$bat/status")
+state="${XDG_RUNTIME_DIR:-/tmp}/aeris-battery"
+
+if [[ $status != Discharging ]]; then
+    rm -f "$state"
+    exit 0
+fi
+
+last=$(cat "$state" 2>/dev/null || echo 100)
+if (( capacity <= 7 && last > 7 )); then
+    notify-send -u critical -i battery-caution "Battery critical: ${capacity}%" "Plug in now: the laptop will shut down soon."
+    echo 7 > "$state"
+elif (( capacity <= 15 && last > 15 )); then
+    notify-send -u normal -i battery-low "Battery low: ${capacity}%" "Plug in soon."
+    echo 15 > "$state"
+fi

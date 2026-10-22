@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""AERIS watchlist: standing collection requirements, checked on a timer.
+
+Item types (all keyless, passive sources):
+  topic   news mentions, via Google News RSS search; one item can hold several feeds
+          (query + language/region), e.g. the same requirement in English and Polish
+  domain  new TLS certificates (crt.sh certificate transparency) and A/AAAA record changes
+  url     changes to a page's visible text
+
+Usage:
+  aeris-watch list [--feeds] [--json]
+  aeris-watch add [topic|domain|url] QUERY [--name NAME] [--note TEXT] [--lang es-MX]
+                                     (type defaults to topic; --lang defaults to en-US)
+  aeris-watch add-feed NAME QUERY [--lang pl-PL]   add another query/language to a topic item
+  aeris-watch drop-feed NAME INDEX                 remove a feed (see: list --feeds)
+  aeris-watch note NAME TEXT                       replace an item's note
+  aeris-watch remove NAME
+  aeris-watch check [NAME]           collect now (the timer runs this a few times a day)
+  aeris-watch report [NAME]          new findings not yet acknowledged
+  aeris-watch log [NAME]             ALL findings per item: unacknowledged, then archive
+  aeris-watch ack NAME|--all         mark findings as reviewed (moves them to the archive; nothing is deleted)
+
+Every state change also rewrites ~/.local/share/aeris/watch.html — a readable page
+listing each item's note and full article history with links.
+
+The first check of a new item (or after a feed change) only records a baseline; later checks
+report what is new.
+
+Topic queries: keep them short and use OR, quotes and parentheses, e.g.
+  (SEDENA OR SEMAR OR "Guardia Nacional") (ciberseguridad OR hackeo)
+Every bare word must match, so long lists of words return almost nothing. Use the target's own
+language and region for non-English subjects (es-MX, pl-PL, lt-LT, uk-UA, ru-RU, fi-FI, ...).
+"""
+import argparse
+import fcntl
+import hashlib
+import html
+import json
+import os
+import re
+import socket
+import sys
+import time
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from contextlib import contextmanager
+
+DATA_DIR = os.path.expanduser("~/.local/share/aeris")
+DATA = os.path.join(DATA_DIR, "watchlist.json")
+LOCK = os.path.join(DATA_DIR, "watchlist.lock")
+UA = "Mozilla/5.0 (X11; Linux x86_64) AERIS-watch/1.0"
+TYPES = ("topic", "domain", "url")
+MAX_SEEN = 500
+MAX_NEW = 25
+
+
+@contextmanager
+def locked():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(LOCK, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        data = load()
+        yield data
+        save(data)
+
+
+def load():
+    try:
+        with open(DATA) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"items": []}
+
+
+HISTORY_FILE = os.path.join(DATA_DIR, "watch.html")
+
+
+def save(data):
+    tmp = DATA + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=1, ensure_ascii=False)
+    os.replace(tmp, DATA)
+    try:
+        write_html(data)
+    except Exception:
+        pass  # the reader page never blocks state changes
+
+
+def wescape(text):
+    return html.escape(str(text or ""), quote=True)
+
+
+def write_html(data):
+    """Readable page with every finding per item: unacknowledged first, then archive."""
+    out = ["<!doctype html><meta charset=utf-8><title>AERIS watchlist</title><style>"
+           "body{font:14px/1.45 system-ui,sans-serif;margin:24px auto;max-width:1000px;color:#eee;background:#161616}"
+           "a{color:#8ab4f8}h2{margin:28px 0 4px}small{color:#999}table{border-collapse:collapse;width:100%}"
+           "td{padding:3px 10px 3px 0;border-top:1px solid #2a2a2a;vertical-align:top;white-space:nowrap}"
+           "td.t{white-space:normal}.new{color:#ffd54f;font-weight:bold;padding-right:6px}"
+           ".note{color:#bbb;margin:2px 0 8px}.chip{background:#333;border-radius:4px;padding:0 6px;margin-left:8px;font-size:12px}</style>"]
+    out.append("<h1>AERIS watchlist</h1><small>regenerated %s &middot; yellow date = unacknowledged</small>"
+               % wescape(time.strftime("%Y-%m-%d %H:%M")))
+    for i in data["items"]:
+        pend = i.get("new", []) or []
+        arch = i.get("archive", []) or []
+        out.append(f"<h2>{wescape(i['name'])}<span class=chip>{wescape(i['type'])}"
+                   f" &middot; {len(pend)} unack &middot; {len(arch)} archived</span></h2>")
+        if i.get("note"):
+            out.append(f"<div class=note>{wescape(i['note'])}</div>")
+        if i.get("error"):
+            out.append(f"<div class=note>last error: {wescape(i['error'])}</div>")
+        out.append("<table>")
+        for a in pend + arch:
+            pending = a in pend
+            title = wescape(a.get("title"))
+            link = a.get("link") or ""
+            if link.startswith("http"):
+                title = f'<a href="{wescape(link)}">{title}</a>'
+            out.append(("<tr><td>%s%s</td><td class=t>%s</td></tr>"
+                        % ("<span class=new>&#9733;</span>" if pending else "",
+                           wescape(a.get("date", "")), title)))
+        out.append("</table>")
+    with open(HISTORY_FILE, "w") as f:
+        f.write("\n".join(out))
+    os.chmod(HISTORY_FILE, 0o644)
+
+
+def fetch(url, timeout=30):
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        return res.read()
+
+
+def news_params(lang):
+    """Google News locale parameters for a language-REGION code such as es-MX or pl-PL."""
+    language, _, region = lang.partition("-")
+    region = (region or "US").upper()
+    if language == "es" and region != "ES":
+        language = "es-419"  # Google News serves Latin American Spanish as es-419
+    elif language in ("en", "pt", "zh"):
+        language = f"{language}-{region}"
+    return f"hl={language}&gl={region}&ceid={region}:{language}"
+
+
+def feeds(item):
+    """Topic feeds; items created before multi-feed support carry a single English query."""
+    return item.get("feeds") or [{"query": item["query"], "lang": "en-US"}]
+
+
+def describe(item):
+    if item["type"] != "topic":
+        return item["query"]
+    return " | ".join(f"[{f['lang']}] {f['query']}" for f in feeds(item))
+
+
+def slug(text):
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "item"
+
+
+def find(data, name):
+    for item in data["items"]:
+        if item["name"] == name:
+            return item
+    sys.exit(f"aeris-watch: no item named {name!r} (see: aeris-watch list)")
+
+
+# --- collectors: each returns (findings, fingerprint); findings are dicts with id/title/link/date ---
+
+def collect_topic(item):
+    findings = []
+    for n, feed in enumerate(feeds(item)):
+        q = urllib.parse.quote(feed["query"])
+        root = ET.fromstring(fetch(f"https://news.google.com/rss/search?q={q}&{news_params(feed['lang'])}"))
+        for entry in root.iter("item"):
+            title = html.unescape(entry.findtext("title") or "").strip()
+            findings.append({
+                "id": entry.findtext("guid") or entry.findtext("link") or title,
+                "title": f"[{feed['lang']}] {title}",
+                "link": entry.findtext("link") or "",
+                "date": entry.findtext("pubDate") or "",
+                "_feed": n,  # remember the feed so check_item can interleave them fairly
+            })
+    return findings, None
+
+
+def domain_certs(domain):
+    """New certificates from certificate transparency: CertSpotter first, crt.sh as fallback."""
+    try:
+        issuances = json.loads(fetch(
+            f"https://api.certspotter.com/v1/issuances?domain={urllib.parse.quote(domain)}"
+            "&include_subdomains=true&expand=dns_names&expand=issuer", 45))
+        return [{
+            "id": f"ctsp:{c['id']}",
+            "title": f"New certificate: {', '.join(c.get('dns_names', []))[:200]} (issuer: {(c.get('issuer') or {}).get('friendly_name', '?')})",
+            "link": f"https://crt.sh/?q={c.get('cert_sha256', '')}",
+            "date": c.get("not_before", ""),
+        } for c in issuances]
+    except Exception:
+        certs = json.loads(fetch(f"https://crt.sh/?q={urllib.parse.quote('%.' + domain)}&output=json&exclude=expired", 60) or b"[]")
+        return [{
+            "id": f"crt:{c.get('id')}",
+            "title": f"New certificate: {', '.join(sorted(set(c.get('name_value', '').split(chr(10)))))[:200]} (issuer: {c.get('issuer_name', '?')[:80]})",
+            "link": f"https://crt.sh/?id={c.get('id')}",
+            "date": c.get("not_before", ""),
+        } for c in certs]
+
+
+def collect_domain(item):
+    domain = item["query"].lower().strip().rstrip(".")
+    try:
+        addrs = sorted({a[4][0] for a in socket.getaddrinfo(domain, None)})
+    except socket.gaierror:
+        addrs = []
+    fingerprint = ",".join(addrs) or "NXDOMAIN"
+    try:
+        findings = domain_certs(domain)
+        item.pop("warning", None)
+    except Exception as exc:  # certificate logs down: still track DNS, retry certificates next run
+        item["warning"] = f"certificate logs unavailable ({type(exc).__name__})"
+        findings = [{"id": i} for i in item.get("seen", [])]
+    return findings, fingerprint
+
+
+def collect_url(item):
+    text = fetch(item["query"]).decode("utf-8", "replace")
+    text = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", html.unescape(text)).strip()
+    return [], hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+COLLECTORS = {"topic": collect_topic, "domain": collect_domain, "url": collect_url}
+
+
+def interleaved(findings):
+    """Round-robin across feeds so no language crowds another out of the new-list cap."""
+    buckets = {}
+    for f in findings:
+        buckets.setdefault(f.get("_feed", 0), []).append(f)
+    out = []
+    while any(buckets.values()):
+        for key in sorted(buckets):
+            if buckets[key]:
+                out.append(buckets[key].pop(0))
+    return out
+
+
+def check_item(item):
+    now = time.strftime("%Y-%m-%d %H:%M")
+    try:
+        findings, fingerprint = COLLECTORS[item["type"]](item)
+    except Exception as exc:  # network errors etc. are recorded, not fatal
+        item["error"] = f"{type(exc).__name__}: {exc}"[:200]
+        item["last_checked"] = now
+        return 0
+    item.pop("error", None)
+    baseline = "last_checked" not in item or item.get("baseline_pending", False)
+    seen = set(item.get("seen", []))
+    fresh = [f for f in findings if f["id"] not in seen]
+    if fingerprint is not None and item.get("fingerprint") not in (None, fingerprint) and not baseline:
+        label = "DNS records" if item["type"] == "domain" else "Page content"
+        fresh.append({"id": f"fp:{fingerprint}:{now}", "title": f"{label} changed: {item['fingerprint']} -> {fingerprint}",
+                      "link": item["query"] if item["type"] == "url" else "", "date": now})
+    item["seen"] = list(dict.fromkeys([f["id"] for f in findings] + item.get("seen", [])))[:MAX_SEEN]
+    if fingerprint is not None:
+        item["fingerprint"] = fingerprint
+    item["last_checked"] = now
+    item.pop("baseline_pending", None)
+    if baseline or not fresh:
+        return 0
+    item["new"] = (fresh + item.get("new", []))[:MAX_NEW]
+    item["last_changed"] = now
+    return len(fresh)
+
+
+# --- commands ---
+
+def cmd_list(args):
+    data = load()
+    if args.json:
+        print(json.dumps([{**{k: v for k, v in i.items() if k != "seen"}, **({"feeds": feeds(i)} if i["type"] == "topic" else {})}
+                          for i in data["items"]], indent=1, ensure_ascii=False))
+        return
+    if not data["items"]:
+        print("Watchlist is empty. Add one with: aeris-watch add topic|domain|url QUERY")
+    for i in data["items"]:
+        state = "ERROR" if i.get("error") else (f"CHANGED +{len(i['new'])}" if i.get("new") else "QUIET")
+        state += "*" if i.get("warning") else ""
+        langs = ",".join(f["lang"] for f in feeds(i)) if i["type"] == "topic" else "-"
+        print(f"{i['name']:<28} {i['type']:<7} {state:<12} {langs:<18} checked {i.get('last_checked', 'never'):<17}"
+              + (f"  # {i['note']}" if i.get("note") else "") + (f"  ({i['warning']})" if i.get("warning") else ""))
+        if args.feeds:
+            if i["type"] == "topic":
+                for n, f in enumerate(feeds(i)):
+                    print(f"    {n}  [{f['lang']}] {f['query']}")
+            else:
+                print(f"    {i['query']}")
+
+
+def cmd_add(args):
+    # "add topic|domain|url QUERY", or "add QUERY" for a news topic
+    args.type, words = (args.words[0], args.words[1:]) if args.words[0] in TYPES and len(args.words) > 1 else ("topic", args.words)
+    # a leading slug-like word without --name is the item name, not search text
+    if not args.name and len(words) > 1 and re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)+", words[0]):
+        args.name, words = words[0], words[1:]
+    args.query = " ".join(words)
+    if args.type == "url" and not re.match(r"https?://", args.query):
+        sys.exit("aeris-watch: url items need a full http(s):// address")
+    with locked() as data:
+        name = slug(args.name or args.query)
+        if any(i["name"] == name for i in data["items"]):
+            sys.exit(f"aeris-watch: {name!r} already exists")
+        item = {"name": name, "type": args.type, "note": args.note or "",
+                "added": time.strftime("%Y-%m-%d %H:%M"), "baseline_pending": True}
+        if args.type == "topic":
+            item["feeds"] = [{"query": args.query, "lang": args.lang}]
+        else:
+            item["query"] = args.query
+        data["items"].append(item)
+        check_item(item)  # record the baseline now so the next check reports only what is new
+    print(f"added {name} ({args.type}: {describe(item)}); baseline recorded" + (f", error: {item['error']}" if item.get("error") else ""))
+
+
+def cmd_add_feed(args):
+    with locked() as data:
+        item = find(data, args.name)
+        if item["type"] != "topic":
+            sys.exit("aeris-watch: only topic items have feeds")
+        item["feeds"] = feeds(item) + [{"query": " ".join(args.query), "lang": args.lang}]
+        item.pop("query", None)
+        item["baseline_pending"] = True  # absorb the new feed's backlog without flagging it
+        check_item(item)
+    print(f"{args.name}: {describe(item)}")
+
+
+def cmd_drop_feed(args):
+    with locked() as data:
+        item = find(data, args.name)
+        current = feeds(item)
+        if not 0 <= args.index < len(current) or len(current) == 1:
+            sys.exit("aeris-watch: bad index, or it is the item's only feed (remove the item instead)")
+        del current[args.index]
+        item["feeds"] = current
+        item.pop("query", None)
+    print(f"{args.name}: {describe(item)}")
+
+
+def cmd_note(args):
+    with locked() as data:
+        find(data, args.name)["note"] = " ".join(args.text)
+    print(f"{args.name}: note updated")
+
+
+def cmd_remove(args):
+    with locked() as data:
+        find(data, args.name)
+        data["items"] = [i for i in data["items"] if i["name"] != args.name]
+    print(f"removed {args.name}")
+
+
+def cmd_check(args):
+    with locked() as data:
+        items = [find(data, args.name)] if args.name else data["items"]
+        for item in items:
+            n = check_item(item)
+            status = f"error: {item['error']}" if item.get("error") else (f"{n} new" if n else "no change")
+            print(f"{item['name']}: {status}")
+
+
+def cmd_report(args):
+    data = load()
+    items = [find(data, args.name)] if args.name else data["items"]
+    pending = [i for i in items if i.get("new")]
+    if not pending:
+        print("No unreviewed watchlist findings.")
+    for i in pending:
+        print(f"## {i['name']} ({i['type']}: {describe(i)}), {len(i['new'])} new, last change {i.get('last_changed')}")
+        if i.get("note"):
+            print(f"Note: {i['note']}")
+        for f in i["new"]:
+            print(f"- {f['title']} | {f['date']} | {f['link']}")
+        print()
+    print(f"(history + readable page: aeris-watch log [NAME] / {HISTORY_FILE})")
+
+
+def cmd_ack(args):
+    with locked() as data:
+        if not args.all and not args.name:
+            sys.exit("aeris-watch: ack needs a NAME or --all")
+        items = data["items"] if args.all else [find(data, args.name)]
+        moved = 0
+        for i in items:
+            pending = i.get("new", [])
+            if pending:
+                have = {a["id"] for a in i.get("archive", [])}
+                keep = [{k: v for k, v in a.items() if not k.startswith("_")} for a in pending if a["id"] not in have]
+                i["archive"] = keep + i.get("archive", [])[:MAX_SEEN]
+                moved += len(keep)
+            i["new"] = []
+    print("acknowledged " + ("all items" if args.all else args.name) + f"; {moved} findings archived")
+
+
+def cmd_log(args):
+    data = load()
+    items = [find(data, args.name)] if args.name else data["items"]
+    for i in items:
+        arch = i.get("archive", [])
+        pend = i.get("new", [])
+        if not arch and not pend:
+            print(f"## {i['name']} (no findings recorded yet)")
+            continue
+        pending_ids = {a["id"] for a in pend}
+        print(f"## {i['name']} ({i['type']}: {describe(i)}), {len(pend)} unacknowledged, {len(arch)} archived")
+        if i.get("note"):
+            print(f"Note: {i['note']}")
+        for f in pend + arch:
+            mark = "* " if f["id"] in pending_ids else "  "
+            print(f"{mark}{f.get('date', '')} | {f.get('title', f.get('id', '?'))} | {f.get('link', '')}")
+        print()
+    print(f"(* unacknowledged; readable page: {HISTORY_FILE})")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="aeris-watch", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("list"); s.add_argument("--json", action="store_true"); s.add_argument("--feeds", action="store_true")
+    s.set_defaults(fn=cmd_list)
+    s = sub.add_parser("add"); s.add_argument("words", nargs="+", metavar="[topic|domain|url] QUERY")
+    s.add_argument("--name"); s.add_argument("--note"); s.add_argument("--lang", default="en-US"); s.set_defaults(fn=cmd_add)
+    s = sub.add_parser("add-feed"); s.add_argument("name"); s.add_argument("query", nargs="+")
+    s.add_argument("--lang", default="en-US"); s.set_defaults(fn=cmd_add_feed)
+    s = sub.add_parser("drop-feed"); s.add_argument("name"); s.add_argument("index", type=int); s.set_defaults(fn=cmd_drop_feed)
+    s = sub.add_parser("note"); s.add_argument("name"); s.add_argument("text", nargs="+"); s.set_defaults(fn=cmd_note)
+    s = sub.add_parser("remove"); s.add_argument("name"); s.set_defaults(fn=cmd_remove)
+    s = sub.add_parser("check"); s.add_argument("name", nargs="?"); s.set_defaults(fn=cmd_check)
+    s = sub.add_parser("report"); s.add_argument("name", nargs="?"); s.set_defaults(fn=cmd_report)
+    s = sub.add_parser("log"); s.add_argument("name", nargs="?"); s.set_defaults(fn=cmd_log)
+    s = sub.add_parser("ack"); s.add_argument("name", nargs="?"); s.add_argument("--all", action="store_true")
+    s.set_defaults(fn=cmd_ack)
+    args = p.parse_args()
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()

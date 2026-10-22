@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# One-line AerisOS greeting for new terminal windows (called from ~/.bashrc).
+#   ÆRIS OS  こんばんは
+
+white=$'\e[1;97m' grey=$'\e[38;2;122;122;122m' reset=$'\e[0m'
+
+hour=$((10#$(date +%H)))
+if (( hour >= 5 && hour < 11 )); then hello="おはようございます"      # good morning
+elif (( hour >= 11 && hour < 18 )); then hello="こんにちは"             # hello / good afternoon
+else hello="こんばんは"                                              # good evening
+fi
+
+printf '%sÆRIS OS%s  %s%s%s\n\n' "$white" "$reset" "$grey" "$hello" "$reset"

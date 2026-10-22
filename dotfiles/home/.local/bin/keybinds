@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Searchable cheat sheet of Hyprland shortcuts (SUPER+K).
+
+Reads the live binds from `hyprctl binds -j`, so it always matches the config.
+Only binds with a description are listed; add one with
+  hl.bind(..., { description = "What it does" })
+"""
+import json
+import subprocess
+
+MODS = [(64, "SUPER"), (4, "CTRL"), (8, "ALT"), (1, "SHIFT")]
+KEY_NAMES = {
+    "mouse:272": "Left drag", "mouse:273": "Right drag",
+    "mouse_down": "Scroll down", "mouse_up": "Scroll up",
+    "Control_R": "Right Ctrl", "space": "Space", "Print": "PrtSc",
+    "left": "←", "right": "→", "up": "↑", "down": "↓",
+    "XF86AudioRaiseVolume": "Volume Up key", "XF86AudioLowerVolume": "Volume Down key",
+    "XF86AudioMute": "Mute key", "XF86AudioMicMute": "Mic Mute key",
+    "XF86MonBrightnessUp": "Brightness Up key", "XF86MonBrightnessDown": "Brightness Down key",
+    "XF86AudioNext": "Next key", "XF86AudioPrev": "Previous key",
+    "XF86AudioPlay": "Play key", "XF86AudioPause": "Pause key",
+}
+
+
+def combo(bind):
+    parts = [name for bit, name in MODS if bind["modmask"] & bit]
+    parts.append(KEY_NAMES.get(bind["key"], bind["key"].upper() if len(bind["key"]) == 1 else bind["key"]))
+    return " + ".join(parts)
+
+
+binds = json.loads(subprocess.run(["hyprctl", "binds", "-j"], capture_output=True, text=True).stdout)
+rows, seen = [], set()
+for b in binds:
+    if not b.get("has_description") or b.get("release"):
+        continue  # release halves (e.g. dictation stop) are implied by their press bind
+    row = (combo(b), b["description"])
+    if row not in seen:
+        seen.add(row)
+        rows.append(row)
+
+lines = ["%s   ·   %s" % (keys, what) for keys, what in rows]
+subprocess.run(
+    ["vicinae", "dmenu", "-n", "Keyboard shortcuts", "-p", "Search shortcuts…",
+     "-s", "{count} shortcuts", "--no-quick-look"],
+    input="\n".join(lines), text=True, stdout=subprocess.DEVNULL,
+)

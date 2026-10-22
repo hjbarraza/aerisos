@@ -1,0 +1,43 @@
+# Monochrome near-black theme: grayscale accents so built-in icons are black & white
+[meta]
+name = "Mono"
+description = "Near-black, grayscale accents"
+variant = "dark"
+inherits = "vicinae-dark"
+
+[colors.core]
+accent = "#d4d4d6"
+accent_foreground = "#0a0a0a"
+background = "#0a0a0a"
+foreground = "#e8e8e8"
+secondary_background = "#0f0f0f"
+border = "#2a2a2a"
+
+[colors.main_window]
+border = "#b4b4b6"
+
+[colors.settings_window]
+border = "#b4b4b6"
+
+[colors.accents]
+blue = "#bdbdbd"
+green = "#bdbdbd"
+magenta = "#bdbdbd"
+orange = "#bdbdbd"
+red = "#bdbdbd"
+yellow = "#bdbdbd"
+cyan = "#bdbdbd"
+purple = "#bdbdbd"
+
+[colors.text]
+muted = "#8a8a8a"
+placeholder = "#6a6a6a"
+selection = { background = "#d4d4d6", foreground = "#0a0a0a" }
+
+[colors.input]
+border = "#2a2a2a"
+border_focus = "#b4b4b6"
+
+[colors.list.item.selection]
+background = "#1a1a1a"
+secondary_background = "#1a1a1a"

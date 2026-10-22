@@ -1,0 +1,841 @@
+#!/usr/bin/env bash
+# AerisOS setup: turns a fresh Arch Linux + Hyprland install into AerisOS.
+#
+# Usage: ./setup.sh [--dry-run] [module ...]
+#        ./setup.sh               run every install module (same as "all")
+#        ./setup.sh steam boot    run only these modules
+#        ./setup.sh wizard        (re-)answer the personal questions (name, email, hostname, maps)
+#        ./setup.sh maps          install/update the defence-maps app (separate private repo)
+#        ./setup.sh gamesdrive    optional: mount this laptop's games drive
+#        ./setup.sh razer         optional: Razer laptop control + battery held at 90-95%
+#        ./setup.sh titan         optional: Titan key 2FA for lock/login + logout on unplug
+#        ./setup.sh snapshot      save this machine's configs + package lists into the repo
+#        ./setup.sh --list        list modules
+#
+# New machine from scratch (minimal Arch, as root): see install.sh
+#
+# Run as your normal user in a real terminal (it asks for your sudo password).
+# Safe to re-run: every step skips work that's already done. See README.md.
+
+set -euo pipefail
+
+AERIS="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+DOT="$AERIS/dotfiles"
+PKG="$AERIS/packages"
+BACKUP="$HOME/.local/state/aerisos/backup-$(date +%Y%m%d-%H%M%S)"
+OS_NAME="AerisOS"   # ASCII: firmware boot menus often can't draw Æ
+DRY=0
+WIZARD_FORCED=0
+MAPS_FORCED=0
+
+# Personal answers from the wizard (name, email, maps repo); survives re-runs
+CONF="$HOME/.config/aerisos/setup.conf"
+# shellcheck disable=SC1090
+[[ -f $CONF ]] && source "$CONF"
+
+# Install modules, in the order "all" runs them
+MODULES=(wizard packages hardware steam controller dotfiles login voxtype tools aeris maps theme safety boot)
+# Only run when named: hardware unique to one machine, or maintenance
+OPTIONAL=(gamesdrive razer titan snapshot)
+
+# Configs captured by "snapshot" and restored by "dotfiles" (relative to $HOME)
+HOME_PATHS=(
+    .bashrc
+    .config/hypr
+    .config/waybar
+    .config/kitty
+    .config/swayosd
+    .config/nwg-dock-hyprland
+    .config/gtk-3.0
+    .config/gtk-4.0
+    .config/mimeapps.list
+    .config/voxtype/config.toml
+    .config/vicinae/settings.json
+    .local/share/vicinae/themes
+    .local/share/fonts
+    .local/bin/dnd
+    .local/bin/dock-autohide
+    .local/bin/keybinds
+    .local/bin/make-mono-icons
+    .local/bin/nightlight
+    .local/bin/screenrecord
+    .local/bin/screenshot
+    .local/bin/stay-awake
+    .local/bin/tailscale-status
+    .local/bin/aeris-watch
+    .local/bin/aeris-inbox
+    .local/bin/aeris-onto
+    .local/share/aeris/watchlist.json
+    .config/opencode
+    .config/systemd/user/aeris-watch.service
+    .config/systemd/user/aeris-watch.timer
+    .config/systemd/user/defence-maps.service
+    .claude/skills
+    .claude/settings.json
+    AGENTS.md
+)
+# System files captured by "snapshot" and restored by "login"
+SYSTEM_PATHS=(
+    /etc/sddm.conf.d/10-theme.conf
+    /usr/share/sddm/themes/monochrome
+)
+# Never snapshot editor/backup leftovers
+EXCLUDES=(--exclude='*.bak' --exclude='*.bak[0-9]*' --exclude='*.bak-*' --exclude='*.pre-*' --exclude='*.orig'
+          --exclude='__pycache__' --exclude='node_modules')
+
+# --- helpers -----------------------------------------------------------------
+
+log()  { printf '\n\033[1;37m■ %s\033[0m\n' "$*"; }
+info() { printf '  %s\n' "$*"; }
+warn() { printf '  \033[1;33m! %s\033[0m\n' "$*" >&2; }
+
+# Run a state-changing command (printed instead when --dry-run)
+run() {
+    if (( DRY )); then printf '  [dry-run] %s\n' "$*"; else "$@"; fi
+}
+as_root() { run sudo "$@"; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Only call sudo when something is actually missing
+pacman_install() {
+    local missing
+    missing=$(pacman -T "$@" || true)
+    [[ -z $missing ]] && return 0
+    # shellcheck disable=SC2086
+    as_root pacman -S --needed --noconfirm $missing
+}
+
+aur_install() {
+    have yay || { warn "yay missing; run the 'packages' module first"; return 1; }
+    local missing
+    missing=$(pacman -T "$@" || true)
+    [[ -z $missing ]] && return 0
+    # shellcheck disable=SC2086
+    run yay -S --needed --noconfirm $missing
+}
+
+# Write stdin to a root-owned file (shown instead when --dry-run)
+write_root_file() {
+    local path=$1 content
+    content=$(cat)
+    if (( DRY )); then info "[dry-run] write $path"; return; fi
+    sudo mkdir -p "$(dirname "$path")"
+    printf '%s\n' "$content" | sudo tee "$path" >/dev/null
+}
+
+# (grep without -q: an early exit would SIGPIPE the producer and trip pipefail)
+gpu_has() { lspci | grep -iE 'vga|3d|display' | grep -iE "$1" >/dev/null; }
+
+# PCI address of the first GPU matching a vendor, e.g. "0000:01:00.0"
+gpu_addr() { lspci -D | grep -iE 'vga|3d|display' | grep -iE "$1" | head -1 | cut -d' ' -f1; }
+
+# "0000:01:00.0" -> "PCI:1:0:0" (Xorg wants decimal bus:device:function)
+xorg_busid() {
+    local a=${1#*:}
+    printf 'PCI:%d:%d:%d' "0x${a%%:*}" "0x$(cut -d: -f2 <<<"$a" | cut -d. -f1)" "0x${a##*.}"
+}
+
+# Set key=value in a GTK settings.ini (creates the file/section if needed)
+gtk_ini_set() {
+    local ini=$1 key=$2 val=$3
+    if (( DRY )); then info "[dry-run] $ini: $key=$val"; return; fi
+    mkdir -p "$(dirname "$ini")"
+    [[ -f $ini ]] || printf '[Settings]\n' > "$ini"
+    if grep -q "^$key=" "$ini"; then
+        sed -i "s|^$key=.*|$key=$val|" "$ini"
+    else
+        sed -i "/^\[Settings\]/a $key=$val" "$ini"
+    fi
+}
+
+# Native resolution of the built-in (or first connected) display, e.g. "2560 1440"
+native_res() {
+    local f
+    for f in /sys/class/drm/card*-eDP-*/modes /sys/class/drm/card*-*/modes; do
+        if [[ -s $f && $(cat "${f%modes}status") == connected ]]; then
+            head -1 "$f" | tr x ' '
+            return
+        fi
+    done
+    echo "1920 1080"
+}
+
+# Render the brand assets from splash.svg into $1, sized to fill the screen:
+#   splash.bmp            still boot splash (systemd-stub needs a 24-bit BMP)
+#   bg.png, sweep.png     Plymouth layers (static background + the light that sweeps the rule)
+build_brand() {
+    local out=$1 w h sw
+    read -r w h < <(native_res)
+    # Largest 16:9 size that fits: full screen on 16:9 panels, never bigger than the screen
+    sw=$(( w * 900 <= h * 1600 ? w : h * 1600 / 900 ))
+    mkdir -p "$out"
+    have rsvg-convert || pacman_install librsvg
+
+    rsvg-convert -w "$sw" -a -b black "$AERIS/splash.svg" -o "$out/splash.png"
+    if have magick; then
+        magick "$out/splash.png" -type truecolor "BMP3:$out/splash.bmp"
+    else
+        python3 -I "$AERIS/png2bmp.py" "$out/splash.png" "$out/splash.bmp"
+    fi
+
+    cp "$out/splash.png" "$out/bg.png"
+    cat > "$out/sweep.svg" <<'EOF'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 4"><defs><linearGradient id="g"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect width="140" height="4" fill="url(#g)"/></svg>
+EOF
+    rsvg-convert -w 560 -h 16 "$out/sweep.svg" -o "$out/sweep.png"
+}
+
+# --- modules -------------------------------------------------------------------
+
+mod_packages() {
+    log "Packages: multilib, system update, yay, package lists"
+
+    if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
+        info "Enabling multilib (backup: /etc/pacman.conf.bak)"
+        as_root cp /etc/pacman.conf /etc/pacman.conf.bak
+        as_root sed -i '/^#\[multilib\]/,/^#Include/ s/^#//' /etc/pacman.conf
+    fi
+    as_root pacman -Syu --noconfirm
+    pacman_install base-devel git
+
+    if ! have yay; then
+        info "Bootstrapping yay from the AUR"
+        local tmp; tmp=$(mktemp -d)
+        run git clone --depth 1 https://aur.archlinux.org/yay-bin.git "$tmp/yay-bin"
+        (cd "$tmp/yay-bin" && run makepkg -si --noconfirm)
+        rm -rf "$tmp"
+    fi
+
+    if [[ -s $PKG/pacman.txt ]]; then
+        # Skip anything no longer in the repos instead of failing the whole install
+        local available wanted missing
+        available=$(pacman -Slq | sort -u)
+        wanted=$(comm -12 <(sort -u "$PKG/pacman.txt") <(echo "$available"))
+        missing=$(comm -23 <(sort -u "$PKG/pacman.txt") <(echo "$available"))
+        [[ -n $missing ]] && warn "Not in repos, skipped: $(echo $missing)"
+        # shellcheck disable=SC2086
+        pacman_install $wanted
+    fi
+    if [[ -s $PKG/aur.txt ]]; then
+        # shellcheck disable=SC2046
+        aur_install $(grep -vE '^(yay-bin|.*-debug)$' "$PKG/aur.txt")
+    fi
+}
+
+mod_hardware() {
+    log "Hardware: NVIDIA hybrid graphics, stable GPU names, laptop mic fix"
+    local rebuild=0
+
+    # hyprpolkitagent handles password prompts; the KDE agent would double up
+    if pacman -Q polkit-kde-agent >/dev/null 2>&1; then
+        as_root pacman -Rns --noconfirm polkit-kde-agent
+    fi
+
+    if gpu_has nvidia; then
+        pacman_install nvidia-open nvidia-utils nvidia-prime nvidia-settings egl-wayland libva-nvidia-driver
+        # Keep nouveau out of the initramfs: the kms hook pulls it in
+        if grep -qE '^HOOKS=.*[ (]kms[ )]' /etc/mkinitcpio.conf; then
+            as_root sed -i -E '/^HOOKS=/ s/ kms / /' /etc/mkinitcpio.conf
+            rebuild=1
+        fi
+        as_root systemctl enable nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service
+        # GPU mode switching (integrated / hybrid / nvidia); also in the AerisOS menu
+        aur_install envycontrol
+    fi
+
+    # Early KMS for the Intel iGPU: i915 in the initramfs so Plymouth draws on it from the
+    # start (loaded late, i915 inherits the firmware framebuffer and the vendor logo reappears)
+    if gpu_has intel && ! grep -qE '^MODULES=\(.*\bi915\b' /etc/mkinitcpio.conf; then
+        as_root sed -i -E 's/^MODULES=\((.*)\)/MODULES=(\1 i915)/; s/^MODULES=\( i915\)/MODULES=(i915)/' /etc/mkinitcpio.conf
+        rebuild=1
+    fi
+
+    # Stable /dev/dri names for Hyprland (card0/card1 can swap between boots)
+    local intel nvidia rules=""
+    intel=$(gpu_addr intel || true)
+    nvidia=$(gpu_addr nvidia || true)
+    [[ -n $intel  ]] && rules+="KERNEL==\"card*\", SUBSYSTEM==\"drm\", KERNELS==\"$intel\", SYMLINK+=\"dri/intel-igpu\""$'\n'
+    [[ -n $nvidia ]] && rules+="KERNEL==\"card*\", SUBSYSTEM==\"drm\", KERNELS==\"$nvidia\", SYMLINK+=\"dri/nvidia-dgpu\""$'\n'
+    if [[ -n $rules ]]; then
+        printf '%s' "$rules" | write_root_file /etc/udev/rules.d/99-dri-names.rules
+    fi
+
+    # Built-in microphone on the Razer Blade 17 (2022): empty BIOS NHLT table
+    # means the kernel picks a topology without the DMIC array
+    if [[ $(cat /sys/class/dmi/id/product_name 2>/dev/null) == "Blade 17 (2022)"* ]]; then
+        if [[ ! -f /etc/modprobe.d/sof.conf ]]; then
+            write_root_file /etc/modprobe.d/sof.conf <<'EOF'
+# Workaround for empty BIOS NHLT on Razer Blade 17 (2022): without these the
+# kernel loads sof-hda-generic-2ch.tplg and the built-in mic records silence.
+options snd_sof tplg_filename=sof-hda-generic-2ch-pdm1.tplg
+options snd_sof_intel_hda_common sof_use_tplg_nhlt=1
+EOF
+            rebuild=1
+        fi
+    fi
+
+    (( rebuild )) && as_root mkinitcpio -P
+    info "Reboot after this module for driver changes to take effect"
+}
+
+mod_steam() {
+    log "Steam + 32-bit graphics drivers"
+    grep -q '^\[multilib\]' /etc/pacman.conf || { warn "multilib is off; run the 'packages' module first"; return 1; }
+
+    local pkgs=(steam ttf-liberation)
+    gpu_has intel      && pkgs+=(vulkan-intel lib32-vulkan-intel lib32-mesa)
+    gpu_has 'amd|ati'  && pkgs+=(vulkan-radeon lib32-vulkan-radeon lib32-mesa)
+    gpu_has nvidia     && pkgs+=(nvidia-utils lib32-nvidia-utils nvidia-prime)
+    pacman_install "${pkgs[@]}"
+    gpu_has nvidia && info "Run Steam on the NVIDIA GPU with: prime-run steam"
+}
+
+mod_controller() {
+    log "Xbox controller: USB (built in), Bluetooth (xpadneo), wireless dongle (xone)"
+    pacman_install bluez bluez-utils dkms linux-headers
+    as_root systemctl enable --now bluetooth.service
+    aur_install xpadneo-dkms xone-dkms
+    aur_install xone-dongle-firmware || warn "Dongle firmware failed; if the dongle LED stays off run: sudo xone-get-firmware.sh"
+    # Steam Input uses uinput
+    if [[ ! -f /etc/modules-load.d/uinput.conf ]]; then
+        echo uinput | write_root_file /etc/modules-load.d/uinput.conf
+        as_root modprobe uinput || true
+    fi
+}
+
+# Re-mount the games drive (btrfs labelled "games", created by games-drive.sh) without formatting it
+mod_gamesdrive() {
+    log "Games drive: mount LABEL=games at /mnt/games on every boot"
+    if ! blkid -L games >/dev/null 2>&1; then
+        warn "No drive labelled 'games' found; to create one (ERASES the drive) see games-drive.sh"
+        return 0
+    fi
+    if ! grep -qE '^LABEL=games[[:space:]]|[[:space:]]/mnt/games[[:space:]]' /etc/fstab; then
+        if (( DRY )); then info "[dry-run] add LABEL=games to /etc/fstab"
+        else
+            sudo cp -n /etc/fstab /etc/fstab.bak
+            printf '\n# Games drive. nofail: boot continues if the drive is missing.\nLABEL=games\t/mnt/games\tbtrfs\trw,noatime,compress=zstd:1,ssd,discard=async,space_cache=v2,nofail,x-systemd.device-timeout=10s,x-gvfs-show,x-gvfs-name=Games\t0 0\n' \
+                | sudo tee -a /etc/fstab >/dev/null
+        fi
+    fi
+    as_root mkdir -p /mnt/games
+    as_root systemctl daemon-reload
+    findmnt /mnt/games >/dev/null || as_root mount /mnt/games
+    as_root chown "$USER:$USER" /mnt/games
+    info "In Steam: Settings > Storage > Add Drive > /mnt/games/SteamLibrary"
+}
+
+mod_dotfiles() {
+    log "Dotfiles: restoring configs (existing files backed up to $BACKUP)"
+    [[ -d $DOT/home ]] || { warn "No snapshot in $DOT; run './setup.sh snapshot' on a configured machine"; return 1; }
+
+    # Back up whatever is about to be overwritten
+    local rel
+    for rel in "${HOME_PATHS[@]}"; do
+        [[ -e $DOT/home/$rel && -e $HOME/$rel ]] || continue
+        run mkdir -p "$BACKUP/$(dirname "$rel")"
+        run cp -a "$HOME/$rel" "$BACKUP/$rel"
+    done
+    run cp -a "$DOT/home/." "$HOME/"
+    run fc-cache -f >/dev/null
+
+    # Folders open in Files (Nautilus), not a terminal
+    have nautilus && run xdg-mime default org.gnome.Nautilus.desktop inode/directory
+
+    if ! fc-list : family | grep 'Söhne' >/dev/null; then
+        warn "Söhne font not found: copy your licensed Söhne files to ~/.local/share/fonts/soehne"
+    fi
+}
+
+mod_login() {
+    log "Login screen: SDDM with the AerisOS theme (splash layout, live info, animated)"
+    pacman_install sddm
+
+    # The greeter runs as the sddm user, so Söhne must be installed system-wide
+    if [[ -d $HOME/.local/share/fonts/soehne ]]; then
+        as_root mkdir -p /usr/local/share/fonts
+        as_root cp -r "$HOME/.local/share/fonts/soehne" /usr/local/share/fonts/
+        as_root fc-cache -f /usr/local/share/fonts
+    else
+        warn "Söhne not in ~/.local/share/fonts/soehne; the login screen will fall back to another font"
+    fi
+
+    # Japanese type for the kanji accents; checkupdates for the pending-updates count
+    pacman_install adobe-source-han-sans-jp-fonts pacman-contrib
+
+    as_root rm -rf /usr/share/sddm/themes/aeris
+    as_root cp -r "$AERIS/sddm/aeris" /usr/share/sddm/themes/aeris
+    as_root chown -R root:root /usr/share/sddm/themes/aeris
+
+    # Live info: aeris-status writes /var/lib/aeris/status.json at boot and every minute
+    as_root install -m755 "$AERIS/status/aeris-status" /usr/local/bin/aeris-status
+    # Older versions cached the public IP in this world-readable file; it now goes to private.json
+    as_root rm -f /var/lib/aeris/net-cache.json
+    sed "s/^Environment=AERIS_USER=.*/Environment=AERIS_USER=$USER/" "$AERIS/status/aeris-status.service" \
+        | write_root_file /etc/systemd/system/aeris-status.service
+    as_root install -m644 "$AERIS/status/aeris-status.timer" /etc/systemd/system/aeris-status.timer
+    as_root systemctl daemon-reload
+    as_root systemctl enable --now aeris-status.timer
+
+    # Monochrome theme stays installed as a fallback
+    if [[ -d $DOT/system/usr/share/sddm/themes/monochrome ]]; then
+        as_root rm -rf /usr/share/sddm/themes/monochrome
+        as_root cp -a "$DOT/system/usr/share/sddm/themes/monochrome" /usr/share/sddm/themes/
+        as_root chown -R root:root /usr/share/sddm/themes/monochrome
+    fi
+    if [[ -f $DOT/system/etc/sddm.conf.d/10-theme.conf ]]; then
+        as_root install -Dm644 "$DOT/system/etc/sddm.conf.d/10-theme.conf" /etc/sddm.conf.d/10-theme.conf
+    fi
+    if [[ -f /etc/sddm.conf.d/10-theme.conf ]] || (( DRY )); then
+        as_root sed -i 's/^Current=.*/Current=aeris/' /etc/sddm.conf.d/10-theme.conf
+    else
+        printf '[Theme]\nCurrent=aeris\n' | write_root_file /etc/sddm.conf.d/10-theme.conf
+    fi
+    # The theme reads the status file through QML's XMLHttpRequest, which needs this switch
+    if (( DRY )); then info "[dry-run] allow the greeter to read the status file"
+    elif ! grep -q QML_XHR_ALLOW_FILE_READ /etc/sddm.conf.d/10-theme.conf; then
+        if grep -q '^GreeterEnvironment=' /etc/sddm.conf.d/10-theme.conf; then
+            sudo sed -i 's/^GreeterEnvironment=.*/&,QML_XHR_ALLOW_FILE_READ=1/' /etc/sddm.conf.d/10-theme.conf
+        else
+            printf '\n[General]\nGreeterEnvironment=QML_XHR_ALLOW_FILE_READ=1\n' | sudo tee -a /etc/sddm.conf.d/10-theme.conf >/dev/null
+        fi
+    fi
+
+    # Hybrid laptops: pin the X11 greeter to the Intel iGPU (NVIDIA gives a black screen)
+    if gpu_has intel && gpu_has nvidia; then
+        write_root_file /etc/X11/xorg.conf.d/10-intel-primary.conf <<EOF
+Section "ServerFlags"
+    Option "AutoAddGPU"  "off"
+    Option "AutoBindGPU" "off"
+EndSection
+
+Section "Device"
+    Identifier "Intel iGPU"
+    Driver     "modesetting"
+    BusID      "$(xorg_busid "$(gpu_addr intel)")"
+EndSection
+EOF
+    fi
+    as_root systemctl enable sddm.service
+    info "Shows at next logout/reboot (restarting sddm from the desktop logs you out)"
+}
+
+mod_voxtype() {
+    log "Voxtype dictation: install, speech model, GPU, top-bar icon only"
+    pacman_install wtype libnotify
+    aur_install voxtype-bin
+    run voxtype setup --download --model small.en --quiet || warn "Model download failed; run: voxtype setup model"
+    if ! voxtype setup gpu --status 2>/dev/null | grep 'Active backend: GPU' >/dev/null; then
+        as_root voxtype setup gpu --enable || warn "GPU acceleration failed; Voxtype still works on the CPU"
+    fi
+    # No floating overlay: status lives in the Waybar icon (custom/voxtype)
+    run voxtype config set osd.enabled false
+    run systemctl --user enable voxtype.service
+    run systemctl --user restart voxtype.service
+    info "Dictate: hold Right Ctrl, speak, release (bound in hyprland.lua)"
+}
+
+mod_tools() {
+    log "Tools: AerisOS menu, update, battery alerts, web apps, codecs, Node + Git"
+    run mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications" "$HOME/.config/systemd/user"
+
+    # aeris-menu (SUPER+ALT+SPACE), aeris-update, aeris-battery, aeris-greeting (new terminal
+    # windows; hooked in ~/.bashrc), aeris-lock-field (the lock screen's reader for
+    # /var/lib/aeris/lock.tsv). Keybinds live in hyprland.lua
+    run install -m755 "$AERIS/bin/aeris-menu" "$AERIS/bin/aeris-update" "$AERIS/bin/aeris-battery" \
+        "$AERIS/bin/aeris-greeting" "$AERIS/bin/aeris-lock-field" "$HOME/.local/bin/"
+    # Lock screen: generated from the login screen's grid (lock/make-hyprlock)
+    run python3 "$AERIS/lock/make-hyprlock" "$HOME/.config/hypr/hyprlock.conf"
+    run install -m644 "$AERIS/bin/aeris-battery.service" "$AERIS/bin/aeris-battery.timer" "$HOME/.config/systemd/user/"
+    run systemctl --user daemon-reload
+    run systemctl --user enable --now aeris-battery.timer
+
+    # The menu's UI: a Vicinae extension (vicinae/aerisos) with sections, icons and live state,
+    # built into ~/.local/share/vicinae/extensions (node_modules removed afterwards)
+    if have vicinae; then
+        if (( DRY )); then info "[dry-run] build the AerisOS Vicinae extension"
+        else
+            (cd "$AERIS/vicinae/aerisos" && npm install --no-audit --no-fund --silent && npx vici build && rm -rf node_modules)
+            pgrep -x vicinae >/dev/null && (setsid vicinae server --replace >/dev/null 2>&1 &)
+        fi
+    fi
+
+    # Web apps: each site in its own Brave window, in the launcher (SUPER+SHIFT+C/Y/I/G//)
+    run install -m644 "$AERIS"/webapps/*.desktop "$HOME/.local/share/applications/"
+
+    # Media codecs for every app (GStreamer) and Files thumbnails
+    pacman_install gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav ffmpeg ffmpegthumbnailer
+
+    # Node: global npm packages go to ~/.local (no sudo). Git defaults; GitHub via gh
+    pacman_install nodejs npm git github-cli
+    run npm config set prefix "$HOME/.local"
+    run git config --global init.defaultBranch main
+    run git config --global push.autoSetupRemote true
+    run git config --global pull.rebase false
+    if [[ -n ${AERIS_GIT_EMAIL:-} ]]; then run git config --global user.email "$AERIS_GIT_EMAIL"; fi
+    if [[ -n ${AERIS_GIT_NAME:-} ]]; then run git config --global user.name "$AERIS_GIT_NAME"; fi
+    gh auth status >/dev/null 2>&1 || info "GitHub: run 'gh auth login', then 'gh auth setup-git'"
+}
+
+mod_aeris() {
+    log "AERIS: watchlist timer, maps server, Ollama models, Claude Code + OpenCode"
+    # The scripts (aeris-watch, aeris-inbox, aeris-onto), user units and the OpenCode/Claude
+    # configs are restored by the dotfiles module; this wires them up.
+    run systemctl --user daemon-reload
+    if [[ -f $HOME/.config/systemd/user/aeris-watch.timer ]]; then
+        run systemctl --user enable --now aeris-watch.timer      # hourly watchlist checks
+    fi
+    if [[ -f $HOME/.config/systemd/user/defence-maps.service && -f $HOME/maps/engine/serve.py ]]; then
+        run systemctl --user enable --now defence-maps.service   # ~/maps on 127.0.0.1:8765
+    fi
+
+    # Local models: lock-screen telegram compression (aeris-status) and the AERIS board
+    pacman_install ollama
+    gpu_has nvidia && pacman_install ollama-cuda
+    as_root systemctl enable --now ollama.service
+    if have ollama && ! ollama list 2>/dev/null | grep -q '^qwen3.5:9b'; then
+        run ollama pull qwen3.5:9b || warn "Model pull failed; aeris-status falls back to raw headlines"
+    fi
+
+    # Claude Code (native installer); OpenCode is the AERIS fork, installed by hand
+    have claude || run bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
+    if ! have opencode && [[ ! -x $HOME/.opencode/bin/opencode ]]; then
+        warn "OpenCode (AERIS fork) not installed; its config is already in ~/.config/opencode"
+    fi
+    info "~/maps (defence maps app + data) lives in its own repo: ./setup.sh maps installs it"
+}
+
+mod_theme() {
+    log "Monochrome theme: white window borders, greyscale icons, one text size"
+
+    # Window borders: white active, charcoal inactive
+    local hypr="$HOME/.config/hypr/hyprland.lua"
+    if [[ -f $hypr ]]; then
+        run sed -i -E \
+            -e 's|^(\s*active_border\s*=\s*).*|\1"rgba(ffffffff)",   -- AerisOS: white|' \
+            -e 's|^(\s*inactive_border\s*=\s*).*|\1"rgba(2a2a2aaa)",   -- AerisOS: charcoal|' \
+            "$hypr"
+    fi
+
+    # Greyscale icon theme "Mono" (built by ~/.local/bin/make-mono-icons)
+    pacman_install breeze-icons
+    if [[ -x $HOME/.local/bin/make-mono-icons ]]; then
+        run "$HOME/.local/bin/make-mono-icons"
+    else
+        warn "make-mono-icons not found; run the 'dotfiles' module first"
+    fi
+    run gsettings set org.gnome.desktop.interface icon-theme Mono
+    run gsettings set org.gnome.desktop.interface color-scheme prefer-dark
+    gtk_ini_set "$HOME/.config/gtk-3.0/settings.ini" gtk-icon-theme-name Mono
+    gtk_ini_set "$HOME/.config/gtk-4.0/settings.ini" gtk-icon-theme-name Mono
+
+    # One text size everywhere: 9 pt (= 12 px in Waybar/dock CSS, kitty font_size 9)
+    run gsettings set org.gnome.desktop.interface font-name 'Söhne 9'
+    run gsettings set org.gnome.desktop.interface document-font-name 'Söhne 9'
+    run gsettings set org.gnome.desktop.interface monospace-font-name 'Söhne Mono 9'
+    gtk_ini_set "$HOME/.config/gtk-3.0/settings.ini" gtk-font-name 'Söhne 9'
+    gtk_ini_set "$HOME/.config/gtk-4.0/settings.ini" gtk-font-name 'Söhne 9'
+
+    # Apply live if we're inside Hyprland
+    if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+        run hyprctl reload >/dev/null
+        run pkill -USR1 -x kitty || true         # kitty reloads its config
+        run pkill -x nwg-dock-hyprla || true     # dock-autohide relaunches it
+    fi
+}
+
+mod_safety() {
+    log "Safety: btrfs snapshots around package installs, firewall, firmware check"
+    pacman_install snapper snap-pac ufw fwupd
+
+    # Snapper: pre/post snapshots of / for every pacman transaction (snap-pac), no hourly ones
+    if [[ $(findmnt -no FSTYPE /) == btrfs ]]; then
+        if [[ ! -f /etc/snapper/configs/root ]]; then
+            as_root snapper -c root create-config /
+            as_root snapper -c root create --description "Baseline after AerisOS setup"
+        fi
+        as_root snapper -c root set-config TIMELINE_CREATE=no NUMBER_LIMIT=10 NUMBER_LIMIT_IMPORTANT=5
+        as_root systemctl enable --now snapper-cleanup.timer
+    else
+        warn "Root isn't btrfs; skipping snapshots"
+    fi
+
+    # Firewall: block incoming, allow outgoing, allow LocalSend
+    as_root ufw default deny incoming
+    as_root ufw default allow outgoing
+    as_root ufw allow 53317 comment 'LocalSend'
+    as_root ufw --force enable
+    as_root systemctl enable ufw.service
+
+    # Firmware: only report available BIOS/SSD updates, never install
+    run fwupdmgr refresh --force || true
+    run fwupdmgr get-updates 2>/dev/null || true
+}
+
+mod_boot() {
+    log "Boot branding: menu name \"$OS_NAME\", full-screen splash, animated Plymouth boot"
+    local preset=/etc/mkinitcpio.d/linux.preset
+    local osrel=/etc/kernel/boot-os-release
+    local splash=/etc/kernel/splash.bmp
+    [[ -f $preset ]] || { warn "$preset not found (needs mkinitcpio + UKI); skipping"; return 0; }
+
+    # Still splash + Plymouth layers, rendered at the screen's native size
+    local tmp; tmp=$(mktemp -d)
+    build_brand "$tmp"
+    as_root install -m644 "$tmp/splash.bmp" "$splash"
+
+    # Plymouth: the splash with a light gliding along its hairline, until the login screen
+    pacman_install plymouth
+    local theme=/usr/share/plymouth/themes/aeris
+    as_root install -Dm644 -t "$theme" "$AERIS/plymouth/aeris/aeris.plymouth" "$AERIS/plymouth/aeris/aeris.script" \
+        "$tmp/bg.png" "$tmp/sweep.png"
+    rm -rf "$tmp"
+    printf '[Daemon]\nTheme=aeris\nShowDelay=0\nDeviceScale=1\n' | write_root_file /etc/plymouth/plymouthd.conf
+    if ! grep -qE '^HOOKS=.*[ (]plymouth[ )]' /etc/mkinitcpio.conf; then
+        as_root sed -i -E '/^HOOKS=/ s/([ (])udev([ )])/\1udev plymouth\2/' /etc/mkinitcpio.conf
+    fi
+
+    # Boot menu name, without touching the real /etc/os-release
+    sed -e "s|^NAME=.*|NAME=\"$OS_NAME\"|" -e "s|^PRETTY_NAME=.*|PRETTY_NAME=\"$OS_NAME\"|" \
+        /usr/lib/os-release | write_root_file "$osrel"
+
+    # Native resolution in the boot loader: firmware defaults to 800x600 here, and
+    # systemd-stub skips any splash larger than the screen
+    local loader=/boot/loader/loader.conf
+    if (( DRY )); then info "[dry-run] set console-mode max in $loader"
+    elif ! sudo grep -q '^console-mode max' "$loader" 2>/dev/null; then
+        sudo cp -n "$loader" "$loader.bak" 2>/dev/null || true
+        if sudo grep -qE '^#?console-mode' "$loader" 2>/dev/null; then
+            sudo sed -i -E 's/^#?console-mode.*/console-mode max/' "$loader"
+        else
+            echo 'console-mode max' | sudo tee -a "$loader" >/dev/null
+        fi
+    fi
+    # No boot menu: straight from the firmware logo to the splash (hold Space at power-on to show it)
+    if (( DRY )); then info "[dry-run] set timeout 0 in $loader"
+    elif ! sudo grep -q '^timeout 0$' "$loader" 2>/dev/null; then
+        if sudo grep -q '^timeout' "$loader" 2>/dev/null; then
+            sudo sed -i 's/^timeout.*/timeout 0/' "$loader"
+        else
+            echo 'timeout 0' | sudo tee -a "$loader" >/dev/null
+        fi
+    fi
+
+    # Quiet boot: without it the kernel prints over the splash the instant it's drawn
+    local cmdline=/etc/kernel/cmdline arg
+    if [[ -f $cmdline ]]; then
+        [[ -f $cmdline.bak ]] || as_root cp "$cmdline" "$cmdline.bak"
+        for arg in quiet splash loglevel=3 rd.udev.log_level=3 vt.global_cursor_default=0; do
+            grep -qw -- "$arg" "$cmdline" || as_root sed -i "s|\$| $arg|" "$cmdline"
+        done
+    else
+        warn "$cmdline not found; add 'quiet loglevel=3' to your kernel command line so the splash stays visible"
+    fi
+
+    [[ -f $preset.bak ]] || as_root cp "$preset" "$preset.bak"
+    as_root sed -i "s|^#\?default_options=.*|default_options=\"--osrelease $osrel --splash $splash\"|" "$preset"
+    as_root mkinitcpio -p linux
+    info "Reboot to see it. OS_NAME stays ASCII because firmware boot menus often can't draw Æ (the splash still shows ÆRIS)."
+}
+
+# Razer laptops: razer-control-revived (battery health optimizer, power modes, fans,
+# logo) built from source, plus a timer that holds the battery between 90 and 95%
+mod_razer() {
+    log "Razer: razer-control-revived + battery held at 90-95%"
+    local src="$HOME/.local/src/razer-control-revived"
+    local repo=https://github.com/encomjp/razer-control-revived
+    if ! lsusb 2>/dev/null | grep -qi '1532:.*Razer'; then
+        warn "No Razer laptop controller found; skipping"
+        return 0
+    fi
+    pacman_install rust dbus libusb hidapi pkgconf gtk4 libadwaita git
+
+    if [[ -d $src/.git ]]; then
+        run git -C "$src" pull --ff-only
+    else
+        run git clone "$repo" "$src"
+    fi
+    (( DRY )) || (cd "$src/razer_control_gui" && cargo build --release)
+
+    local b="$src/razer_control_gui"
+    as_root mkdir -p /usr/share/razercontrol
+    as_root install -m755 "$b/target/release/razer-cli" /usr/bin/razer-cli
+    as_root install -m755 "$b/target/release/daemon" /usr/bin/razer-daemon
+    as_root install -m755 "$b/target/release/razer-settings" /usr/bin/razer-settings
+    as_root install -m644 "$b/data/devices/laptops.json" /usr/share/razercontrol/laptops.json
+    as_root install -m644 "$b/data/gui/com.encomjp.razer-settings.desktop" /usr/share/applications/
+    as_root install -Dm644 "$b/data/gui/com.github.encomjp.razercontrol.svg" \
+        /usr/share/icons/hicolor/scalable/apps/com.github.encomjp.razercontrol.svg
+    as_root install -m644 "$b/data/services/systemd/razercontrol.service" /usr/lib/systemd/user/razercontrol.service
+    # Access for the logged-in user only (upstream uses world-writable 0666); 70- so uaccess
+    # is set before 73-seat-late.rules applies it
+    sed 's/, MODE="0666"//' "$b/data/udev/99-hidraw-permissions.rules" | write_root_file /etc/udev/rules.d/70-razer-hidraw.rules
+    as_root rm -f /etc/udev/rules.d/99-hidraw-permissions.rules
+    as_root udevadm control --reload-rules
+    as_root udevadm trigger --action=change --subsystem-match=hidraw
+
+    # Battery: Razer's optimizer only goes to 80%, so a timer pauses charging at 95%
+    run mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
+    run install -m755 "$AERIS/battery/aeris-charge-limit" "$HOME/.local/bin/aeris-charge-limit"
+    run install -m644 "$AERIS/battery/aeris-charge-limit.service" "$AERIS/battery/aeris-charge-limit.timer" \
+        "$HOME/.config/systemd/user/"
+    run systemctl --user daemon-reload
+    run systemctl --user enable --now razercontrol.service aeris-charge-limit.timer
+    info "GUI: Razer Settings in the app launcher. CLI: razer-cli read bho / write bho off"
+}
+
+# First-run wizard: the personal answers (git identity, hostname, maps app),
+# saved to ~/.config/aerisos/setup.conf and reused by every later run.
+# In a full run it only asks once; change answers with: ./setup.sh wizard
+mod_wizard() {
+    if [[ -f $CONF && $WIZARD_FORCED -eq 0 ]]; then
+        info "Using saved answers from $CONF (change them: ./setup.sh wizard)"
+        return 0
+    fi
+    if [[ ! -t 0 ]]; then
+        warn "No terminal attached: skipping the wizard (run './setup.sh wizard' later)"
+        return 0
+    fi
+    log "Wizard: a few personal answers, saved to $CONF"
+
+    local def_name def_email name email host cur_host maps maps_repo
+    def_name=${AERIS_GIT_NAME:-$(git config --global user.name 2>/dev/null || true)}
+    def_email=${AERIS_GIT_EMAIL:-$(git config --global user.email 2>/dev/null || true)}
+    cur_host=$(hostnamectl hostname 2>/dev/null || hostname)
+    read -rp "  Your name (for git commits) [${def_name:-skip}]: " name; name=${name:-$def_name}
+    read -rp "  Your email (for git commits) [${def_email:-skip}]: " email; email=${email:-$def_email}
+    read -rp "  Hostname for this machine [$cur_host]: " host; host=${host:-$cur_host}
+    read -rp "  Install the defence-maps app? Needs access to its private repo [y/N]: " maps
+    if [[ ${maps,,} == y* ]]; then
+        maps=yes
+        read -rp "  Maps repo URL [${AERIS_MAPS_REPO:-git@github.com:hjbarraza/defence-maps.git}]: " maps_repo
+        maps_repo=${maps_repo:-${AERIS_MAPS_REPO:-git@github.com:hjbarraza/defence-maps.git}}
+    else
+        maps=no; maps_repo=${AERIS_MAPS_REPO:-}
+    fi
+
+    if (( ! DRY )); then
+        mkdir -p "$(dirname "$CONF")"
+        cat > "$CONF" <<EOF
+# AerisOS wizard answers (shell vars, sourced by setup.sh).
+# Edit by hand or re-run: ./setup.sh wizard
+AERIS_GIT_NAME="$name"
+AERIS_GIT_EMAIL="$email"
+AERIS_MAPS="$maps"
+AERIS_MAPS_REPO="$maps_repo"
+EOF
+        chmod 600 "$CONF"
+        # shellcheck disable=SC1090
+        source "$CONF"
+    fi
+    [[ $host == "$cur_host" ]] || as_root hostnamectl set-hostname "$host"
+    info "Saved. Hardware extras when they apply: ./setup.sh razer | titan | gamesdrive"
+}
+
+# The defence-maps app (~/maps): lives in its own private repo, so installing it
+# is optional. Selected in the wizard, or run directly: ./setup.sh maps
+mod_maps() {
+    if [[ ${AERIS_MAPS:-no} != yes && $MAPS_FORCED -eq 0 ]]; then
+        info "Maps app not selected in the wizard; install anytime: ./setup.sh maps"
+        return 0
+    fi
+    log "Defence maps: clone/update ~/maps from its own repo"
+    pacman_install git
+    if [[ -d $HOME/maps/.git ]]; then
+        run git -C "$HOME/maps" pull --ff-only || warn "Pull failed; ~/maps left as it is"
+    elif [[ -e $HOME/maps ]]; then
+        warn "~/maps exists but is not a git clone; leaving it alone"
+    else
+        if [[ -z ${AERIS_MAPS_REPO:-} ]]; then
+            [[ -t 0 ]] || { warn "AERIS_MAPS_REPO not set; skipping"; return 0; }
+            read -rp "  Maps repo URL: " AERIS_MAPS_REPO
+            [[ -n $AERIS_MAPS_REPO ]] || { warn "No URL given; skipping"; return 0; }
+        fi
+        run git clone "$AERIS_MAPS_REPO" "$HOME/maps" || { warn "Clone failed (no access to the private repo?)"; return 0; }
+    fi
+    # The user unit arrives with dotfiles; serve ~/maps at 127.0.0.1:8765
+    if [[ -f $HOME/.config/systemd/user/defence-maps.service && -f $HOME/maps/engine/serve.py ]]; then
+        run systemctl --user enable --now defence-maps.service
+    fi
+}
+
+# Titan security key: password + key 2FA on hyprlock and SDDM, logout + SDDM
+# restart when the key is unplugged. tty login stays password-only (recovery).
+# Enrollment needs the key plugged in and touched; skipped if already enrolled.
+mod_titan() {
+    log "Titan key: U2F second factor for lock/login + logout on unplug"
+    if ! lsusb 2>/dev/null | grep -q '096e:085b'; then
+        warn "Titan key (096e:085b) not plugged in; skipping (plug it in and re-run: ./setup.sh titan)"
+        return 0
+    fi
+    as_root bash "$AERIS/titan/setup-titan-pam.sh"
+}
+
+# Not part of "all": copy this machine's setup back into the repo
+mod_snapshot() {
+    log "Snapshot: saving configs and package lists into $AERIS"
+
+    local present=() rel
+    for rel in "${HOME_PATHS[@]}"; do [[ -e $HOME/$rel ]] && present+=("$rel"); done
+    if (( DRY )); then info "[dry-run] copy ${#present[@]} paths into $DOT/home"
+    else
+        rm -rf "$DOT/home"
+        mkdir -p "$DOT/home"
+        tar -C "$HOME" "${EXCLUDES[@]}" -cf - "${present[@]}" | tar -C "$DOT/home" -xf -
+    fi
+
+    present=()
+    for rel in "${SYSTEM_PATHS[@]}"; do [[ -e $rel ]] && present+=("${rel#/}"); done
+    if (( ${#present[@]} && ! DRY )); then
+        rm -rf "$DOT/system"
+        mkdir -p "$DOT/system"
+        tar -C / "${EXCLUDES[@]}" -cf - "${present[@]}" | tar -C "$DOT/system" -xf -
+    fi
+
+    if (( DRY )); then info "[dry-run] write package lists"; return; fi
+    mkdir -p "$PKG"
+    pacman -Qqen > "$PKG/pacman.txt"
+    pacman -Qqem > "$PKG/aur.txt"
+    info "$(wc -l < "$PKG/pacman.txt") repo packages, $(wc -l < "$PKG/aur.txt") AUR packages"
+    info "Configs: $(find "$DOT" -type f | wc -l) files"
+}
+
+# --- main ----------------------------------------------------------------------
+
+usage() { sed -n '2,19p' "$0" | sed 's/^# \?//'; }
+
+selected=()
+for arg in "$@"; do
+    case $arg in
+        --dry-run|-n) DRY=1 ;;
+        --list)       printf '%s\n' "${MODULES[@]}"; printf '%s (optional)\n' "${OPTIONAL[@]}"; exit 0 ;;
+        -h|--help)    usage; exit 0 ;;
+        all)          selected+=("${MODULES[@]}") ;;
+        *)
+            declare -F "mod_$arg" >/dev/null || { echo "Unknown module: $arg (see --list)" >&2; exit 1; }
+            [[ $arg == wizard ]] && WIZARD_FORCED=1
+            [[ $arg == maps ]] && MAPS_FORCED=1
+            selected+=("$arg") ;;
+    esac
+done
+(( ${#selected[@]} )) || selected=("${MODULES[@]}")
+
+[[ $EUID -ne 0 ]] || { echo "Run as your normal user, not root." >&2; exit 1; }
+if (( ! DRY )) && printf '%s\n' "${selected[@]}" | grep -vx snapshot >/dev/null; then
+    if [[ -t 0 ]]; then
+        sudo -v
+        # Keep sudo alive for long installs
+        while true; do sudo -n true; sleep 50; kill -0 "$$" 2>/dev/null || exit; done &
+        trap 'kill $! 2>/dev/null' EXIT
+    else
+        warn "No terminal attached: steps that need sudo will fail (run this in a terminal)"
+    fi
+fi
+
+current=""
+trap 'warn "Failed in module \"$current\" (line $LINENO). Fix it and re-run: ./setup.sh $current"' ERR
+for current in "${selected[@]}"; do
+    "mod_$current"
+done
+log "$OS_NAME: done (${selected[*]})"

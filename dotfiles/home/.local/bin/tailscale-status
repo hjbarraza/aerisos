@@ -1,0 +1,31 @@
+#!/bin/bash
+# Tailscale for Waybar. `tailscale-status` prints Waybar JSON; `toggle` connects/disconnects; `admin` opens the admin console.
+case ${1:-} in
+  admin)
+    exec brave --app=https://login.tailscale.com/admin/machines ;;
+  toggle)
+    if ! systemctl is-active -q tailscaled; then
+      notify-send "Tailscale" "Not set up yet. Run: sudo systemctl enable --now tailscaled && sudo tailscale up"
+    elif tailscale status --json 2>/dev/null | grep -q '"BackendState": *"NeedsLogin"'; then
+      kitty --class tui-float sh -c 'tailscale up; echo; read -rp "Press Enter to close"' &
+    elif tailscale status >/dev/null 2>&1; then
+      tailscale down 2>/dev/null || notify-send "Tailscale" "No permission. Run once: sudo tailscale set --operator=\$USER"
+    else
+      tailscale up 2>/dev/null || notify-send "Tailscale" "Could not connect. Run: sudo tailscale up"
+    fi
+    pkill -RTMIN+10 waybar
+    exit ;;
+esac
+if ! systemctl is-active -q tailscaled; then
+  printf '{"text":"󰖂","class":"off","tooltip":"Tailscale is off (service not running)\\nRight-click: admin console"}\n'
+  exit
+fi
+state=$(tailscale status --json 2>/dev/null | grep -o '"BackendState": *"[A-Za-z]*"' | grep -o '[A-Za-z]*"$' | tr -d '"')
+if [[ $state == Running ]]; then
+  ip=$(tailscale ip -4 2>/dev/null | head -1)
+  printf '{"text":"󰖂","class":"connected","tooltip":"Tailscale connected - %s\\nClick: disconnect · Right-click: admin console"}\n' "$ip"
+elif [[ $state == NeedsLogin ]]; then
+  printf '{"text":"󰖂","class":"disconnected","tooltip":"Tailscale needs login\\nClick: log in · Right-click: admin console"}\n'
+else
+  printf '{"text":"󰖂","class":"disconnected","tooltip":"Tailscale disconnected\\nClick: connect · Right-click: admin console"}\n'
+fi

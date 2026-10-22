@@ -1,0 +1,12 @@
+[SddmGreeterTheme]
+Name=AerisOS
+Description=AerisOS login: the boot splash layout, full screen, with the login fields in the status row
+Author=AerisOS
+License=MIT
+Type=sddm-theme
+Version=1.0
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=aeris
+Theme-API=2.0
+QtVersion=6

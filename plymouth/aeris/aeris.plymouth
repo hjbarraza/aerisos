@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=AerisOS
+Description=AerisOS boot: the splash layout with scanning status squares and a light sweeping the rule
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/aeris
+ScriptFile=/usr/share/plymouth/themes/aeris/aeris.script

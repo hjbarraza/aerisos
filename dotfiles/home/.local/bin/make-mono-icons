@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Build a grayscale ("Mono") icon theme from the installed app icons.
+
+Sources: breeze-dark app icons (preferred), then every app's own hicolor icons.
+SVGs get their colors rewritten to luminance gray; PNGs are decoded and
+re-encoded as grayscale with a pure-stdlib PNG codec. Non-app icons (folders,
+file types, ...) are inherited from breeze-dark.
+
+Re-run after installing new apps:  make-mono-icons
+"""
+import os
+import re
+import shutil
+import struct
+import zlib
+from pathlib import Path
+
+OUT = Path.home() / ".local/share/icons/Mono"
+SOURCES = [Path("/usr/share/icons/breeze-dark"), Path("/usr/share/icons/hicolor")]
+
+
+# ---------- color math ----------
+
+def gray(r, g, b):
+    return round(0.2126 * r + 0.7152 * g + 0.0722 * b)
+
+
+def hex_to_gray(m):
+    h = m.group(1)
+    if len(h) in (3, 4):
+        h = "".join(c * 2 for c in h)
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    y = gray(r, g, b)
+    return "#%02x%02x%02x%s" % (y, y, y, h[6:8])
+
+
+def rgb_to_gray(m):
+    r, g, b = (float(v) for v in m.group(1, 2, 3))
+    y = gray(r, g, b)
+    rest = m.group(4) or ""
+    return "rgb%s(%d,%d,%d%s)" % ("a" if rest else "", y, y, y, rest)
+
+
+HEX = re.compile(r"#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b")
+RGB = re.compile(r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(,\s*[\d.]+\s*)?\)")
+
+
+def convert_svg(src, dst):
+    text = src.read_text(errors="replace")
+    text = HEX.sub(hex_to_gray, text)
+    text = RGB.sub(rgb_to_gray, text)
+    dst.write_text(text)
+
+
+# ---------- minimal PNG codec (8-bit, non-interlaced) ----------
+
+def paeth(a, b, c):
+    p = a + b - c
+    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    return b if pb <= pc else c
+
+
+def convert_png(src, dst):
+    data = src.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return False
+    pos, chunks = 8, []
+    while pos < len(data):
+        (length,) = struct.unpack(">I", data[pos:pos + 4])
+        ctype = data[pos + 4:pos + 8]
+        chunks.append((ctype, data[pos + 8:pos + 8 + length]))
+        pos += 12 + length
+    ihdr = dict(chunks)[b"IHDR"]
+    w, h, depth, ctype, _, _, interlace = struct.unpack(">IIBBBBB", ihdr)
+    if depth != 8 or interlace or ctype not in (2, 3, 6):
+        return False  # unusual format: caller copies it unchanged
+    plte = dict(chunks).get(b"PLTE", b"")
+    trns = dict(chunks).get(b"tRNS", b"")
+    raw = zlib.decompress(b"".join(c for t, c in chunks if t == b"IDAT"))
+
+    bpp = {2: 3, 3: 1, 6: 4}[ctype]
+    stride = w * bpp
+    out_rows, prev = [], bytearray(stride)
+    i = 0
+    for _ in range(h):
+        f = raw[i]
+        row = bytearray(raw[i + 1:i + 1 + stride])
+        i += 1 + stride
+        for x in range(stride):
+            a = row[x - bpp] if x >= bpp else 0
+            b = prev[x]
+            c = prev[x - bpp] if x >= bpp else 0
+            if f == 1:
+                row[x] = (row[x] + a) & 255
+            elif f == 2:
+                row[x] = (row[x] + b) & 255
+            elif f == 3:
+                row[x] = (row[x] + (a + b) // 2) & 255
+            elif f == 4:
+                row[x] = (row[x] + paeth(a, b, c)) & 255
+        prev = row
+        # to gray+alpha (color type 4)
+        ga = bytearray()
+        for x in range(w):
+            if ctype == 3:
+                idx = row[x]
+                r, g, bl = plte[idx * 3:idx * 3 + 3]
+                al = trns[idx] if idx < len(trns) else 255
+            else:
+                r, g, bl = row[x * bpp:x * bpp + 3]
+                al = row[x * bpp + 3] if ctype == 6 else 255
+            ga += bytes((gray(r, g, bl), al))
+        out_rows.append(b"\x00" + bytes(ga))
+
+    def chunk(t, body):
+        return struct.pack(">I", len(body)) + t + body + struct.pack(">I", zlib.crc32(t + body) & 0xFFFFFFFF)
+
+    png = b"\x89PNG\r\n\x1a\n"
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 4, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(b"".join(out_rows), 9))
+    png += chunk(b"IEND", b"")
+    dst.write_bytes(png)
+    return True
+
+
+# ---------- theme assembly ----------
+
+def theme_dirs(theme):
+    """Map 'apps' directory names to their index.theme section bodies."""
+    idx = (theme / "index.theme").read_text(errors="replace")
+    sections = re.split(r"^\[(.+?)\]\s*$", idx, flags=re.M)
+    out = {}
+    for name, body in zip(sections[1::2], sections[2::2]):
+        if "apps" in name.split("/") and "Size=" in body:
+            out[name] = body.strip()
+    return out
+
+
+def main():
+    if OUT.exists():
+        shutil.rmtree(OUT)
+    OUT.mkdir(parents=True)
+    seen, dirs = set(), {}
+    stats = {"svg": 0, "png": 0, "copied": 0}
+
+    for theme in SOURCES:
+        for d, body in theme_dirs(theme).items():
+            src_dir = theme / d
+            if not src_dir.is_dir():
+                continue
+            dirs.setdefault(d, body)
+            for f in src_dir.iterdir():
+                if not f.is_file() and not f.is_symlink():
+                    continue
+                key = (d, f.stem)
+                if key in seen:
+                    continue  # breeze-dark wins over the app's own icon
+                seen.add(key)
+                dst = OUT / d / f.name
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                real = f.resolve()
+                if not real.is_file():
+                    continue
+                if f.suffix == ".svg":
+                    convert_svg(real, dst)
+                    stats["svg"] += 1
+                elif f.suffix == ".png" and convert_png(real, dst):
+                    stats["png"] += 1
+                else:
+                    shutil.copy(real, dst)
+                    stats["copied"] += 1
+
+    index = [
+        "[Icon Theme]",
+        "Name=Mono",
+        "Comment=Grayscale app icons generated by make-mono-icons",
+        "Inherits=breeze-dark,hicolor",
+        "Directories=" + ",".join(sorted(dirs)),
+        "",
+    ]
+    for d in sorted(dirs):
+        index += ["[%s]" % d, dirs[d], ""]
+    (OUT / "index.theme").write_text("\n".join(index))
+    os.system("gtk-update-icon-cache -q -f -t %s 2>/dev/null" % OUT)
+    print("Mono icon theme: %d svg, %d png converted, %d copied as-is -> %s"
+          % (stats["svg"], stats["png"], stats["copied"], OUT))
+
+
+if __name__ == "__main__":
+    main()

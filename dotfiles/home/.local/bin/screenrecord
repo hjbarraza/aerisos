@@ -1,0 +1,30 @@
+#!/bin/bash
+# screenrecord [area|screen]  - start recording; run again (any mode) to stop and save.
+# screenrecord status         - Waybar JSON: red dot while recording, hidden otherwise.
+# Saves to ~/Videos/Screenrecordings, with desktop audio.
+if [[ ${1:-} == status ]]; then
+  pgrep -x gpu-screen-reco >/dev/null \
+    && printf '{"text":"","class":"on","tooltip":"Recording - click to stop and save"}\n' \
+    || printf '{"text":""}\n'
+  exit
+fi
+
+if pgrep -x gpu-screen-reco >/dev/null; then
+  pkill -SIGINT -x gpu-screen-reco          # SIGINT = stop and finalize the file
+  sleep 0.5; pkill -RTMIN+10 waybar
+  notify-send "Screen recording saved" "~/Videos/Screenrecordings"
+  exit
+fi
+
+dir="$(xdg-user-dir VIDEOS 2>/dev/null || echo "$HOME/Videos")/Screenrecordings"
+mkdir -p "$dir"
+file="$dir/$(date +%Y-%m-%d_%H-%M-%S).mp4"
+
+case "${1:-area}" in
+  area)   region=$(slurp -d -b '#00000066' -c '#ffffffcc' -w 1 -f '%wx%h+%x+%y') || exit 0
+          args=(-w region -region "$region") ;;
+  screen) args=(-w "$(hyprctl activeworkspace -j | python3 -c 'import json,sys; print(json.load(sys.stdin)["monitor"])')") ;;
+esac
+
+gpu-screen-recorder "${args[@]}" -f 60 -a default_output -o "$file" >/dev/null 2>&1 &
+sleep 0.5; pkill -RTMIN+10 waybar

@@ -1,0 +1,68 @@
+# AerisOS lock screen: a quieter version of the login screen.
+# Pure black, centred: ÆRIS OS wordmark, time and date in mono, a slim password field,
+# 知能情報システム at the foot. Monochrome only (wrong password is white, not red).
+
+general {
+    hide_cursor = true
+    ignore_empty_input = true
+}
+
+background {
+    monitor =
+    color = rgba(000000ff)
+}
+
+label {   # wordmark: ÆRIS regular (Æ ligature), OS bold
+    monitor =
+    text = <span weight="normal" letter_spacing="-2400">ÆRIS</span> <span weight="bold" letter_spacing="-2400">OS</span>
+    font_family = Söhne
+    font_size = 56
+    color = rgba(ffffffff)
+    position = 0, 120
+    halign = center
+    valign = center
+}
+
+label {   # time · date
+    monitor =
+    text = cmd[update:1000] echo "<span letter_spacing='2048'>$(date +'%H:%M  ·  %A %d %b' | tr '[:lower:]' '[:upper:]')</span>"
+    font_family = Söhne Mono
+    font_size = 11
+    color = rgba(7a7a7aff)
+    position = 0, 50
+    halign = center
+    valign = center
+}
+
+input-field {
+    monitor =
+    size = 280, 40
+    outline_thickness = 1
+    rounding = 0
+    outer_color = rgba(3a3a3aff)
+    inner_color = rgba(000000ff)
+    font_color = rgba(ffffffff)
+    font_family = Söhne Mono
+    check_color = rgba(ffffffff)
+    fail_color = rgba(ffffffff)
+    fade_on_empty = false
+    placeholder_text = <span foreground="##5a5a5a" letter_spacing="2048">PASSWORD</span>
+    fail_text = <span foreground="##ffffff" letter_spacing="2048">ACCESS DENIED</span>
+    dots_size = 0.18
+    dots_spacing = 0.5
+    dots_center = true
+    position = 0, -30
+    halign = center
+    valign = center
+}
+
+label {   # foot
+    monitor =
+    text = 知能情報システム
+    font_family = Source Han Sans JP
+    font_size = 10
+    color = rgba(4a4a4aff)
+    position = 0, 48
+    halign = center
+    valign = bottom
+}

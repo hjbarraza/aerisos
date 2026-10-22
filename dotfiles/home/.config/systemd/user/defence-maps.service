@@ -1,0 +1,9 @@
+[Unit]
+Description=Local server for ~/maps: static files + OpenRouter proxy (127.0.0.1:8765)
+
+[Service]
+ExecStart=/usr/bin/python3 -I %h/maps/engine/serve.py 8765
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

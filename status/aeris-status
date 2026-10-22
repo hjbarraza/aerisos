@@ -1,0 +1,929 @@
+#!/usr/bin/env python3
+"""Collect live machine info for the AerisOS login screen.
+
+Runs as root from aeris-status.timer (at boot, then every minute) and writes
+/var/lib/aeris/status.json, which the SDDM theme reads. Every field is
+best-effort: anything unavailable becomes "—" instead of failing.
+
+Location comes from the public IP (ipinfo.io, city-level) and weather from
+Open-Meteo. The intelligence row adds aircraft overhead (adsb.fi), GPS jamming
+(GPSJAM), satellite passes (CelesTrak elements, propagated here), space weather
+(NOAA SWPC), headlines (defence, intelligence and cyber feeds, plus BBC and Al Jazeera filtered to those topics) and
+internet outages (IODA). None need a key. Ping and DNS times are measured here.
+Network sources are cached; offline, the last values are kept and marked stale.
+"""
+import email.utils
+import glob
+import gzip
+import json
+import math
+import os
+import pwd
+import random
+import re
+import socket
+import subprocess
+import time
+import urllib.parse
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from xml.etree import ElementTree
+
+OUT_DIR = "/var/lib/aeris"
+OUT = os.path.join(OUT_DIR, "status.json")
+# Serial and public IP: readable by USER only (mode 600), for the terminal greeting
+PRIVATE = os.path.join(OUT_DIR, "private.json")
+LOCK = os.path.join(OUT_DIR, "lock.tsv")  # the lock screen's view of status.json, one "key<TAB>text" per line
+USER = os.environ.get("AERIS_USER", "h")
+NA = "—"
+
+
+def read(path, default=NA):
+    try:
+        with open(path) as f:
+            return f.read().strip() or default
+    except OSError:
+        return default
+
+
+def run(*cmd, timeout=5):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def fetch(url, timeout=4):
+    req = urllib.request.Request(url, headers={"User-Agent": "aeris-status", "Accept-Encoding": "gzip"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        body = r.read()
+    return gzip.decompress(body) if body[:2] == b"\x1f\x8b" else body
+
+
+def fetch_json(url, timeout=4):
+    return json.loads(fetch(url, timeout))
+
+
+def cached(name, ttl, fn):
+    """fn() if the cache is older than ttl; on failure, the last values marked stale."""
+    path = os.path.join(OUT_DIR, f"{name}-cache.json")
+    try:
+        with open(path) as f:
+            cache = json.load(f)
+        if time.time() - cache.get("_at", 0) < ttl:
+            return cache
+    except (OSError, ValueError):
+        cache = {}
+    try:
+        data = {"_at": time.time(), "_fetched": time.time(), **fn()}
+    except Exception:
+        # Keep the last values and back off up to 5 minutes, so a rate limit can clear
+        data = {**cache, "stale": True} if cache else {"offline": True}
+        data["_at"] = time.time() - ttl + min(ttl, 300)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, ensure_ascii=False)
+    return data
+
+
+def fresh(data):
+    """When a cached source was last fetched: "14:13", "14:01 STALE" after a failed refresh, or "NO DATA"."""
+    # Caches from before _fetched existed: their _at is the fetch time unless a retry moved it
+    at = data.get("_fetched") or (None if data.get("stale") else data.get("_at"))
+    if not at:
+        return "NO DATA"
+    return time.strftime("%H:%M", time.localtime(at)) + (" STALE" if data.get("stale") else "")
+
+
+def human_duration(seconds):
+    seconds = int(seconds)
+    d, rem = divmod(seconds, 86400)
+    h, rem = divmod(rem, 3600)
+    m = rem // 60
+    return f"{d}D {h}H {m}M" if d else f"{h}H {m}M"
+
+
+# ---------- identity ----------
+
+def identity():
+    product = read("/sys/class/dmi/id/product_name").split(" - ")[0]
+    vendor = read("/sys/class/dmi/id/sys_vendor")
+    cpu = re.sub(r".*\)\s*", "", run("sh", "-c", "lscpu | sed -n 's/^Model name: *//p'"))
+    gpus = []
+    for line in run("lspci").splitlines():
+        if re.search(r"VGA|3D|Display", line):
+            m = re.search(r"\[([^\]]+)\]", line.split(": ", 1)[-1])
+            if m:
+                gpus.append(re.sub(r"(?i)geforce |laptop gpu| graphics", "", m.group(1)).strip())
+    mem_kb = int(re.search(r"MemTotal:\s+(\d+)", read("/proc/meminfo", "MemTotal: 0")).group(1))
+    boot = run("systemd-analyze")
+    boot_s = re.search(r"=\s*([\d.]+)s", boot)
+    return {
+        "host": read("/etc/hostname").upper(),
+        "model": f"{vendor} {product}".upper(),
+        "cpu": cpu.upper() or NA,
+        "gpu": " · ".join(gpus).upper() or NA,
+        "ram": f"{round(mem_kb / 1048576)} GB",
+        "kernel": os.uname().release.upper(),
+        "boot": f"{float(boot_s.group(1)):.1f} S" if boot_s else NA,
+    }
+
+
+# ---------- live state ----------
+
+def live_state():
+    bat = (glob.glob("/sys/class/power_supply/BAT*") or [""])[0]
+    capacity = read(f"{bat}/capacity") if bat else NA
+    bstatus = read(f"{bat}/status", "").upper() if bat else ""
+    temp = NA
+    for zone in glob.glob("/sys/class/thermal/thermal_zone*"):
+        if read(f"{zone}/type", "") in ("x86_pkg_temp", "TCPU"):
+            temp = f"{int(read(f'{zone}/temp', '0')) // 1000}°C"
+            break
+    ssid, signal = NA, ""
+    for line in run("nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL", "dev", "wifi").splitlines():
+        if line.startswith("yes:"):
+            _, ssid, signal = line.rsplit(":", 2) if line.count(":") >= 2 else (line, NA, "")
+            ssid = ssid or NA
+            break
+    lan = re.search(r"src (\S+)", run("ip", "-4", "-o", "route", "get", "1.1.1.1"))
+    uptime = float(read("/proc/uptime", "0").split()[0])
+    df = run("df", "-h", "--output=used,size", "/").splitlines()
+    disk = " / ".join(df[-1].split()) if len(df) > 1 else NA
+    return {
+        "battery": f"{capacity}%" if capacity != NA else NA,
+        "power": bstatus.replace("NOT CHARGING", "AC").replace("DISCHARGING", "BATTERY") or NA,
+        "cpu_temp": temp,
+        "wifi": ssid.upper(),
+        "signal": f"{signal}%" if signal else NA,
+        "lan": lan.group(1) if lan else NA,
+        "uptime": human_duration(uptime),
+        "disk": disk,
+    }
+
+
+# ---------- location + weather (network, cached) ----------
+
+WEATHER = {  # WMO code -> (English, Japanese)
+    0: ("CLEAR", "快晴"), 1: ("MOSTLY CLEAR", "晴れ"), 2: ("PARTLY CLOUDY", "晴れ時々曇り"),
+    3: ("OVERCAST", "曇り"), 45: ("FOG", "霧"), 48: ("FREEZING FOG", "霧"),
+    51: ("DRIZZLE", "霧雨"), 53: ("DRIZZLE", "霧雨"), 55: ("DRIZZLE", "霧雨"),
+    61: ("LIGHT RAIN", "小雨"), 63: ("RAIN", "雨"), 65: ("HEAVY RAIN", "大雨"),
+    71: ("LIGHT SNOW", "小雪"), 73: ("SNOW", "雪"), 75: ("HEAVY SNOW", "大雪"),
+    80: ("SHOWERS", "にわか雨"), 81: ("SHOWERS", "にわか雨"), 82: ("HEAVY SHOWERS", "にわか雨"),
+    95: ("THUNDERSTORM", "雷雨"), 96: ("THUNDERSTORM", "雷雨"), 99: ("THUNDERSTORM", "雷雨"),
+}
+
+
+def coord(value, pos, neg):
+    return f"{abs(value):.4f}° {pos if value >= 0 else neg}"
+
+
+def location_weather():
+    # The public IP goes to private.json only, never into the cache or status.json
+    ip = fetch_json("https://ipinfo.io/json")
+    WAN["ip"] = ip.get("ip", NA)
+    lat, lon = (float(x) for x in ip["loc"].split(","))
+    w = fetch_json(
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        "&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m"
+        "&daily=sunrise,sunset&timezone=auto&forecast_days=1"
+    )
+    cur = w["current"]
+    en, ja = WEATHER.get(int(cur["weather_code"]), ("—", "—"))
+    return {
+        "lat": lat,
+        "lon": lon,
+        "city": f'{ip.get("city", "")}, {ip.get("country", "")}'.upper().strip(", ") or NA,
+        "coords": f"{coord(lat, 'N', 'S')}  {coord(lon, 'E', 'W')}",
+        "timezone": ip.get("timezone", NA).upper(),
+        "temp": f'{round(cur["temperature_2m"])}°C',
+        "sky": en,
+        "sky_ja": ja,
+        "wind": f'{round(cur["wind_speed_10m"])} KM/H',
+        "humidity": f'{round(cur["relative_humidity_2m"])}%',
+        "sunrise": w["daily"]["sunrise"][0][-5:],
+        "sunset": w["daily"]["sunset"][0][-5:],
+        "alt": f'{round(w.get("elevation", 0))} M' if "elevation" in w else NA,
+    }
+
+
+WAN = {}  # set by location_weather when it refreshes
+
+
+def network_info():
+    return cached("net", 15 * 60, location_weather)
+
+
+def write_private():
+    """Serial (root-only in sysfs) and public IP, for USER's terminal greeting only."""
+    try:
+        with open(PRIVATE) as f:
+            last = json.load(f)
+    except (OSError, ValueError):
+        last = {}
+    data = {"serial": read("/sys/class/dmi/id/product_serial"),
+            "public_ip": WAN.get("ip") or last.get("public_ip", NA)}
+    tmp = PRIVATE + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f)
+    os.chmod(tmp, 0o600)
+    try:
+        pw = pwd.getpwnam(USER)
+        os.chown(tmp, pw.pw_uid, pw.pw_gid)
+    except KeyError:
+        pass
+    os.replace(tmp, PRIVATE)
+
+
+# ---------- airspace: aircraft overhead + GPS jamming ----------
+
+RADIUS_NM = 27  # 50 km
+
+
+def aircraft(lat, lon):
+    ac = fetch_json(f"https://opendata.adsb.fi/api/v2/lat/{lat:.4f}/lon/{lon:.4f}/dist/{RADIUS_NM}")["aircraft"]
+    flying = [a for a in ac if isinstance(a.get("alt_baro"), (int, float))]
+    out = {"traffic": f"{len(flying)} AIRCRAFT · 50 KM", "nearest": NA}
+    if flying:
+        a = min(flying, key=lambda a: a.get("dst", 1e9))
+        name = (a.get("flight") or a.get("r") or a.get("hex", "")).strip()
+        # Fits the 21-character value column: "RYR2495X B38M FL370", "VLG3GG A320 1675 FT"
+        alt = a["alt_baro"]
+        level = f"FL{round(alt / 100):03d}" if alt >= 18000 else f"{alt} FT"
+        out["nearest"] = f'{name} {a.get("t", "")} {level}'.upper()
+    out["mil"] = str(sum(1 for a in ac if (a.get("dbFlags") or 0) & 1))
+    emergencies = sorted({a["squawk"] for a in ac if a.get("squawk") in ("7500", "7600", "7700")}
+                         | {a["emergency"].upper() for a in ac if a.get("emergency") not in (None, "none")})
+    out["emergency"] = " ".join(emergencies) or "NONE"
+    # GPSJAM's method, live: airborne aircraft reporting low navigation accuracy (NACp < 8).
+    # Surface targets are excluded: aerodrome beacons and ground vehicles report NACp 0 as a
+    # matter of course (the El Prat tower alone was turning a 13-aircraft sample into "LOW").
+    # One bad contact is never enough either -- uncertified GA GPS sets read 0 with no
+    # interference at all -- so LOW needs two and JAMMED three plus a >10% share.
+    rated = [a["nac_p"] for a in ac
+             if isinstance(a.get("nac_p"), int)
+             and isinstance(a.get("alt_baro"), (int, float)) and a["alt_baro"] >= 1000]
+    if not rated:
+        out["gnss"] = NA
+    else:
+        bad = sum(1 for n in rated if n < 8)
+        share = bad / len(rated)
+        word = "JAMMED" if bad >= 3 and share > 0.10 else "LOW" if bad >= 2 else "OK"
+        out["gnss"] = f"{word} {bad}/{len(rated)}"
+    return out
+
+
+def gps_jamming():
+    # Last row of the manifest: date, suspect, number of world hexes with jammed aircraft
+    last = fetch("https://gpsjam.org/data/manifest.csv", timeout=8).decode().strip().splitlines()[-1].split(",")
+    return {"jam_zones": f"{int(last[2]):,} ZONES", "jam_date": last[0]}
+
+
+def airspace(lat, lon):
+    air = cached("air", 50, lambda: aircraft(lat, lon))
+    return {**cached("gpsjam", 6 * 3600, gps_jamming), **air, "fresh": fresh(air)}
+
+
+# ---------- orbit: next ISS / Tiangong passes + space weather ----------
+# Mean elements with J2 precession: within a few seconds of SGP4 for a pass a day ahead.
+
+MU, RE, J2 = 398600.4418, 6378.137, 1.08262668e-3
+WGS84_E2 = (1 / 298.257223563) * (2 - 1 / 298.257223563)
+STATIONS = {"ISS": "ISS (ZARYA)", "CSS": "CSS (TIANHE)"}
+
+
+def station_elements():
+    lines = fetch("https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=TLE", timeout=8).decode().splitlines()
+    tles = {lines[i].strip(): (lines[i + 1], lines[i + 2]) for i in range(0, len(lines) - 2, 3)}
+    return {key: tles[name] for key, name in STATIONS.items() if name in tles}
+
+
+def parse_tle(l1, l2):
+    year, day = int(l1[18:20]), float(l1[20:32])
+    epoch = datetime(2000 + year, 1, 1, tzinfo=timezone.utc).timestamp() + (day - 1) * 86400
+    return {
+        "epoch": epoch, "ndot2": float(l1[33:43]),
+        "i": math.radians(float(l2[8:16])), "raan": math.radians(float(l2[17:25])),
+        "e": float("0." + l2[26:33]), "argp": math.radians(float(l2[34:42])),
+        "m": float(l2[43:51]), "n": float(l2[52:63]),
+    }
+
+
+def sat_ecef(s, t):
+    dt = (t - s["epoch"]) / 86400
+    n = (s["n"] + 2 * s["ndot2"] * dt) * 2 * math.pi / 86400
+    a = (MU / n ** 2) ** (1 / 3)
+    e, i = s["e"], s["i"]
+    k = 1.5 * J2 * (RE / (a * (1 - e * e))) ** 2 * n * dt * 86400
+    raan = s["raan"] - k * math.cos(i)
+    argp = s["argp"] + k / 2 * (5 * math.cos(i) ** 2 - 1)
+    m = math.radians(s["m"] + 360 * (s["n"] * dt + s["ndot2"] * dt * dt))
+    ea = m
+    for _ in range(6):
+        ea -= (ea - e * math.sin(ea) - m) / (1 - e * math.cos(ea))
+    xp, yp = a * (math.cos(ea) - e), a * math.sqrt(1 - e * e) * math.sin(ea)
+    co, so, cw, sw, ci, si = math.cos(raan), math.sin(raan), math.cos(argp), math.sin(argp), math.cos(i), math.sin(i)
+    x = (co * cw - so * sw * ci) * xp + (-co * sw - so * cw * ci) * yp
+    y = (so * cw + co * sw * ci) * xp + (-so * sw + co * cw * ci) * yp
+    z = sw * si * xp + cw * si * yp
+    gmst = math.radians((280.46061837 + 360.98564736629 * (t / 86400 - 10957.5)) % 360)
+    return x * math.cos(gmst) + y * math.sin(gmst), -x * math.sin(gmst) + y * math.cos(gmst), z
+
+
+def elevation(s, t, obs, up):
+    d = [p - o for p, o in zip(sat_ecef(s, t), obs)]
+    return math.degrees(math.asin(sum(a * b for a, b in zip(d, up)) / math.sqrt(sum(a * a for a in d))))
+
+
+def observer(lat, lon):
+    """ECEF position and local up unit vector for a ground observer."""
+    la, lo = math.radians(lat), math.radians(lon)
+    nr = RE / math.sqrt(1 - WGS84_E2 * math.sin(la) ** 2)
+    obs = (nr * math.cos(la) * math.cos(lo), nr * math.cos(la) * math.sin(lo), nr * (1 - WGS84_E2) * math.sin(la))
+    up = (math.cos(la) * math.cos(lo), math.cos(la) * math.sin(lo), math.sin(la))
+    return obs, up
+
+
+def next_pass(s, lat, lon, now, min_el=10, step=20):
+    """'HH:MM · MAX° · N MIN' for the next pass above min_el within a day ('NOW' if overhead)."""
+    obs, up = observer(lat, lon)
+    t = now
+    while t < now + 86400 and elevation(s, t, obs, up) < min_el:
+        t += step
+    if t >= now + 86400:
+        return NA
+    start, top = t, 0
+    while (el := elevation(s, t, obs, up)) >= min_el:
+        top, t = max(top, el), t + step
+    when = "NOW" if start == now else time.strftime("%H:%M", time.localtime(start))
+    return f"{when} · {round(top)}° · {max(1, round((t - start) / 60))} MIN"
+
+
+def space_weather():
+    scales = fetch_json("https://services.swpc.noaa.gov/products/noaa-scales.json")["0"]
+    kp = float(fetch_json("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json")[-1]["Kp"])
+    flares = fetch_json("https://services.swpc.noaa.gov/json/goes/primary/xray-flares-latest.json")
+    return {
+        "kp": f"{kp:.1f} " + ("QUIET" if kp < 4 else "ACTIVE" if kp < 5 else f"STORM G{min(5, int(kp) - 4)}"),
+        "flare": (flares[0].get("max_class") or NA) if flares else NA,
+        "scales": " ".join(f"{k}{scales[k]['Scale'] or 0}" for k in ("R", "S", "G")),
+    }
+
+
+def visual_elements():
+    """TLEs of CelesTrak's 'visual' group: the ~170 brightest satellites."""
+    lines = fetch("https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=TLE", timeout=10).decode().splitlines()
+    return {"sats": [[lines[i].strip(), lines[i + 1], lines[i + 2]] for i in range(0, len(lines) - 2, 3)]}
+
+
+def next_launch():
+    """The next launch worldwide, from The Space Devs' free Launch Library 2 (hourly cache)."""
+    first = fetch_json("https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=1&mode=list", 8)["results"][0]
+    vehicle, _, mission = (p.strip() for p in first.get("name", "").partition("|"))
+    status = first.get("status") or {}
+    when = datetime.fromisoformat(first.get("net", "").replace("Z", "+00:00")).astimezone()
+    return {"mission": (mission or vehicle).upper(), "vehicle": vehicle.upper(),
+            "t0": when.strftime("%d %b %H:%M").upper(),
+            "status": (status.get("abbrev", "") if isinstance(status, dict) else str(status)).upper()}
+
+
+def orbit(lat, lon):
+    swpc = cached("swpc", 15 * 60, space_weather)
+    out = {**swpc, "fresh": fresh(swpc)}
+    tles = cached("tle", 12 * 3600, station_elements)
+    now = time.time()
+    for key in STATIONS:
+        out[key.lower()] = next_pass(parse_tle(*tles[key]), lat, lon, now) if key in tles else NA
+    # Bright satellites above 10° elevation right now, highest first
+    vis, obs_up = cached("vistle", 12 * 3600, visual_elements), observer(lat, lon)
+    over = []
+    for name, l1, l2 in vis.get("sats") or []:
+        try:
+            el = elevation(parse_tle(l1, l2), now, *obs_up)
+        except (ValueError, IndexError, ZeroDivisionError):
+            continue
+        if el >= 10:
+            over.append((el, re.sub(r"\s*\(.*", "", name)))
+    over.sort(reverse=True)
+    out["sats"] = f"{len(over)} O/H" + (f" · {cut(over[0][1], 24)}" if over else "")
+    launch = cached("launch", 60 * 60, next_launch)
+    out["launch"] = cut(launch.get("mission") or NA, 20)
+    out["launch_t0"] = " · ".join(x for x in (launch.get("t0"), launch.get("status")) if x) or NA
+    return out
+
+
+# ---------- world: headlines + internet outages ----------
+
+NEWS_WIDTH = 44  # characters per line in the right column's news card
+NEWS_ITEMS = 12  # more than either screen shows; each keeps as many whole stories as fit
+
+
+def clean_title(title):
+    # GDELT spaces out punctuation: "India - backed", "Balochistan : ISPR"
+    title = re.sub(r"(\w) - (\w)", r"\1-\2", title)
+    return re.sub(r" ([:,.;!?]|'s)", r"\1", title).upper()
+
+
+def wrap(title, width=NEWS_WIDTH, most=3):
+    """Whole headline in lines of at most width characters (mono font), the last cut if needed."""
+    lines, line = [], ""
+    for word in title.split():
+        if line and len(line) + 1 + len(word) > width:
+            lines.append(line)
+            line = word
+        else:
+            line = f"{line} {word}" if line else word
+    lines.append(line)
+    lines = [l if len(l) <= width else l[:width - 1] + "…" for l in lines]
+    if len(lines) > most:
+        lines = lines[:most]
+        lines[-1] = cut(lines[-1] + " …", width) if len(lines[-1]) < width - 1 else lines[-1][:width - 1] + "…"
+    return lines
+
+
+def words(title):
+    return {w for w in re.findall(r"[A-Z]{4,}", title)}
+
+
+# ---------- telegram compression: terse one-line headlines via the local Ollama ----------
+
+# Headlines are compressed telegram-style (names, numbers, places; no filler) so one
+# 44-character row carries a whole story. Results are memoized on disk, so Ollama is only
+# asked about titles it has not seen — a handful of calls when the hourly news or watchlist
+# refresh brings new titles, none on the every-minute runs. If Ollama is down or unusable,
+# the raw headline is shown instead: the screens never depend on the model.
+TG_CACHE = os.path.join(OUT_DIR, "tg-cache.json")
+TG_KEEP = 400  # memo entries kept (oldest dropped first)
+OLLAMA = "http://127.0.0.1:11434"
+TG_MODELS = ("qwen3.5:9b", "qwen3.5-9b-16k:latest", "gemma4:12b")  # first available wins
+TG_PROMPT = ("Compress this news headline telegram-style: keep names, numbers and places, "
+             "drop articles and filler words. At most {}, ALL CAPS. "
+             "Answer with the compressed line only.\n\nHEADLINE: ")
+
+_tg_memo = None
+_tg_down = False
+_tg_model = None
+
+
+def _tg_ask(title):
+    global _tg_model
+    if _tg_model is None:
+        tags = [m.get("name", "") for m in fetch_json(f"{OLLAMA}/api/tags", 3).get("models", [])]
+        _tg_model = next((m for m in TG_MODELS if m in tags), tags[0] if tags else "")
+    if not _tg_model:
+        raise ValueError("no ollama model")
+    # A telegram may run to two lock-screen lines; too long still → once more, harder
+    for limit in ("15 words and under 85 characters", "7 words and under 40 characters"):
+        prompt = TG_PROMPT.format(limit) + title
+        body = json.dumps({"model": _tg_model, "prompt": prompt, "stream": False,
+                           "think": False, "options": {"temperature": 0, "num_predict": 40}}).encode()
+        req = urllib.request.Request(f"{OLLAMA}/api/generate", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            reply = json.loads(r.read()).get("response", "")
+        line = reply.strip().splitlines()[0] if reply.strip() else ""
+        line = re.sub(r"\s+", " ", re.sub(r"[\"“”]", "", line)).strip(" .").upper()
+        if 0 < len(line) <= 2 * NEWS_WIDTH:
+            return line
+    raise ValueError("unusable reply")
+
+
+def _tg_store(key, value):
+    global _tg_memo
+    _tg_memo[key] = value
+    while len(_tg_memo) > TG_KEEP:
+        _tg_memo.pop(next(iter(_tg_memo)))
+    tmp = TG_CACHE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(_tg_memo, f, ensure_ascii=False)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, TG_CACHE)
+    return value
+
+
+def telegraph(title):
+    """One terse line for a headline, or "" when it must be shown raw."""
+    global _tg_memo, _tg_down
+    if _tg_memo is None:
+        try:
+            with open(TG_CACHE) as f:
+                _tg_memo = dict(json.load(f))
+        except (OSError, ValueError):
+            _tg_memo = {}
+    key = title.strip().lower()[:160]
+    if not key or key in _tg_memo:
+        return _tg_memo.get(key, "")
+    if _tg_down:
+        return ""
+    try:
+        return _tg_store(key, _tg_ask(title))
+    except (TimeoutError, OSError):   # Ollama down or stuck: one attempt per run, no memo
+        _tg_down = True
+        return ""
+    except Exception:                 # unusable reply for THIS title: remember, show raw forever
+        return _tg_store(key, "")
+
+
+def outages():
+    # Country outages in the last day, biggest first; low scores are measurement noise
+    now = int(time.time())
+    events = fetch_json(
+        "https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events"
+        f"?from={now - 86400}&until={now}&entityType=country&includeAlerts=false&format=codf&limit=500",
+        timeout=15,
+    )["data"]
+    top = {}
+    for e in sorted(events, key=lambda e: -e["score"]):
+        code = e["location"].split("/")[-1]
+        if e["score"] >= 10000 and code not in top:
+            top[code] = e.get("location_name", code).upper()
+    return {"outages": f"{len(top)} COUNTRIES · 24H" if top else "NONE · 24H",
+            "outage_top": [[c, n] for c, n in list(top.items())[:3]],
+            "outage_codes": list(top)}
+
+
+# (feed, label, specialist). Specialist feeds are on-topic by nature and only lose obvious noise;
+# general news feeds must also pass the RELEVANT test.
+RSS_FEEDS = [("https://breakingdefense.com/feed/", "BREAKINGDEFENSE.COM", True),
+             ("https://www.defensenews.com/arc/outboundfeeds/rss/", "DEFENSENEWS.COM", True),
+             ("https://www.defenseone.com/rss/all/", "DEFENSEONE.COM", True),
+             ("https://warontherocks.com/feed/", "WARONTHEROCKS.COM", True),
+             ("https://therecord.media/feed/", "THERECORD.MEDIA", True),
+             ("https://cyberscoop.com/feed/", "CYBERSCOOP.COM", True),
+             ("https://feeds.feedburner.com/TheHackersNews", "THEHACKERNEWS.COM", True),
+             ("https://feeds.bbci.co.uk/news/world/rss.xml", "BBC.CO.UK", False),
+             ("https://www.aljazeera.com/xml/rss/all.xml", "ALJAZEERA.COM", False)]
+PER_SOURCE = 3  # at most this many stories from one feed, so no single outlet fills the card
+
+# Only defence, intelligence, security services and cyber security
+RELEVANT = re.compile(r"""\b(
+  military|militar\w*|army|armies|navy|naval|air\ ?force|marines?|troops?|soldiers?|defen[cs]e|pentagon|nato|
+  missiles?|drones?|uavs?|uas|counter-drone|warships?|submarines?|fighter\ jets?|bombers?|artillery|
+  munitions?|ammunition|weapons?|arms\ (deal|sales?|exports?|control|industry)|airstrikes?|strikes?\ on|shelling|
+  warfare|war|wars|ceasefire|invasion|offensive|frontline|front\ line|occupied|annex\w*|hostages?|
+  insurgen\w*|militants?|terror\w*|jihadi\w*|isis|al-shabaab|
+  intelligence|spy|spies|spying|espionage|counterintelligence|cia|fbi|nsa|mi5|mi6|gchq|mossad|fsb|gru|svr|irgc|
+  cyber\w*|hack\w*|ransomware|malware|spyware|breach\w*|vulnerabilit\w*|zero-day|exploit\w*|phishing|botnet|
+  ddos|apt\d*|backdoor|cve-\d+|infosec|threat\ actors?|data\ leak|leaked\ data|supply-chain\ attack|sabotage|
+  sanctions?|nuclear|enrichment|ballistic|hypersonic|satellites?|space\ force|anti-satellite|
+  gps|gnss|jamming|spoofing|border\ guards?|coast\ guard|national\ guard|
+  security\ services?|national\ security|secret\ service|deterren\w*|rearm\w*|mobili[sz]ation|conscription
+)\b""", re.I | re.X)
+# Clickbait and off-topic stories, dropped from every feed
+NOISE = re.compile(r"""\b(football|soccer|fans|league|cup|olympic\w*|tennis|cricket|nba|nfl|celebrit\w*|
+  oscars?|film|movie|music|album|fashion|recipe|deport\w*|midterms?|polls?|horoscope|lottery|
+  webinar|sponsored|discount)\b""", re.I | re.X)
+
+
+def feed_headlines():
+    """The newest distinct defence, intelligence and cyber stories across RSS_FEEDS."""
+    stories = []
+    for url, label, specialist in RSS_FEEDS:
+        try:
+            root = ElementTree.fromstring(fetch(url, timeout=8))
+        except Exception:
+            continue
+        for it in root.iter("item"):
+            title, date = it.findtext("title"), it.findtext("pubDate")
+            if not (title and date):
+                continue
+            title = clean_title(title.strip())
+            if NOISE.search(title) or not (specialist or RELEVANT.search(title)):
+                continue
+            stories.append((email.utils.parsedate_to_datetime(date), title, label))
+    if not stories:
+        raise ValueError("no feeds")
+    items, seen_words, per_source = [], [], {}
+    for when, title, label in sorted(stories, key=lambda s: s[0], reverse=True):
+        w = words(title)
+        if not w or per_source.get(label, 0) >= PER_SOURCE \
+                or any(len(w & s) / min(len(w), len(s)) >= 0.5 for s in seen_words):
+            continue
+        seen_words.append(w)
+        per_source[label] = per_source.get(label, 0) + 1
+        items.append({"title": title, "lines": wrap(title),
+                      "source": f'{label} · {when.astimezone().strftime("%H:%M")}'})
+        if len(items) == NEWS_ITEMS:
+            break
+    return {"items": items, "via": "RSS"}
+
+
+def news():
+    return feed_headlines()
+
+
+def world():
+    # News refreshes hourly: the one shared copy every screen (login, lock, board) shows.
+    ioda, stories = cached("ioda", 15 * 60, outages), cached("news", 60 * 60, news)
+    return {**ioda, **stories, "fresh_outages": fresh(ioda), "fresh_news": fresh(stories)}
+
+
+# ---------- watchlist: republished from aeris-watch so every screen has one source ----------
+
+# aeris-watch gathers findings on its own hourly timer into watchlist.json; this only
+# copies the display fields into status.json. No network calls happen here.
+WATCHLIST = f"/home/{USER}/.local/share/aeris/watchlist.json"  # the service runs as root
+
+
+def _watch_when(f):
+    raw = re.sub(r"\s*\[.*?\]\s*$", "", str(f.get("date") or ""))
+    try:
+        return email.utils.parsedate_to_datetime(raw).timestamp()
+    except Exception:
+        try:
+            return datetime.fromisoformat(raw).timestamp()
+        except ValueError:
+            return time.time()  # undated: treat as fresh
+
+
+def watchlist():
+    with open(WATCHLIST) as f:
+        data = json.load(f)
+    items, cutoff = [], time.time() - WATCH_DAYS * 86400
+    for i in data.get("items") or []:
+        new = i.get("new") or []
+        # This week's findings, acknowledged (archive) or not (new), newest first
+        recent = [{"title": f.get("title", ""), "date": f.get("date", ""), "new": True} for f in new]
+        ids = {f.get("id") for f in new}
+        recent += [{"title": f.get("title", ""), "date": f.get("date", ""), "new": False}
+                   for f in i.get("archive") or []
+                   if f.get("id") not in ids and _watch_when(f) >= cutoff]
+        recent.sort(key=_watch_when, reverse=True)
+        items.append({"name": i.get("name", ""), "type": i.get("type", ""),
+                      "checked": i.get("last_checked", ""), "error": bool(i.get("error")),
+                      "new": [{"title": n.get("title", ""), "date": n.get("date", "")} for n in new],
+                      "recent": recent[:6]})
+    return {"items": items}
+
+
+# ---------- iran: the defence-map ontology digest, then measured here: ping and DNS ----------
+
+# Curated recent developments from the Iran AI & Cyber Map (maps/iran/data/data.js CONFIG.digest),
+# retrieved through aeris-onto so the screens show what the ontology says, formatted the same way
+# as the news card (one pre-wrapped line per row). The cached copy refreshes hourly, so a map
+# update reaches the screens on the next aeris-status run after it.
+
+def iran_digest_source(data):
+    rows = []
+    for i in data.get("items") or []:
+        text = f"{i['k']} · {i['v']}"
+        rows.append({"k": i["k"], "v": i["v"], "lines": wrap(text)})
+    return {"snapshot": data.get("snapshot", NA), "items": rows, "via": "ONTOLOGY"}
+
+
+def iran():
+    d = cached("iran", 3600, lambda: iran_digest_source(
+        json.loads(subprocess.run(
+            ["node", f"/home/{USER}/.local/bin/aeris-onto", "digest", "iran", "--json"],
+            capture_output=True, text=True, timeout=10,
+            env={**os.environ, "HOME": f"/home/{USER}", "AERIS_MAPS": f"/home/{USER}/maps"},
+        ).stdout)))
+    return {**d, "fresh": fresh(d)}
+
+
+# ---------- measured here: ping and DNS ----------
+
+def ping_ms(host="1.1.1.1"):
+    m = re.search(r"time=([\d.]+) ms", run("ping", "-n", "-c", "1", "-W", "1", host, timeout=3))
+    return f"{round(float(m.group(1)))} MS" if m else NA
+
+
+def dns_ms(server="1.1.1.1", name="example.com"):
+    """One A query straight to the resolver, timed (the local cache would answer in 0 ms)."""
+    qid = random.randrange(65536)
+    query = qid.to_bytes(2, "big") + b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+    query += b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\x00\x00\x01\x00\x01"
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(1)
+            start = time.monotonic()
+            sock.sendto(query, (server, 53))
+            reply = sock.recv(512)
+            if reply[:2] != query[:2]:
+                return NA
+            return f"{round((time.monotonic() - start) * 1000)} MS"
+    except OSError:
+        return NA
+
+
+def local():
+    z = time.strftime("%z")
+    return {"utc": f"{z[:3]}:{z[3:]}" if z else NA, "ping": ping_ms(), "dns": dns_ms()}
+
+
+# ---------- security ----------
+
+def security():
+    last = run("lastlog2", "-u", USER).splitlines()
+    last_login = NA
+    if len(last) > 1:
+        m = re.search(r"(\w{3}) (\w{3}) +(\d+) (\d+:\d+)", last[-1])
+        if m:
+            last_login = f"{m.group(1)} {m.group(3)} {m.group(2)} {m.group(4)}".upper()
+    fails = len([l for l in run("faillock", "--user", USER).splitlines()[2:] if l.strip()])
+    snap = run("snapper", "-c", "root", "list", "--columns", "number").splitlines()
+    snapshot = f"#{snap[-1].strip()}" if len(snap) > 2 else NA
+    updates = run("checkupdates", timeout=30)
+    fw = run("ufw", "status").splitlines()
+    return {
+        "last_login": last_login,
+        "failed": str(fails),
+        "snapshot": snapshot,
+        "updates": str(len(updates.splitlines())) if updates else "0",
+        "firewall": "ACTIVE" if fw and "active" in fw[0] and "inactive" not in fw[0] else "OFF",
+    }
+
+
+# ---------- lock screen view ----------
+# hyprlock labels can only run commands, so the lock screen reads pre-formatted lines from
+# lock.tsv with awk instead of parsing JSON. Same data as status.json, minus NETWORK and
+# SECURITY (the lock screen shows where the laptop is left unattended). Keys are the ones
+# lock/make-hyprlock lays out.
+
+NEWS_ROWS = 5    # lock screen news lines, below the watchlist (18 apart)
+WATCH_ROWS = 16  # lock screen watchlist lines between the wordmark and WORLD
+FEED_WIDTH = 112  # lock screen feed lines use the whole left column, unlike the login's 44
+WATCH_DAYS = 7   # the lock screen shows this much watchlist history, acknowledged or not
+
+
+def cut(text, width):
+    return text if len(text) <= width else text[:width - 1].rstrip() + "…"
+
+
+def lock_view(st):
+    def g(section, key):
+        v = (st.get(section) or {}).get(key)
+        return str(v) if v not in (None, "") else NA
+
+    def first(v):
+        return v.split(" ")[0]
+
+    def rest(v):
+        return " ".join(v.split(" ")[1:]) or NA
+
+    coords = g("net", "coords").split("  ")
+    v = {
+        "identity.host": g("identity", "host"), "identity.ram": g("identity", "ram"),
+        "identity.model": g("identity", "model"), "identity.cpu": g("identity", "cpu"),
+        "identity.gpu": g("identity", "gpu"),
+        "location.city": g("net", "city"), "location.lat": coords[0] if coords[0] != NA else NA,
+        "location.lon": coords[1] if len(coords) > 1 else NA, "location.tz": g("net", "timezone"),
+        "weather.sky": g("net", "sky"), "weather.temp": g("net", "temp"), "weather.hum": g("net", "humidity"),
+        "weather.wind": g("net", "wind"), "weather.rise": g("net", "sunrise"), "weather.set": g("net", "sunset"),
+        "air.traffic": g("air", "traffic"), "air.nearest": g("air", "nearest"),
+        "air.gnss": first(g("air", "gnss")), "air.squawk": g("air", "emergency"),
+        "air.mil": g("air", "mil"), "air.gpsjam": first(g("air", "jam_zones")),
+        "orbit.iss": g("space", "iss"), "orbit.css": g("space", "css"),
+        "orbit.kp": first(g("space", "kp")), "orbit.flare": g("space", "flare"),
+        "orbit.noaa": f'{g("space", "scales")} · {rest(g("space", "kp"))}',
+        "orbit.sats": g("space", "sats"), "orbit.launch": g("space", "launch"),
+        "orbit.t0": g("space", "launch_t0"),
+        "internet.outages": g("world", "outages"),
+        "location.alt": g("net", "alt"), "location.utc": g("local", "utc"),
+        "internet.ping": g("local", "ping"), "internet.dns": g("local", "dns"),
+        # When each card's data was fetched (under the card's name)
+        "fresh.identity": st.get("updated", NA), "fresh.location": g("net", "fresh"),
+        "fresh.weather": g("net", "fresh"), "fresh.airspace": g("air", "fresh"),
+        "fresh.orbit": g("space", "fresh"), "fresh.internet": g("world", "fresh_outages"),
+        "fresh.news": f'{g("world", "fresh_news")} · {g("world", "via")}',
+        # The Iran digest: same pre-wrapped rows the login screen renders
+        "fresh.iran": f'{g("iran", "fresh")} · {g("iran", "via")}',
+    }
+    top = (st.get("world") or {}).get("outage_top") or []
+    for i in range(3):
+        code, name = top[i] if i < len(top) else ("", "")
+        v[f"internet.{i + 1}k"], v[f"internet.{i + 1}v"] = code, name
+    # Watchlist feed: one flat list of the week's findings across every topic, newest
+    # first; * marks unacknowledged findings, as in watch.html
+    wl = (st.get("watch") or {}).get("items") or []
+    finds = sorted(((_watch_when(f), i["name"], f) for i in wl for f in i.get("recent") or []),
+                   key=lambda x: x[0], reverse=True)
+    wrows = []
+    for when, name, f in finds[:WATCH_ROWS]:  # one row per finding, cut rather than wrapped
+        title = re.sub(r"\s+-\s+[^-]{2,40}$", "", f.get("title", ""))  # drop the trailing outlet
+        tg = telegraph(title) or title.upper()
+        mark = "*" if f.get("new") else "·"
+        day = time.strftime("%d %b", time.localtime(when)).upper()
+        wrows.append(f"{mark} " + cut(f"{day} · {name.upper()} · {tg}", FEED_WIDTH))
+    wrows = wrows or [f"ALL QUIET · {len(wl)} TOPICS · {WATCH_DAYS}D"]
+    for i in range(WATCH_ROWS):
+        v[f"watch.{i + 1}"] = wrows[i] if i < len(wrows) else ""
+        v[f"watch.{i + 1}s"] = ""
+    checked = max((it.get("checked") or "" for it in wl), default="")
+    v["fresh.watch"] = checked[-5:] if checked else NA
+    # News rows: one bulleted, telegraphed line per story, a blank row between stories;
+    # a story falls back to its wrapped headline when the model has no usable compression
+    rows = []
+    for item in (st.get("world") or {}).get("items") or []:
+        tg = telegraph(item.get("title", ""))
+        lines = wrap(tg or item.get("title", "").upper(), FEED_WIDTH, 2)
+        lines = ["· " + lines[0]] + ["  " + l for l in lines[1:]]
+        if len(rows) + len(lines) > NEWS_ROWS:
+            break
+        rows += [(line, False) for line in lines]
+    rows = rows or [(NA, False)]
+    for i in range(NEWS_ROWS):
+        text, source = rows[i] if i < len(rows) else ("", False)
+        v[f"news.{i + 1}"], v[f"news.{i + 1}s"] = ("", text) if source else (text, "")
+    # The Iran digest: one pre-wrapped line per row, exactly as the login screen renders it
+    return v
+
+
+IRAN_ROWS = 14  # lock screen digest rows; the WORLD section sits below whatever these use
+
+
+def iran_view(st):
+    rows = []
+    for n, item in enumerate((st.get("iran") or {}).get("items") or []):
+        lines = item.get("lines") or [cut(f'{item.get("k", "")} · {item.get("v", "")}', NEWS_WIDTH)]
+        for i, line in enumerate(lines):
+            rows.append(line)
+    return rows
+
+
+def add_iran_keys(v, st):
+    rows = iran_view(st)
+    for i in range(IRAN_ROWS):
+        v[f"iran.{i + 1}"] = rows[i] if i < len(rows) else ""
+
+
+# status["alerts"] entries -> the lock view keys that show them
+LOCK_ALERTS = {"air.gnss": "air.gnss", "air.emergency": "air.squawk", "space.iss": "orbit.iss",
+               "space.css": "orbit.css", "space.scales": "orbit.noaa", "world.outages": "internet.outages"}
+
+
+def write_lock_view(st):
+    v = lock_view(st)
+    add_iran_keys(v, st)
+    flagged = {LOCK_ALERTS[a] for a in st.get("alerts", []) if a in LOCK_ALERTS}
+    lines = []
+    for key, text in v.items():
+        # Pango markup in the labels: escape, and keep each value on one line
+        text = str(text).replace("&", "&amp;").replace("<", "&lt;").replace("\t", " ").replace("\n", " ")
+        if key in flagged:   # inverted, as on the login screen
+            text = f"<span background='#ffffff' foreground='#000000'> {text} </span>"
+        lines.append(f"{key}\t{text}")
+    tmp = LOCK + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, LOCK)
+
+
+def alerts(st):
+    """Values worth noticing; both screens show them inverted."""
+    air, space, world, net = (st.get(k) or {} for k in ("air", "space", "world", "net"))
+    out = []
+    if str(air.get("gnss", "")).startswith("JAMMED"):
+        out.append("air.gnss")
+    if air.get("emergency") not in (None, NA, "NONE"):
+        out.append("air.emergency")
+    for key in ("iss", "css"):
+        if str(space.get(key, "")).startswith("NOW"):
+            out.append(f"space.{key}")
+    g = re.search(r"G(\d)", str(space.get("scales", "")))
+    if g and int(g.group(1)) >= 1:
+        out.append("space.scales")
+    country = str(net.get("city", "")).split(", ")[-1]
+    if country and country in (world.get("outage_codes") or []):
+        out.append("world.outages")
+    return out
+
+
+def main():
+    status = {"updated": time.strftime("%H:%M")}
+    net = network_info()
+    lat, lon = net.get("lat"), net.get("lon")
+    located = lat is not None and lon is not None
+    sources = {
+        "identity": identity, "state": live_state, "security": security,
+        "air": (lambda: airspace(lat, lon)) if located else dict,
+        "space": (lambda: orbit(lat, lon)) if located else dict,
+        "world": world, "local": local, "iran": iran, "watch": watchlist,
+    }
+    # In parallel: the nine news feeds alone can take several seconds
+    with ThreadPoolExecutor(len(sources)) as pool:
+        futures = {name: pool.submit(fn) for name, fn in sources.items()}
+    status["net"] = {**net, "fresh": fresh(net)}
+    for name, fut in futures.items():
+        try:
+            status[name] = fut.result()
+        except Exception as e:  # one broken source must not blank the rest
+            status[name] = {"error": str(e)}
+    status["alerts"] = alerts(status)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    tmp = OUT + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(status, f, ensure_ascii=False, indent=1)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, OUT)
+    write_lock_view(status)
+    write_private()
+
+
+if __name__ == "__main__":
+    main()

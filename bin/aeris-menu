@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# AerisOS system menu (SUPER+ALT+SPACE): one searchable list for power, toggles,
+# capture, settings, battery, GPU and system tasks.
+
+# The AerisOS Vicinae extension (vicinae/aerisos): sections, icons, live state.
+# The plain list below is the fallback when the extension isn't available.
+if command -v vicinae >/dev/null && vicinae cmd ls 2>/dev/null | grep -q '@aerisos/aerisos:menu'; then
+    exec vicinae cmd launch @aerisos/aerisos:menu
+fi
+
+entries=(
+    "Power — Lock|loginctl lock-session"
+    "Power — Suspend|systemctl suspend"
+    "Power — Log out|command -v hyprshutdown >/dev/null && hyprshutdown || hyprctl dispatch exit"
+    "Power — Restart|systemctl reboot"
+    "Power — Shut down|systemctl poweroff"
+    "Toggle — Do Not Disturb|~/.local/bin/dnd toggle"
+    "Toggle — Night light|~/.local/bin/nightlight toggle"
+    "Toggle — Stay awake|~/.local/bin/stay-awake toggle"
+    "Toggle — Top bar|pkill -SIGUSR1 waybar"
+    "Capture — Screenshot: area|~/.local/bin/screenshot area"
+    "Capture — Screenshot: area + annotate|~/.local/bin/screenshot annotate"
+    "Capture — Screenshot: screen|~/.local/bin/screenshot screen"
+    "Capture — Record: area (run again to stop)|~/.local/bin/screenrecord area"
+    "Capture — Record: screen (run again to stop)|~/.local/bin/screenrecord screen"
+    "Capture — Colour picker|hyprpicker -a"
+    "Settings — Wi-Fi|kitty --class tui-float nmtui"
+    "Settings — Bluetooth|kitty --class tui-float bluetui"
+    "Settings — Audio|kitty --class tui-float wiremix"
+    "Settings — Razer (power, fans, logo)|razer-settings"
+    "Battery — Hold at 90–95%|systemctl --user enable --now aeris-charge-limit.timer && systemctl --user start aeris-charge-limit.service && notify-send 'Battery' 'Holding between 90 and 95%'"
+    "Battery — Charge to 100%|systemctl --user disable --now aeris-charge-limit.timer; razer-cli write bho off && notify-send 'Battery' 'Charging to 100%'"
+    "Battery — Limit to 80% (max lifespan)|systemctl --user disable --now aeris-charge-limit.timer; razer-cli write bho on 80 && notify-send 'Battery' 'Limited to 80%'"
+    "GPU — Integrated only (best battery, reboot)|pkexec envycontrol -s integrated && notify-send 'GPU: integrated' 'Reboot to switch to the Intel GPU only'"
+    "GPU — Hybrid (Intel + NVIDIA on demand, reboot)|pkexec envycontrol -s hybrid && notify-send 'GPU: hybrid' 'Reboot to apply'"
+    "GPU — Show current mode|notify-send 'GPU mode' \"$(envycontrol --query)\""
+    "System — Update AerisOS|kitty --class tui-float -e ~/.local/bin/aeris-update"
+    "System — Keyboard shortcuts|~/.local/bin/keybinds"
+    "System — Activity monitor|kitty --class tui-float btop"
+)
+
+labels=$(printf '%s\n' "${entries[@]}" | cut -d'|' -f1)
+if command -v vicinae >/dev/null && pgrep -x vicinae >/dev/null; then
+    choice=$(printf '%s\n' "$labels" | vicinae dmenu -n "AerisOS" -p "Search actions…")
+else
+    choice=$(printf '%s\n' "$labels" | wofi --dmenu --prompt "AerisOS")
+fi
+[[ -n $choice ]] || exit 0
+
+for entry in "${entries[@]}"; do
+    if [[ ${entry%%|*} == "$choice" ]]; then
+        exec bash -c "${entry#*|}"
+    fi
+done

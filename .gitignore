@@ -1,0 +1,12 @@
+# Editor/backup leftovers (same as the snapshot EXCLUDES)
+*.bak
+*.bak[0-9]*
+*.bak-*
+*.pre-*
+*.orig
+__pycache__/
+node_modules/
+
+# Machine-local secrets: OpenCode service passwords are generated per machine
+dotfiles/home/.config/opencode/service.json
+dotfiles/home/.config/opencode/service-aeris.json

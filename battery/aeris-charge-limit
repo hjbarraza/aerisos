@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Hold the battery between LOW and HIGH percent on a Razer Blade.
+#
+# Razer's Battery Health Optimizer (BHO) only accepts limits of 50-80%. But switching
+# it on above its limit just pauses charging (it never discharges), so:
+#   capacity >= HIGH  -> BHO on  (charging stops, the laptop runs on AC)
+#   capacity <  LOW   -> BHO off (charges back up to HIGH)
+# Run every couple of minutes by aeris-charge-limit.timer. Needs razer-cli + razer-daemon.
+
+HIGH=${AERIS_CHARGE_HIGH:-95}
+LOW=${AERIS_CHARGE_LOW:-90}
+
+bat=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1)
+[[ -n $bat ]] || exit 0
+capacity=$(cat "$bat/capacity")
+
+bho_on() { razer-cli read bho 2>/dev/null | grep -q 'is on'; }
+
+if (( capacity >= HIGH )); then
+    bho_on || { razer-cli write bho on 80 >/dev/null && echo "at ${capacity}%: charging paused"; }
+elif (( capacity < LOW )); then
+    bho_on && { razer-cli write bho off >/dev/null && echo "at ${capacity}%: charging to ${HIGH}%"; }
+fi
+exit 0

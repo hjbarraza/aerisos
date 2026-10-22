@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Update everything on AerisOS, in one go (like omarchy-update):
+#   system + AUR packages (snap-pac takes btrfs snapshots before/after),
+#   package cache cleanup, firmware check, mono icons, razer-control, ~/aerisos snapshot.
+# Run from a terminal: it asks for your sudo password.
+
+set -uo pipefail
+step() { printf '\n\033[1;37m■ %s\033[0m\n' "$*"; }
+
+step "System packages"
+sudo pacman -Syu || { echo "pacman failed; nothing else was changed"; read -rp "Press Enter to close"; exit 1; }
+
+step "AUR packages"
+yay -Sua --noconfirm || echo "! AUR update had problems (system packages are already updated)"
+
+step "Package cache (keep the last 2 versions)"
+sudo paccache -rk2 -q || true
+
+step "Firmware (report only; install with: fwupdmgr update)"
+fwupdmgr refresh --force >/dev/null 2>&1
+fwupdmgr get-updates 2>/dev/null || echo "No firmware updates."
+
+step "Greyscale icons for any new apps"
+~/.local/bin/make-mono-icons >/dev/null && echo "Mono icons rebuilt."
+
+src=~/.local/src/razer-control-revived
+if [[ -d $src/.git ]]; then
+    step "Razer control"
+    git -C "$src" fetch -q
+    if [[ $(git -C "$src" rev-parse HEAD) != $(git -C "$src" rev-parse '@{u}') ]]; then
+        ~/aerisos/setup.sh razer
+    else
+        echo "Up to date."
+    fi
+fi
+
+step "Save the setup to ~/aerisos"
+~/aerisos/setup.sh snapshot >/dev/null && echo "Configs and package lists saved."
+
+orphans=$(pacman -Qdtq 2>/dev/null)
+if [[ -n $orphans ]]; then
+    step "Unused packages (not removed): $(echo $orphans | wc -w)"
+    echo "Remove with: sudo pacman -Rns \$(pacman -Qdtq)"
+fi
+
+# A kernel update removes the running kernel's module folder
+if [[ ! -d /usr/lib/modules/$(uname -r) ]]; then
+    step "Kernel updated: restart to use it"
+fi
+
+printf '\n\033[1;37m■ AerisOS is up to date.\033[0m\n'
+read -rp "Press Enter to close"

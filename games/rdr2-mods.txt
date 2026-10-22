@@ -1,0 +1,6 @@
+# Files added to Red Dead Redemption 2 for Rampage Trainer (remove these to uninstall)
+# Game: /mnt/games/SteamLibrary/steamapps/common/Red Dead Redemption 2
+Rampage.asi
+RampageFiles/
+ScriptHookRDR2.dll
+dinput8.dll

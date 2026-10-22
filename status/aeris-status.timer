@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh AerisOS login screen status every minute
+
+[Timer]
+OnBootSec=0
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

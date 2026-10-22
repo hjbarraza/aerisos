@@ -1,0 +1,10 @@
+[Unit]
+Description=AerisOS login screen status (machine, network, weather, security)
+# Deliberately no network-online/display-manager ordering: the collector handles being
+# offline (cached values) and the login screen re-reads the file every 15 s, so it must
+# never delay the login screen.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/aeris-status
+Environment=AERIS_USER=h

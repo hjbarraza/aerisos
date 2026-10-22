@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/vicinaehq/vicinae/main/typescript/api/schemas/manifest.json",
+  "name": "aerisos",
+  "title": "AerisOS",
+  "description": "The AerisOS system menu: power, toggles, capture, settings, battery, GPU and updates.",
+  "icon": "icon.png",
+  "author": "aerisos",
+  "license": "MIT",
+  "platforms": ["Linux"],
+  "commands": [
+    {
+      "name": "menu",
+      "title": "AerisOS Menu",
+      "subtitle": "AerisOS",
+      "description": "Power, toggles, capture, settings, battery, GPU and updates in one place.",
+      "mode": "view",
+      "keywords": ["power", "system", "battery", "gpu", "update", "settings"]
+    }
+  ],
+  "scripts": {
+    "build": "vici build",
+    "dev": "vici develop",
+    "lint": "vici lint"
+  },
+  "dependencies": {
+    "@vicinae/api": "0.29.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}

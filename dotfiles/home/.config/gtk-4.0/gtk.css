@@ -1,0 +1,9 @@
+/* Near-black surfaces to match the desktop */
+@define-color window_bg_color #0a0a0a;
+@define-color view_bg_color #0a0a0a;
+@define-color headerbar_bg_color #0a0a0a;
+@define-color sidebar_bg_color #0a0a0a;
+@define-color secondary_sidebar_bg_color #0a0a0a;
+@define-color dialog_bg_color #0a0a0a;
+@define-color popover_bg_color #121212;
+@define-color card_bg_color #121212;
