@@ -8,7 +8,8 @@
 #        ./setup.sh maps          install/update the defence-maps app (separate private repo)
 #        ./setup.sh gamesdrive    optional: mount this laptop's games drive
 #        ./setup.sh razer         optional: Razer laptop control + battery held at 90-95%
-#        ./setup.sh titan         optional: Titan key 2FA for lock/login + logout on unplug
+#        ./setup.sh titan         security key 2FA for lock/login + logout on unplug
+#                                 (optional, wizard asks; Titan, YubiKey or any FIDO2 key)
 #        ./setup.sh snapshot      save this machine's configs + package lists into the repo
 #        ./setup.sh --list        list modules
 #
@@ -27,6 +28,7 @@ OS_NAME="AerisOS"   # ASCII: firmware boot menus often can't draw Æ
 DRY=0
 WIZARD_FORCED=0
 MAPS_FORCED=0
+TITAN_FORCED=0
 
 # Personal answers from the wizard (name, email, maps repo); survives re-runs
 CONF="$HOME/.config/aerisos/setup.conf"
@@ -34,9 +36,9 @@ CONF="$HOME/.config/aerisos/setup.conf"
 [[ -f $CONF ]] && source "$CONF"
 
 # Install modules, in the order "all" runs them
-MODULES=(wizard packages hardware steam controller dotfiles login voxtype tools aeris maps theme safety boot)
+MODULES=(wizard packages hardware steam controller dotfiles login voxtype tools aeris maps titan theme safety boot)
 # Only run when named: hardware unique to one machine, or maintenance
-OPTIONAL=(gamesdrive razer titan snapshot)
+OPTIONAL=(gamesdrive razer snapshot)
 
 # Configs captured by "snapshot" and restored by "dotfiles" (relative to $HOME)
 HOME_PATHS=(
@@ -713,7 +715,7 @@ mod_wizard() {
     fi
     log "Wizard: a few personal answers, saved to $CONF"
 
-    local def_name def_email name email host cur_host maps maps_repo
+    local def_name def_email name email host cur_host maps maps_repo seckey
     def_name=${AERIS_GIT_NAME:-$(git config --global user.name 2>/dev/null || true)}
     def_email=${AERIS_GIT_EMAIL:-$(git config --global user.email 2>/dev/null || true)}
     cur_host=$(hostnamectl hostname 2>/dev/null || hostname)
@@ -728,6 +730,8 @@ mod_wizard() {
     else
         maps=no; maps_repo=${AERIS_MAPS_REPO:-}
     fi
+    read -rp "  Guard login with a security key (Titan, YubiKey, any FIDO2 key)? [y/N]: " seckey
+    [[ ${seckey,,} == y* ]] && seckey=yes || seckey=no
 
     if (( ! DRY )); then
         mkdir -p "$(dirname "$CONF")"
@@ -738,13 +742,14 @@ AERIS_GIT_NAME="$name"
 AERIS_GIT_EMAIL="$email"
 AERIS_MAPS="$maps"
 AERIS_MAPS_REPO="$maps_repo"
+AERIS_SECURITY_KEY="$seckey"
 EOF
         chmod 600 "$CONF"
         # shellcheck disable=SC1090
         source "$CONF"
     fi
     [[ $host == "$cur_host" ]] || as_root hostnamectl set-hostname "$host"
-    info "Saved. Hardware extras when they apply: ./setup.sh razer | titan | gamesdrive"
+    info "Saved. Hardware extras when they apply: ./setup.sh razer | gamesdrive"
 }
 
 # The defence-maps app (~/maps): lives in its own private repo, so installing it
@@ -774,13 +779,19 @@ mod_maps() {
     fi
 }
 
-# Titan security key: password + key 2FA on hyprlock and SDDM, logout + SDDM
-# restart when the key is unplugged. tty login stays password-only (recovery).
-# Enrollment needs the key plugged in and touched; skipped if already enrolled.
+# Security key (Titan, YubiKey, any FIDO2/U2F): password + key 2FA on hyprlock
+# and SDDM, logout + SDDM restart when the key is unplugged. tty login stays
+# password-only (recovery). OPTIONAL: runs only if chosen in the wizard or
+# named (./setup.sh titan). The script auto-detects whatever key is plugged in;
+# enrollment needs a touch and is skipped if a key is already enrolled.
 mod_titan() {
-    log "Titan key: U2F second factor for lock/login + logout on unplug"
-    if ! lsusb 2>/dev/null | grep -q '096e:085b'; then
-        warn "Titan key (096e:085b) not plugged in; skipping (plug it in and re-run: ./setup.sh titan)"
+    if [[ ${AERIS_SECURITY_KEY:-no} != yes && $TITAN_FORCED -eq 0 ]]; then
+        info "Security key not selected in the wizard; set up anytime: ./setup.sh titan"
+        return 0
+    fi
+    log "Security key: U2F second factor for lock/login + logout on unplug"
+    if [[ ! -t 0 ]]; then
+        warn "No terminal attached (enrollment needs a key touch); run later: ./setup.sh titan"
         return 0
     fi
     as_root bash "$AERIS/titan/setup-titan-pam.sh"
@@ -817,7 +828,7 @@ mod_snapshot() {
 
 # --- main ----------------------------------------------------------------------
 
-usage() { sed -n '2,19p' "$0" | sed 's/^# \?//'; }
+usage() { sed -n '2,20p' "$0" | sed 's/^# \?//'; }
 
 selected=()
 for arg in "$@"; do
@@ -830,6 +841,7 @@ for arg in "$@"; do
             declare -F "mod_$arg" >/dev/null || { echo "Unknown module: $arg (see --list)" >&2; exit 1; }
             [[ $arg == wizard ]] && WIZARD_FORCED=1
             [[ $arg == maps ]] && MAPS_FORCED=1
+            [[ $arg == titan ]] && TITAN_FORCED=1
             selected+=("$arg") ;;
     esac
 done

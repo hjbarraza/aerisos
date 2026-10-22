@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Titan security key: password + key 2FA for hyprlock and SDDM login,
-# and log out when the key is unplugged.
+# Security key (Google Titan, YubiKey, or any FIDO2/U2F key):
+# password + key 2FA for hyprlock and SDDM login, and log out when the
+# key is unplugged. The plugged-in key is auto-detected.
 #
 # Run as root:  sudo bash ~/aerisos/titan/setup-titan-pam.sh
-# (or ./setup.sh titan, which runs this)
+# (or ./setup.sh titan, which runs this; the wizard offers it too)
 #
 # Scope (deliberate):
 #   - Only /etc/pam.d/hyprlock and /etc/pam.d/sddm get the U2F factor.
 #   - tty login (Ctrl+Alt+F3) stays password-only as the recovery path
 #     if the key is ever lost or broken.
-#   - Unplugging the key (Feitian/Titan 096e:085b) terminates all of the
-#     user's sessions via udev, then restarts SDDM (sddm-helper crashes on
-#     terminate-user and the greeter is never respawned otherwise).
+#   - Unplugging the enrolled key terminates all of the user's sessions
+#     via udev, then restarts SDDM (sddm-helper crashes on terminate-user
+#     and the greeter is never respawned otherwise).
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
 
@@ -22,12 +23,34 @@ TARGET_USER="${SUDO_USER:-}"
 U2F_LINE='auth        required    pam_u2f.so authfile=/etc/u2f_mappings cue'
 
 echo "== 1/4 installing pam-u2f =="
-pacman -S --needed --noconfirm pam-u2f
+pacman -S --needed --noconfirm pam-u2f    # pulls libfido2 (fido2-token)
+
+echo "== 2/4 detecting the plugged-in security key =="
+mapfile -t KEYS < <(fido2-token -L 2>/dev/null)
+if (( ${#KEYS[@]} == 0 )); then
+    echo "No FIDO2/U2F key found. Plug your key in and re-run." >&2
+    exit 1
+fi
+if (( ${#KEYS[@]} > 1 )); then
+    echo "Several keys are plugged in:"
+    for i in "${!KEYS[@]}"; do printf '  %d) %s\n' "$((i+1))" "${KEYS[$i]}"; done
+    read -rp "Which one guards the login? " N
+    [[ $N =~ ^[0-9]+$ && $N -ge 1 && $N -le ${#KEYS[@]} ]] || { echo "invalid choice" >&2; exit 1; }
+    KEY_LINE=${KEYS[$((N-1))]}
+else
+    KEY_LINE=${KEYS[0]}
+fi
+VID=$(sed -n 's/.*vendor=0x\([0-9a-fA-F]*\).*/\1/p' <<<"$KEY_LINE")
+PID=$(sed -n 's/.*product=0x\([0-9a-fA-F]*\).*/\1/p' <<<"$KEY_LINE")
+[[ -n $VID && -n $PID ]] || { echo "could not read the key's USB id from: $KEY_LINE" >&2; exit 1; }
+# udev's PRODUCT is hex without leading zeros (kernel %x)
+PRODUCT="$(printf '%x/%x' "0x$VID" "0x$PID")"
+echo "key: $KEY_LINE  (udev PRODUCT $PRODUCT)"
 
 if [[ -s /etc/u2f_mappings ]]; then
-    echo "== 2/4 key already enrolled in /etc/u2f_mappings; skipping (delete it to re-enroll) =="
+    echo "== 3/4 a key is already enrolled in /etc/u2f_mappings; keeping it (delete the file to re-enroll) =="
 else
-    echo "== 2/4 enrolling the key: TOUCH the Titan key when it blinks =="
+    echo "== 3/4 enrolling the key: TOUCH it when it blinks =="
     # pamu2fcfg talks to the FIDO key and waits for a touch (and PIN, if one is set).
     pamu2fcfg -u "$TARGET_USER" > /etc/u2f_mappings.new
     # Public key handles only, not secrets; must be world-readable because
@@ -37,7 +60,7 @@ else
     echo "enrolled: $(cut -c1-40 /etc/u2f_mappings)..."
 fi
 
-echo "== 3/4 patching PAM (hyprlock + sddm) =="
+echo "== patching PAM (hyprlock + sddm) =="
 if ! grep -q pam_u2f /etc/pam.d/hyprlock; then
     sed -i "/^auth\s*include\s*login/a $U2F_LINE" /etc/pam.d/hyprlock
 fi
@@ -46,12 +69,12 @@ if ! grep -q pam_u2f /etc/pam.d/sddm; then
 fi
 grep -H pam_u2f /etc/pam.d/hyprlock /etc/pam.d/sddm
 
-echo "== 4/4 udev rule: log out $TARGET_USER when the Titan key is unplugged =="
+echo "== 4/4 udev rule: log out $TARGET_USER when the key is unplugged =="
 cat > /etc/udev/rules.d/90-titan-logout.rules <<EOF
-# Google Titan key (Feitian 096e:085b) removed -> end all of $TARGET_USER's sessions,
+# Security key ($KEY_LINE) removed -> end all of $TARGET_USER's sessions,
 # then restart SDDM so the login screen comes back (sddm-helper crashes on
 # terminate-user and the greeter is never respawned otherwise).
-ACTION=="remove", SUBSYSTEM=="usb", ENV{PRODUCT}=="96e/85b/*", RUN+="/usr/bin/sh -c '/usr/bin/loginctl terminate-user $TARGET_USER; /usr/bin/systemctl --no-block restart sddm'"
+ACTION=="remove", SUBSYSTEM=="usb", ENV{PRODUCT}=="$PRODUCT/*", RUN+="/usr/bin/sh -c '/usr/bin/loginctl terminate-user $TARGET_USER; /usr/bin/systemctl --no-block restart sddm'"
 EOF
 udevadm control --reload
 
