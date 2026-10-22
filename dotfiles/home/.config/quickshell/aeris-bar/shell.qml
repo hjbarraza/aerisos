@@ -163,9 +163,10 @@ ShellRoot {
             Text {   // voxtype, streaming — centred, right of the clock
                 id: vox
                 property string state: "stopped"
-                readonly property var icons: ({ idle: "", recording: "", transcribing: "", stopped: "" })
+                readonly property var icons: ({ idle: "\u{F036C}", recording: "\u{F036C}", transcribing: "\u{F036C}…", stopped: "\u{F036D}" })
                 text: icons[state] ?? ""
-                color: state === "recording" ? root.warn : root.fg
+                color: state === "recording" ? root.warn
+                     : state === "transcribing" ? root.fg : root.dim
                 font { family: root.nerd; pixelSize: 12 }
                 leftPadding: 7; rightPadding: 8
                 Process {
