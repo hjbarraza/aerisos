@@ -30,6 +30,7 @@ git
 github-cli
 gpu-screen-recorder
 grim
+grub
 gst-libav
 gst-plugin-pipewire
 gst-plugins-bad
