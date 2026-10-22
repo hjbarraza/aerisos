@@ -388,16 +388,18 @@ hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("loginctl lock-session"), { descripti
 hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), { description = "Lock + screen off (laptop stays awake)" })
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
 hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })
--- Screenshots & recordings, macOS layout: SUPER+SHIFT+3 whole screen, 4 select area,
--- 5 record area, 6 record whole screen (both toggle off on a second press), D annotate.
--- Saved to ~/Pictures/Screenshots / ~/Videos/Screenrecordings; screenshots also go to
--- the clipboard. Move-to-workspace lives on SUPER+ALT+number to make room. The Print
--- binds are aliases for keyboards that have the key (Razer); the T2 Mac has none.
-hl.bind(mainMod .. " + SHIFT + 3",  hl.dsp.exec_cmd("~/.local/bin/screenshot screen"), { description = "Screenshot: whole screen" })
-hl.bind(mainMod .. " + SHIFT + 4",  hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
-hl.bind(mainMod .. " + SHIFT + 5",  hl.dsp.exec_cmd("~/.local/bin/screenrecord area"), { description = "Screen recording: area (press again to stop)" })
-hl.bind(mainMod .. " + SHIFT + 6",  hl.dsp.exec_cmd("~/.local/bin/screenrecord screen"), { description = "Screen recording: whole screen (press again to stop)" })
-hl.bind(mainMod .. " + SHIFT + D",  hl.dsp.exec_cmd("~/.local/bin/screenshot annotate"), { description = "Screenshot: select area and annotate (draw)" })
+-- Screenshots & recordings, macOS layout on the Cmd-position key (cmdMod, defined
+-- above: Cmd/Super on Apple keyboards, left Alt on the Razer): Shift+3 whole screen,
+-- 4 select area, 5 record area, 6 record whole screen (recordings toggle off on a
+-- second press), D annotate. Saved to ~/Pictures/Screenshots /
+-- ~/Videos/Screenrecordings; screenshots also go to the clipboard. Move-to-workspace
+-- lives on SUPER+ALT+number to make room. The Print binds are aliases for keyboards
+-- that have the key (Razer); the T2 Mac has none.
+hl.bind(cmdMod .. " + SHIFT + 3",  hl.dsp.exec_cmd("~/.local/bin/screenshot screen"), { description = "Screenshot: whole screen" })
+hl.bind(cmdMod .. " + SHIFT + 4",  hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
+hl.bind(cmdMod .. " + SHIFT + 5",  hl.dsp.exec_cmd("~/.local/bin/screenrecord area"), { description = "Screen recording: area (press again to stop)" })
+hl.bind(cmdMod .. " + SHIFT + 6",  hl.dsp.exec_cmd("~/.local/bin/screenrecord screen"), { description = "Screen recording: whole screen (press again to stop)" })
+hl.bind(cmdMod .. " + SHIFT + D",  hl.dsp.exec_cmd("~/.local/bin/screenshot annotate"), { description = "Screenshot: select area and annotate (draw)" })
 hl.bind("Print",                    hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
 hl.bind("SHIFT + Print",            hl.dsp.exec_cmd("~/.local/bin/screenshot screen"), { description = "Screenshot: whole screen" })
 hl.bind("CTRL + Print",             hl.dsp.exec_cmd("~/.local/bin/screenshot annotate"), { description = "Screenshot: select area and annotate" })
