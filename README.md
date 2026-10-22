@@ -384,7 +384,6 @@ alongside; the first run records the current state silently so a restart never r
 |---|---|
 | Watchlist | A new unacknowledged finding appears |
 | Passes | An ISS or Tiangong pass is coming up (time and peak elevation) |
-| Satellites | Bright satellites are overhead |
 | Alerts | A new entry joins the AERIS alerts list (GNSS jammed, etc.) |
 | Squawks | An emergency squawk (7500 / 7600 / 7700) within 50 km |
 | Space weather | A geomagnetic storm, an M- or X-class flare, or active NOAA scales |

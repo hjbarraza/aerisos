@@ -4,7 +4,7 @@
 Polls /var/lib/aeris/status.json, diffs it against what was already announced and
 says new events through aeris-speak (Kokoro bf_emma) plus a dunst notification:
   A) new unacknowledged watchlist findings
-  B) ISS / Tiangong passes and satellites overhead
+  B) ISS / Tiangong passes
   C) new entries in the alerts list
   D) emergency squawks
 State lives in /tmp/aeris-announce-state.json. On the very first run (no state file)
@@ -224,7 +224,7 @@ def process(s, state):
     check_watch(s, state)
     check_pass(s, state, "iss", "ISS pass", "ISS")
     check_pass(s, state, "css", "Tiangong pass", "Tiangong")
-    check_sats(s, state)
+    # satellites overhead: no longer announced (too frequent)
     check_alerts(s, state)
     check_emergency(s, state)
     check_space_weather(s, state)
