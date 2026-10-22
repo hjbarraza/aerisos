@@ -607,6 +607,10 @@ mod_aeris() {
         fi
     fi
     as_root systemctl enable --now ollama.service
+    # A just-started server takes a few seconds to accept requests
+    if have ollama && (( ! DRY )); then
+        for _ in {1..20}; do ollama list >/dev/null 2>&1 && break; sleep 1; done
+    fi
     if have ollama && ! ollama list 2>/dev/null | grep -q "^$model"; then
         run ollama pull "$model" || warn "Model pull failed; aeris-status uses OpenRouter or raw headlines"
     fi
@@ -617,8 +621,8 @@ mod_aeris() {
             run sed -i -E 's#"ollama/[^"]*"#"openrouter/z-ai/glm-5.3-flash"#' "$HOME/.config/opencode/opencode.json"
             run sed -i -E 's#^model: ollama/.*#model: openrouter/z-ai/glm-5.3-flash#' "$HOME"/.config/opencode/agents/*.md
         fi
-        [[ -f $HOME/.local/share/opencode/auth.json ]] && grep -q openrouter "$HOME/.local/share/opencode/auth.json" \
-            || info "OpenRouter key: run 'opencode auth login' (OpenRouter); the lock screen and watchlist use it too"
+        grep -qsE '^(export )?OPENROUTER(_API)?_KEY=' "$HOME/.env" || grep -qs openrouter "$HOME/.local/share/opencode/auth.json" \
+            || info "OpenRouter key (fallback when Ollama is down): OPENROUTER_KEY=... in ~/.env (chmod 600) or 'opencode auth login'"
     fi
 
     # Claude Code (native installer); OpenCode is the AERIS fork, installed by hand
@@ -980,7 +984,9 @@ if (( ! DRY )) && printf '%s\n' "${selected[@]}" | grep -vx snapshot >/dev/null;
         sudo -v
         # Keep sudo alive for long installs
         while true; do sudo -n true; sleep 50; kill -0 "$$" 2>/dev/null || exit; done &
-        trap 'kill $! 2>/dev/null' EXIT
+        # The pid now: $! at exit is whatever ran in the background last, and a failed kill
+        # there tripped the ERR trap, blaming the last module after a clean run
+        trap "kill $! 2>/dev/null || true" EXIT
     else
         warn "No terminal attached: steps that need sudo will fail (run this in a terminal)"
     fi
