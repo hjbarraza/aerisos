@@ -354,7 +354,9 @@ end
 -- No logout keybind: SUPER+M used to exit Hyprland instantly (no confirmation), too easy
 -- to hit by accident. Log out from the AerisOS menu (SUPER+ALT+SPACE) or `hyprctl dispatch exit`.
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager), { description = "File manager" })
-hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }), { description = "Toggle floating window" })
+-- Window management tier: SUPER+ALT (float was SUPER+V, which the macOS-style tier
+-- now uses for paste on Apple keyboards)
+hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }), { description = "Float / unfloat window" })
 hl.bind(mainMod .. " + SHIFT + V", hl.dsp.exec_cmd("cliphist list | wofi --dmenu | cliphist decode | wl-copy"), { description = "Clipboard history" })
 hl.bind(mainMod .. " + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- Spotlight-style search (Vicinae, falls back to hyprlauncher)
 hl.bind("ALT + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- alias
@@ -424,6 +426,10 @@ hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }), { descripti
 hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }), { description = "Focus window right" })
 hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }), { description = "Focus window up" })
 hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }), { description = "Focus window down" })
+hl.bind(mainMod .. " + SHIFT + left",  hl.dsp.window.move({ direction = "left" }), { description = "Move window left" })
+hl.bind(mainMod .. " + SHIFT + right", hl.dsp.window.move({ direction = "right" }), { description = "Move window right" })
+hl.bind(mainMod .. " + SHIFT + up",    hl.dsp.window.move({ direction = "up" }), { description = "Move window up" })
+hl.bind(mainMod .. " + SHIFT + down",  hl.dsp.window.move({ direction = "down" }), { description = "Move window down" })
 
 -- Switch workspaces with mainMod + [0-9]
 -- Move active window to a workspace with mainMod + SHIFT + [0-9]
