@@ -470,6 +470,11 @@ mod_tools() {
     pacman_install flatpak
     run flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
     run flatpak install -y --user flathub org.localsend.localsend_app || warn "LocalSend flatpak install failed; run it again later"
+    # Launchers only see flatpak apps once XDG_DATA_DIRS includes the export dir (next login);
+    # a symlink into ~/.local/share/applications makes it visible immediately and is harmless after
+    run mkdir -p "$HOME/.local/share/applications"
+    run ln -sf "$HOME/.local/share/flatpak/exports/share/applications/org.localsend.localsend_app.desktop" \
+        "$HOME/.local/share/applications/"
 
     # Node: global npm packages go to ~/.local (no sudo). Git defaults; GitHub via gh
     pacman_install nodejs npm git github-cli
