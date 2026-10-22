@@ -12,7 +12,7 @@ MODS = [(64, "SUPER"), (4, "CTRL"), (8, "ALT"), (1, "SHIFT")]
 KEY_NAMES = {
     "mouse:272": "Left drag", "mouse:273": "Right drag",
     "mouse_down": "Scroll down", "mouse_up": "Scroll up",
-    "Control_R": "Right Ctrl", "space": "Space", "Print": "PrtSc",
+    "Control_R": "Right Ctrl", "Alt_R": "Right Option", "space": "Space", "Print": "PrtSc",
     "left": "←", "right": "→", "up": "↑", "down": "↓",
     "XF86AudioRaiseVolume": "Volume Up key", "XF86AudioLowerVolume": "Volume Down key",
     "XF86AudioMute": "Mute key", "XF86AudioMicMute": "Mic Mute key",

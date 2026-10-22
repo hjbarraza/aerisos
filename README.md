@@ -209,7 +209,7 @@ change rewrites it anyway.
 | `CMD+Q` · `CMD+TAB` | Close window · cycle windows (macOS-style) |
 | `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize |
 | `SUPER+P` · `SUPER+J` | Pseudo-tile · flip split rows/columns |
-| `SUPER+arrows` · `SUPER+SHIFT+arrows` | Focus window · move window |
+| `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag) |
 | `SUPER+SHIFT+B` · `N` · `O` · `M` | Brave · Sublime Text · Obsidian · Signal |
 | `SUPER+SHIFT+C` · `Y` · `I` · `G` · `/` | Notion Calendar · YouTube · Claude · Gemini · Google (web apps) |
 | `SUPER+CTRL+A` · `W` · `B` | Audio · Wi-Fi · Bluetooth |

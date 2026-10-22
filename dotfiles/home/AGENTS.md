@@ -83,3 +83,15 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   `/inbox` (OpenCode) and `/watch-inbox` (Claude Code): the watchlist as a numbered inbox
   via `~/.local/bin/aeris-inbox`, "open N" for detail, ack per topic.
 - Defence-map ontologies: `~/maps`, query with `aeris-onto`.
+
+## This machine (since 2026-10-22: hostname AerisT2, was hdls)
+- MacBookPro16,1 (Intel T2, Radeon Pro 5300M drives all displays; internal keyboard has
+  no Print key or Right Ctrl — dictation is Right Option/Alt, screenshots on SUPER+SHIFT
+  letters; see README shortcuts table).
+- **Hardware fault**: the Radeon's DP output stage is degraded — at 5K bandwidth it
+  produces horizontal-band flicker on every port/display, under macOS too, with no link
+  drops and nothing in any log. Diagnosed 2026-10-22 (clocks, heat, link ruled out).
+  Workaround: `hyprland.lua` caps the Studio Display at 4K@60 via a DMI-keyed rule
+  (`MacBookPro16,1`). Do not re-diagnose flicker reports from scratch; if another display
+  flickers, cap its mode the same way. True fix would be board-level repair.
+- No passwordless sudo: ask the user to run root commands via the `! sudo …` prompt prefix.
