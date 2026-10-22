@@ -215,8 +215,9 @@ change rewrites it anyway.
 | `SUPER+CTRL+A` · `W` · `B` | Audio · Wi-Fi · Bluetooth |
 | `SUPER+CTRL+N` · `S` · `I` · `C` | Do Not Disturb · Night light · Stay awake · Colour picker |
 | `SUPER+L` · `SUPER+SHIFT+L` | Lock · Lock + screen off (laptop stays awake until unlock) |
-| `SUPER+SHIFT+A` · `W` · `D` | Screenshot: area · whole screen · annotate (aliases: `Print` · `SHIFT+Print` · `CTRL+Print`) |
-| `SUPER+SHIFT+R` · `SUPER+ALT+R` | Screen recording: area · whole screen, press again to stop (aliases: `ALT+Print` · `ALT+SHIFT+Print`) |
+| `SUPER+SHIFT+3` · `4` · `D` | Screenshot (macOS-style): whole screen · select area · annotate (aliases: `SHIFT+Print` · `Print` · `CTRL+Print`) |
+| `SUPER+SHIFT+5` · `6` | Screen recording: area · whole screen, press again to stop (aliases: `ALT+Print` · `ALT+SHIFT+Print`) |
+| `SUPER+1–9` · `SUPER+ALT+1–9` | Go to workspace · move window to workspace (Cmd · Cmd+Option on the Mac) |
 | Right `Option/Alt` or Right `Ctrl` (hold) | Dictate (the MacBook T2 keyboard has no Right Ctrl or Print key; the letter binds work everywhere) |
 
 Add a web app: copy a file in `webapps/`, change `Name` and the URL, add a `webapp(...)`
