@@ -20,7 +20,13 @@ import zlib
 from pathlib import Path
 
 OUT = Path.home() / ".local/share/icons/Mono"
-SOURCES = [Path("/usr/share/icons/breeze-dark"), Path("/usr/share/icons/hicolor")]
+SOURCES = [
+    Path("/usr/share/icons/breeze-dark"),
+    Path("/usr/share/icons/hicolor"),
+    # Flatpak apps export their icons outside /usr/share
+    Path.home() / ".local/share/flatpak/exports/share/icons/hicolor",
+    Path("/var/lib/flatpak/exports/share/icons/hicolor"),
+]
 
 
 # ---------- color math ----------
