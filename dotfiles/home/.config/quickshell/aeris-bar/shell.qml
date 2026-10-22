@@ -283,7 +283,9 @@ ShellRoot {
                             anchors.fill: parent
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
                             onClicked: ev => {
-                                if (ev.button === Qt.RightButton && trayItem.modelData.hasMenu)
+                                // menu-only items (e.g. LocalSend) have no activate action
+                                if (trayItem.modelData.hasMenu &&
+                                    (ev.button === Qt.RightButton || trayItem.modelData.onlyMenu))
                                     menuAnchor.open()
                                 else trayItem.modelData.activate()
                             }
