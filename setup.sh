@@ -47,6 +47,7 @@ HOME_PATHS=(
     .config/hypr
     .config/quickshell
     .config/ghostty
+    .config/kitty
     .config/swayosd
     .config/gtk-3.0
     .config/gtk-4.0
@@ -521,7 +522,7 @@ mod_voxtype() {
     run voxtype config set osd.enabled false
     run systemctl --user enable voxtype.service
     run systemctl --user restart voxtype.service
-    info "Dictate: hold Right Ctrl, speak, release (bound in hyprland.lua)"
+    info "Dictate: hold Right Option/Alt (or Right Ctrl), speak, release (bound in hyprland.lua)"
 }
 
 mod_tools() {
@@ -533,8 +534,11 @@ mod_tools() {
     # /var/lib/aeris/lock.tsv). Keybinds live in hyprland.lua
     run install -m755 "$AERIS/bin/aeris-menu" "$AERIS/bin/aeris-update" "$AERIS/bin/aeris-battery" \
         "$AERIS/bin/aeris-greeting" "$AERIS/bin/aeris-lock-field" "$HOME/.local/bin/"
-    # Lock screen: generated from the login screen's grid (lock/make-hyprlock)
+    # Lock screen: generated from the login screen's grid (lock/make-hyprlock).
+    # hypridle listens for loginctl lock-session (SUPER+L, screen-off, suspend) and
+    # runs hyprlock — without it the lock binds do nothing.
     run python3 "$AERIS/lock/make-hyprlock" "$HOME/.config/hypr/hyprlock.conf"
+    run systemctl --user enable --now hypridle.service
     run install -m644 "$AERIS/bin/aeris-battery.service" "$AERIS/bin/aeris-battery.timer" "$HOME/.config/systemd/user/"
     run systemctl --user daemon-reload
     run systemctl --user enable --now aeris-battery.timer
@@ -551,6 +555,14 @@ mod_tools() {
 
     # Web apps: each site in its own Brave window, in the launcher (SUPER+SHIFT+C/Y/I/G//)
     run install -m644 "$AERIS"/webapps/*.desktop "$HOME/.local/share/applications/"
+
+    # Brave: AERIS monochrome theme, staged where the Flatpak sandbox can read it.
+    # One-time manual step: brave://extensions → Developer mode → Load unpacked → this folder.
+    if [[ -d $HOME/.var/app/com.brave.Browser ]]; then
+        run mkdir -p "$HOME/.var/app/com.brave.Browser/aeris-theme"
+        run install -m644 "$AERIS/brave-theme/manifest.json" "$HOME/.var/app/com.brave.Browser/aeris-theme/"
+        info "Brave theme: brave://extensions → Developer mode → Load unpacked → ~/.var/app/com.brave.Browser/aeris-theme"
+    fi
 
     # Media codecs for every app (GStreamer) and Files thumbnails
     pacman_install gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav ffmpeg ffmpegthumbnailer

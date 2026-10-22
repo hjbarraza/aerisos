@@ -305,12 +305,13 @@ hl.bind(mainMod .. " + Q", hl.dsp.exec_cmd(terminal), { description = "Open term
 hl.bind(mainMod .. " + G", hl.dsp.exec_cmd("ghostty"), { description = "Open ghostty (trial)" })
 local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close(), { description = "Close window" })
 -- closeWindowBind:set_enabled(false)
-hl.bind(mainMod .. " + M", hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"), { description = "Log out / exit Hyprland" })
+-- No logout keybind: SUPER+M used to exit Hyprland instantly (no confirmation), too easy
+-- to hit by accident. Log out from the AerisOS menu (SUPER+ALT+SPACE) or `hyprctl dispatch exit`.
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager), { description = "File manager" })
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }), { description = "Toggle floating window" })
 hl.bind(mainMod .. " + SHIFT + V", hl.dsp.exec_cmd("cliphist list | wofi --dmenu | cliphist decode | wl-copy"), { description = "Clipboard history" })
-hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App launcher (hyprlauncher)" })
-hl.bind("ALT + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- Spotlight-style search (Vicinae, falls back to hyprlauncher)
+hl.bind(mainMod .. " + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- Spotlight-style search (Vicinae, falls back to hyprlauncher)
+hl.bind("ALT + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- alias
 hl.bind(mainMod .. " + K", hl.dsp.exec_cmd("~/.local/bin/keybinds"), { description = "Keyboard shortcuts cheat sheet" })
 -- Web apps (Omarchy-style): open the site in its own frameless Brave window
 local function webapp(url) return hl.dsp.exec_cmd("brave --app=" .. url) end
@@ -339,18 +340,27 @@ hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("loginctl lock-session"), { descripti
 hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), { description = "Lock + screen off (laptop stays awake)" })
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
 hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })
-hl.bind("CTRL + Print", hl.dsp.exec_cmd("~/.local/bin/screenshot annotate"), { description = "Screenshot: select area and annotate" })
-hl.bind("ALT + Print", hl.dsp.exec_cmd("~/.local/bin/screenrecord area"), { description = "Screen recording: area (press again to stop)" })
-hl.bind("ALT + SHIFT + Print", hl.dsp.exec_cmd("~/.local/bin/screenrecord screen"), { description = "Screen recording: whole screen (press again to stop)" })
-
--- Screenshots: saved to ~/Pictures/Screenshots and copied to the clipboard
-hl.bind("Print",                    hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
+-- Screenshots & recordings: saved to ~/Pictures/Screenshots, screenshots also copied to
+-- the clipboard. The Super+Shift letter binds work on every keyboard (the MacBook T2 has
+-- no Print key); the Print binds are kept as aliases for keyboards that have one (Razer).
 hl.bind(mainMod .. " + SHIFT + A",  hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
+hl.bind(mainMod .. " + SHIFT + W",  hl.dsp.exec_cmd("~/.local/bin/screenshot screen"), { description = "Screenshot: whole screen" })
+hl.bind(mainMod .. " + SHIFT + D",  hl.dsp.exec_cmd("~/.local/bin/screenshot annotate"), { description = "Screenshot: select area and annotate (draw)" })
+hl.bind(mainMod .. " + SHIFT + R",  hl.dsp.exec_cmd("~/.local/bin/screenrecord area"), { description = "Screen recording: area (press again to stop)" })
+hl.bind(mainMod .. " + ALT + R",    hl.dsp.exec_cmd("~/.local/bin/screenrecord screen"), { description = "Screen recording: whole screen (press again to stop)" })
+hl.bind("Print",                    hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
 hl.bind("SHIFT + Print",            hl.dsp.exec_cmd("~/.local/bin/screenshot screen"), { description = "Screenshot: whole screen" })
+hl.bind("CTRL + Print",             hl.dsp.exec_cmd("~/.local/bin/screenshot annotate"), { description = "Screenshot: select area and annotate" })
+hl.bind("ALT + Print",              hl.dsp.exec_cmd("~/.local/bin/screenrecord area"), { description = "Screen recording: area (press again to stop)" })
+hl.bind("ALT + SHIFT + Print",      hl.dsp.exec_cmd("~/.local/bin/screenrecord screen"), { description = "Screen recording: whole screen (press again to stop)" })
 
--- Push-to-talk dictation (voxtype): hold Right Ctrl, speak, release to type the text.
--- non_consuming keeps Right Ctrl working as a normal Ctrl key in apps.
--- Release fires with CTRL still in the modmask, so bind it both with and without.
+-- Push-to-talk dictation (voxtype): hold Right Option/Alt (or Right Ctrl on keyboards that
+-- have one), speak, release to type the text. non_consuming keeps the key working as a
+-- normal modifier in apps. Release fires with the modifier still in the modmask, so each
+-- key is bound both with and without it.
+hl.bind("Alt_R", hl.dsp.exec_cmd("voxtype record start"), { description = "Dictate: hold, speak, release (voxtype)", non_consuming = true })
+hl.bind("Alt_R", hl.dsp.exec_cmd("voxtype record stop"), { description = "Dictate: stop (release)", release = true, non_consuming = true })
+hl.bind("ALT + Alt_R", hl.dsp.exec_cmd("voxtype record stop"), { description = "Dictate: stop (release)", release = true, non_consuming = true })
 hl.bind("Control_R", hl.dsp.exec_cmd("voxtype record start"), { description = "Dictate: hold, speak, release (voxtype)", non_consuming = true })
 hl.bind("Control_R", hl.dsp.exec_cmd("voxtype record stop"), { description = "Dictate: stop (release)", release = true, non_consuming = true })
 hl.bind("CTRL + Control_R", hl.dsp.exec_cmd("voxtype record stop"), { description = "Dictate: stop (release)", release = true, non_consuming = true })

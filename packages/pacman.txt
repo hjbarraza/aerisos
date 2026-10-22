@@ -19,6 +19,7 @@ egl-wayland
 eza
 fastfetch
 fd
+ffmpeg
 ffmpegthumbnailer
 file-roller
 flatpak
@@ -73,8 +74,8 @@ mpv
 nano
 nautilus
 neovim
-networkmanager
 network-manager-applet
+networkmanager
 nodejs
 noto-fonts
 noto-fonts-emoji
@@ -124,6 +125,8 @@ unzip
 uv
 uwsm
 vim
+vlc
+vlc-plugins-all
 vpl-gpu-rt
 vulkan-intel
 vulkan-nouveau
@@ -140,6 +143,7 @@ xdg-utils
 xf86-video-amdgpu
 xf86-video-ati
 xf86-video-nouveau
+yt-dlp
 zathura
 zathura-pdf-mupdf
 zoxide

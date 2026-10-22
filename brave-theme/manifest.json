@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "AERIS",
+  "version": "1.0",
+  "description": "AerisOS monochrome theme - black, paper text, white emphasis, derived from the ghostty/OpenCode AERIS palette",
+  "theme": {
+    "colors": {
+      "frame": [0, 0, 0],
+      "frame_inactive": [0, 0, 0],
+      "toolbar": [10, 10, 10],
+      "toolbar_text": [230, 230, 230],
+      "toolbar_button_icon": [230, 230, 230],
+      "tab_text": [255, 255, 255],
+      "tab_background_text": [140, 140, 140],
+      "tab_background_text_inactive": [140, 140, 140],
+      "bookmark_text": [230, 230, 230],
+      "omnibox_background": [10, 10, 10],
+      "omnibox_text": [230, 230, 230],
+      "ntp_background": [0, 0, 0],
+      "ntp_text": [230, 230, 230],
+      "ntp_link": [255, 255, 255],
+      "button_background": [10, 10, 10]
+    },
+    "properties": {
+      "ntp_logo_alternate": 1
+    }
+  }
+}

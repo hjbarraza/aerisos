@@ -14,6 +14,8 @@ copy-on-select = clipboard
 # after a value, so keep remark lines like this one on their own line.
 scrollback-limit = 100000000
 mouse-scroll-multiplier = 3
+# Right-click (trackpad two-finger tap or mouse) pastes the clipboard
+right-click-action = paste
 confirm-close-surface = false
 
 # Font: matched to kitty (Söhne Mono 9)
