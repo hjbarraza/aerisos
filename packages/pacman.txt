@@ -134,6 +134,7 @@ vulkan-radeon
 wget
 wiremix
 wireplumber
+wl-clipboard
 woff2-font-awesome
 wofi
 wpa_supplicant
