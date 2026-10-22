@@ -48,6 +48,7 @@ HOME_PATHS=(
     .config/quickshell
     .config/ghostty
     .config/kitty
+    .config/dunst
     .config/swayosd
     .config/gtk-3.0
     .config/gtk-4.0

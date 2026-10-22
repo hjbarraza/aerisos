@@ -1,0 +1,67 @@
+# AERIS notifications — monochrome, matching the quickshell bar
+# (#0a0a0a surface, #e6e6e6 paper text, #2a2a2a hairline, Söhne 9).
+# Critical notifications invert (white on black -> black on white), like
+# notable states on the bar, lock and login screens.
+
+[global]
+    font = Söhne 9
+    markup = full
+    format = "<b>%s</b>\n%b"
+    alignment = left
+    vertical_alignment = top
+    show_age_threshold = 60
+    ellipsize = end
+    ignore_newline = no
+    stack_duplicates = yes
+    hide_duplicate_count = no
+    show_indicators = no
+
+    # Geometry: top right, clear of the 26 px bar
+    origin = top-right
+    offset = (16, 36)
+    width = (280, 420)
+    height = (0, 300)
+    gap_size = 8
+    padding = 10
+    horizontal_padding = 12
+
+    frame_width = 1
+    frame_color = "#2a2a2a"
+    corner_radius = 3
+    separator_height = 1
+    separator_color = frame
+
+    background = "#0a0a0a"
+    foreground = "#e6e6e6"
+    highlight = "#ffffff"      # progress bar
+
+    icon_position = left
+    min_icon_size = 0
+    max_icon_size = 48
+    icon_theme = Mono
+    enable_recursive_icon_lookup = true
+
+    dmenu = /usr/bin/wofi --dmenu
+    browser = /usr/local/bin/brave
+
+    mouse_left_click = do_action, close_current
+    mouse_middle_click = close_all
+    mouse_right_click = close_current
+
+[urgency_low]
+    background = "#0a0a0a"
+    foreground = "#7a7a7a"
+    frame_color = "#2a2a2a"
+    timeout = 6
+
+[urgency_normal]
+    background = "#0a0a0a"
+    foreground = "#e6e6e6"
+    frame_color = "#2a2a2a"
+    timeout = 8
+
+[urgency_critical]
+    background = "#ffffff"
+    foreground = "#000000"
+    frame_color = "#ffffff"
+    timeout = 0
