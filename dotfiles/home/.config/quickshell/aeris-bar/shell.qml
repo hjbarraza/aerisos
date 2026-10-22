@@ -183,7 +183,7 @@ ShellRoot {
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: ev => ev.button === Qt.RightButton
                         ? root.sh("systemctl --user restart voxtype")
-                        : root.sh("kitty voxtype configure")
+                        : root.sh("ghostty -e voxtype configure")
                 }
             }
 
@@ -219,7 +219,7 @@ ShellRoot {
                     }
                 }
                 Timer { interval: 3000; running: true; repeat: true; onTriggered: netProc.running = true }
-                MouseArea { anchors.fill: parent; onClicked: root.sh("kitty --class tui-float nmtui") }
+                MouseArea { anchors.fill: parent; onClicked: root.sh("ghostty --class=tui-float -e nmtui") }
             }
             Text {   // volume, live via PipeWire
                 readonly property var audio: Pipewire.defaultAudioSink?.audio ?? null
@@ -235,7 +235,7 @@ ShellRoot {
                     onClicked: ev => {
                         if (ev.button === Qt.RightButton) root.sh("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
                         else if (ev.button === Qt.MiddleButton) root.sh("pavucontrol")
-                        else root.sh("kitty --class tui-float wiremix")
+                        else root.sh("ghostty --class=tui-float -e wiremix")
                     }
                     onWheel: w => root.sh("wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%" + (w.angleDelta.y > 0 ? "+" : "-"))
                 }
@@ -303,7 +303,7 @@ ShellRoot {
                         "elif [ \"$(bluetoothctl devices Connected 2>/dev/null | wc -l)\" -gt 0 ]; then echo '{\"text\":\"󰂱\"}'; " +
                         "else echo '{\"text\":\"󰂯\"}'; fi"]
                     interval: 10000
-                    onClick: () => root.sh("kitty --class tui-float bluetui")
+                    onClick: () => root.sh("ghostty --class=tui-float -e bluetui")
                 }
                 Text {   // backlight
                     id: backlight
@@ -335,7 +335,7 @@ ShellRoot {
                     color: root.fg
                     font { family: root.nerd; pixelSize: 12 }
                     leftPadding: 7; rightPadding: 8
-                    MouseArea { anchors.fill: parent; onClicked: root.sh("command -v btop >/dev/null && kitty btop || kitty top") }
+                    MouseArea { anchors.fill: parent; onClicked: root.sh("command -v btop >/dev/null && ghostty -e btop || ghostty -e top") }
                 }
                 StatusModule {   // power profile; click cycles
                     cmd: ["sh", "-c",

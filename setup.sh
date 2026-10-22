@@ -43,7 +43,7 @@ HOME_PATHS=(
     .bashrc
     .config/hypr
     .config/quickshell
-    .config/kitty
+    .config/ghostty
     .config/swayosd
     .config/gtk-3.0
     .config/gtk-4.0
@@ -428,7 +428,7 @@ mod_voxtype() {
     if ! voxtype setup gpu --status 2>/dev/null | grep 'Active backend: GPU' >/dev/null; then
         as_root voxtype setup gpu --enable || warn "GPU acceleration failed; Voxtype still works on the CPU"
     fi
-    # No floating overlay: status lives in the Waybar icon (custom/voxtype)
+    # No floating overlay: status lives in the Quickshell bar icon (right of the clock)
     run voxtype config set osd.enabled false
     run systemctl --user enable voxtype.service
     run systemctl --user restart voxtype.service
@@ -465,6 +465,11 @@ mod_tools() {
 
     # Media codecs for every app (GStreamer) and Files thumbnails
     pacman_install gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav ffmpeg ffmpegthumbnailer
+
+    # Flatpak apps: LocalSend (file drops between machines; firewall port opened by `safety`)
+    pacman_install flatpak
+    run flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+    run flatpak install -y --user flathub org.localsend.localsend_app || warn "LocalSend flatpak install failed; run it again later"
 
     # Node: global npm packages go to ~/.local (no sudo). Git defaults; GitHub via gh
     pacman_install nodejs npm git github-cli
@@ -529,7 +534,7 @@ mod_theme() {
     gtk_ini_set "$HOME/.config/gtk-3.0/settings.ini" gtk-icon-theme-name Mono
     gtk_ini_set "$HOME/.config/gtk-4.0/settings.ini" gtk-icon-theme-name Mono
 
-    # One text size everywhere: 9 pt (= 12 px in Waybar/dock CSS, kitty font_size 9)
+    # One text size everywhere: 9 pt (= 12 px in the Quickshell bar/dock QML, ghostty font-size 9)
     run gsettings set org.gnome.desktop.interface font-name 'Söhne 9'
     run gsettings set org.gnome.desktop.interface document-font-name 'Söhne 9'
     run gsettings set org.gnome.desktop.interface monospace-font-name 'Söhne Mono 9'
@@ -539,7 +544,7 @@ mod_theme() {
     # Apply live if we're inside Hyprland
     if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
         run hyprctl reload >/dev/null
-        run pkill -USR1 -x kitty || true         # kitty reloads its config
+        # ghostty picks up its config on the next new window; no reload signal needed
         run pkill -f "^qs -p.*aeris-dock" || true     # dock-autohide relaunches it with the new icon theme
     fi
 }

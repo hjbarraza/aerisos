@@ -1,6 +1,5 @@
 brave-bin
 envycontrol
-localsend-bin
 nodejs-all-the-package-names
 sublime-text-4
 vicinae-bin

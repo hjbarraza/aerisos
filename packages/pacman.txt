@@ -21,6 +21,7 @@ fastfetch
 fd
 ffmpegthumbnailer
 file-roller
+flatpak
 fwupd
 fzf
 gamemode

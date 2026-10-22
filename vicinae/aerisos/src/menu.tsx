@@ -202,9 +202,9 @@ export default function Command() {
   ];
 
   const settings: Entry[] = [
-    { title: "Wi-Fi", icon: Icon.Wifi, keys: "SUPER CTRL W", run: () => runClosed("kitty --class tui-float nmtui") },
-    { title: "Bluetooth", icon: Icon.Bluetooth, keys: "SUPER CTRL B", run: () => runClosed("kitty --class tui-float bluetui") },
-    { title: "Audio", icon: Icon.SpeakerOn, keys: "SUPER CTRL A", run: () => runClosed("kitty --class tui-float wiremix") },
+    { title: "Wi-Fi", icon: Icon.Wifi, keys: "SUPER CTRL W", run: () => runClosed("ghostty --class=tui-float -e nmtui") },
+    { title: "Bluetooth", icon: Icon.Bluetooth, keys: "SUPER CTRL B", run: () => runClosed("ghostty --class=tui-float -e bluetui") },
+    { title: "Audio", icon: Icon.SpeakerOn, keys: "SUPER CTRL A", run: () => runClosed("ghostty --class=tui-float -e wiremix") },
     {
       title: "Razer",
       subtitle: "power mode, fans, logo",
@@ -264,10 +264,10 @@ export default function Command() {
       title: "Update AerisOS",
       subtitle: s.updates && s.updates !== "0" ? `${s.updates} updates available` : "system, AUR, firmware, icons",
       icon: Icon.Download,
-      run: () => runClosed(`kitty --class tui-float -e ${BIN}/aeris-update`),
+      run: () => runClosed(`ghostty --class=tui-float -e ${BIN}/aeris-update`),
     },
     { title: "Keyboard Shortcuts", icon: Icon.Keyboard, keys: "SUPER K", run: () => runClosed(`${BIN}/keybinds`) },
-    { title: "Activity Monitor", icon: Icon.Gauge, run: () => runClosed("kitty --class tui-float btop"), keywords: ["btop", "cpu"] },
+    { title: "Activity Monitor", icon: Icon.Gauge, run: () => runClosed("ghostty --class=tui-float -e btop"), keywords: ["btop", "cpu"] },
   ];
 
   const section = (title: string, entries: Entry[], subtitle?: string) => (

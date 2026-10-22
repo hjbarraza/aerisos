@@ -7,7 +7,7 @@ case ${1:-} in
     if ! systemctl is-active -q tailscaled; then
       notify-send "Tailscale" "Not set up yet. Run: sudo systemctl enable --now tailscaled && sudo tailscale up"
     elif tailscale status --json 2>/dev/null | grep -q '"BackendState": *"NeedsLogin"'; then
-      kitty --class tui-float sh -c 'tailscale up; echo; read -rp "Press Enter to close"' &
+      ghostty --class=tui-float -e sh -c 'tailscale up; echo; read -rp "Press Enter to close"' &
     elif tailscale status >/dev/null 2>&1; then
       tailscale down 2>/dev/null || notify-send "Tailscale" "No permission. Run once: sudo tailscale set --operator=\$USER"
     else

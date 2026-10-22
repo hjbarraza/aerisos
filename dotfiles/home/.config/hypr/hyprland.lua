@@ -44,7 +44,7 @@ hl.monitor({
 ---------------------
 
 -- Set programs that you use
-local terminal    = "kitty"
+local terminal    = "ghostty"
 local fileManager = "command -v nautilus >/dev/null && nautilus --new-window || dolphin"
 local menu = "hyprlauncher"
 
@@ -328,9 +328,9 @@ hl.bind(mainMod .. " + SHIFT + M", hl.dsp.exec_cmd("signal-desktop"), { descript
 hl.bind(mainMod .. " + ALT + space", hl.dsp.exec_cmd("~/.local/bin/aeris-menu"), { description = "AerisOS menu" })
 -- Bar and quick panels (Omarchy-style)
 hl.bind(mainMod .. " + SHIFT + space", hl.dsp.exec_cmd("qs ipc -p ~/.config/quickshell/aeris-bar/shell.qml call bar toggle"), { description = "Hide / show top bar" })
-hl.bind(mainMod .. " + CTRL + A", hl.dsp.exec_cmd("kitty --class tui-float wiremix"), { description = "Audio settings" })
-hl.bind(mainMod .. " + CTRL + W", hl.dsp.exec_cmd("kitty --class tui-float nmtui"), { description = "Wi-Fi / network settings" })
-hl.bind(mainMod .. " + CTRL + B", hl.dsp.exec_cmd("kitty --class tui-float bluetui"), { description = "Bluetooth" })
+hl.bind(mainMod .. " + CTRL + A", hl.dsp.exec_cmd("ghostty --class=tui-float -e wiremix"), { description = "Audio settings" })
+hl.bind(mainMod .. " + CTRL + W", hl.dsp.exec_cmd("ghostty --class=tui-float -e nmtui"), { description = "Wi-Fi / network settings" })
+hl.bind(mainMod .. " + CTRL + B", hl.dsp.exec_cmd("ghostty --class=tui-float -e bluetui"), { description = "Bluetooth" })
 hl.bind(mainMod .. " + CTRL + N", hl.dsp.exec_cmd("~/.local/bin/dnd toggle"), { description = "Do Not Disturb on / off" })
 hl.bind(mainMod .. " + CTRL + I", hl.dsp.exec_cmd("~/.local/bin/stay-awake toggle"), { description = "Stay Awake on / off" })
 hl.bind(mainMod .. " + CTRL + S", hl.dsp.exec_cmd("~/.local/bin/nightlight toggle"), { description = "Night light on / off" })
