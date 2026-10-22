@@ -37,7 +37,7 @@ CONF="$HOME/.config/aerisos/setup.conf"
 [[ -f $CONF ]] && source "$CONF"
 
 # Install modules, in the order "all" runs them
-MODULES=(t2 essentials wizard packages hardware steam controller dotfiles login voxtype tools aeris maps titan theme safety boot)
+MODULES=(t2 essentials wizard packages hardware steam controller dotfiles login voxtype tools aeris maps titan theme safety boot logins)
 # Only run when named: hardware unique to one machine, or maintenance
 OPTIONAL=(gamesdrive razer snapshot)
 
@@ -590,7 +590,26 @@ mod_tools() {
     run git config --global pull.rebase false
     if [[ -n ${AERIS_GIT_EMAIL:-} ]]; then run git config --global user.email "$AERIS_GIT_EMAIL"; fi
     if [[ -n ${AERIS_GIT_NAME:-} ]]; then run git config --global user.name "$AERIS_GIT_NAME"; fi
-    gh auth status >/dev/null 2>&1 || info "GitHub: run 'gh auth login', then 'gh auth setup-git'"
+    gh auth status >/dev/null 2>&1 || info "GitHub: the 'logins' module at the end runs 'gh auth login'"
+}
+
+mod_logins() {
+    log "Logins: GitHub and Tailscale (interactive, browser flows; safe to re-run)"
+    if gh auth status >/dev/null 2>&1; then
+        info "GitHub: already logged in"
+    else
+        run gh auth login
+        run gh auth setup-git
+    fi
+    pacman_install tailscale
+    as_root systemctl enable --now tailscaled
+    if tailscale status >/dev/null 2>&1; then
+        info "Tailscale: already connected"
+    else
+        as_root tailscale up     # prints a login URL; open it in the browser
+    fi
+    # Let this user control Tailscale without sudo (the bar widget needs it)
+    as_root tailscale set --operator="$USER"
 }
 
 mod_aeris() {
