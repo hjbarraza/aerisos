@@ -470,11 +470,16 @@ mod_tools() {
     pacman_install flatpak
     run flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
     run flatpak install -y --user flathub org.localsend.localsend_app || warn "LocalSend flatpak install failed; run it again later"
-    # Launchers only see flatpak apps once XDG_DATA_DIRS includes the export dir (next login);
-    # a symlink into ~/.local/share/applications makes it visible immediately and is harmless after
+    # Launchers only see flatpak apps once XDG_DATA_DIRS includes the export dir (next login).
+    # A copy in ~/.local/share/applications is visible immediately, shadows the export after
+    # re-login (same desktop id), and swaps the icon for a themed one: LocalSend's own icon
+    # only ships at 512px, which Vicinae won't scale (shows "?").
     run mkdir -p "$HOME/.local/share/applications"
-    run ln -sf "$HOME/.local/share/flatpak/exports/share/applications/org.localsend.localsend_app.desktop" \
-        "$HOME/.local/share/applications/"
+    if [[ -f $HOME/.local/share/flatpak/exports/share/applications/org.localsend.localsend_app.desktop ]]; then
+        sed 's/^Icon=.*/Icon=document-send/' \
+            "$HOME/.local/share/flatpak/exports/share/applications/org.localsend.localsend_app.desktop" \
+            > "$HOME/.local/share/applications/org.localsend.localsend_app.desktop"
+    fi
 
     # Node: global npm packages go to ~/.local (no sudo). Git defaults; GitHub via gh
     pacman_install nodejs npm git github-cli
