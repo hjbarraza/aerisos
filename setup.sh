@@ -133,9 +133,10 @@ write_root_file() {
 # (grep without -q: an early exit would SIGPIPE the producer and trip pipefail)
 gpu_has() { lspci | grep -iE 'vga|3d|display' | grep -iE "$1" >/dev/null; }
 
-# Local models (Ollama) only with an NVIDIA GPU; elsewhere (the T2 Mac: Intel + Radeon
-# 5500M, no ROCm) the lock screen, watchlist and OpenCode use OpenRouter
-local_llm() { gpu_has nvidia; }
+# Local model for the lock screen and watchlist: CUDA + qwen3.5:9b on NVIDIA; anything
+# else (the T2 Mac's Radeon 5500M: no ROCm, 4 GB) gets Vulkan + qwen3.5:4b, the largest
+# that leaves room for voxtype. OpenCode needs more than that: OpenRouter there
+llm_model() { if gpu_has nvidia; then echo qwen3.5:9b; else echo qwen3.5:4b; fi; }
 
 # Intel Mac with the T2 chip (needs the linux-t2 kernel from the arch-mact2 repo)
 is_t2() { lspci | grep -i 'T2 Bridge' >/dev/null; }
@@ -283,16 +284,16 @@ mod_packages() {
         missing=$(comm -23 <(sort -u "$PKG/pacman.txt") <(echo "$available"))
         [[ -n $missing ]] && warn "Not in repos, skipped: $(echo $missing)"
         # NVIDIA drivers, CUDA and local models only where there's an NVIDIA GPU
-        if ! local_llm; then
-            wanted=$(grep -vE '^(lib32-)?nvidia|^libva-nvidia|^ollama|^steam$' <<<"$wanted" || true)
-            info "No NVIDIA GPU: skipping NVIDIA drivers, Ollama (AI runs on OpenRouter) and Steam"
+        if ! gpu_has nvidia; then
+            wanted=$(grep -vE '^(lib32-)?nvidia|^libva-nvidia|^ollama-cuda$|^steam$' <<<"$wanted" || true)
+            info "No NVIDIA GPU: skipping NVIDIA drivers, CUDA and Steam"
         fi
         # shellcheck disable=SC2086
         pacman_install $wanted
     fi
     if [[ -s $PKG/aur.txt ]]; then
         # shellcheck disable=SC2046
-        aur_install $(grep -vE '^(yay-bin|.*-debug)$' "$PKG/aur.txt" | { local_llm && cat || grep -vx envycontrol; })
+        aur_install $(grep -vE '^(yay-bin|.*-debug)$' "$PKG/aur.txt" | { gpu_has nvidia && cat || grep -vx envycontrol; })
     fi
 }
 
@@ -583,15 +584,25 @@ mod_aeris() {
     fi
 
     # Local models: lock-screen telegram compression (aeris-status) and the AERIS board
-    if local_llm; then
+    local model; model=$(llm_model)
+    if gpu_has nvidia; then
         pacman_install ollama ollama-cuda
-        as_root systemctl enable --now ollama.service
-        if have ollama && ! ollama list 2>/dev/null | grep -q '^qwen3.5:9b'; then
-            run ollama pull qwen3.5:9b || warn "Model pull failed; aeris-status falls back to raw headlines"
-        fi
     else
-        # No local models: every OpenCode agent on OpenRouter; aeris-status and aeris-watch
-        # switch to OpenRouter by themselves (no Ollama answering)
+        pacman_install ollama ollama-vulkan
+        if [[ ! -f /etc/systemd/system/ollama.service.d/vulkan.conf ]]; then
+            printf '[Service]\nEnvironment=OLLAMA_VULKAN=1\n' \
+                | write_root_file /etc/systemd/system/ollama.service.d/vulkan.conf
+            as_root systemctl daemon-reload
+            as_root systemctl try-restart ollama.service
+        fi
+    fi
+    as_root systemctl enable --now ollama.service
+    if have ollama && ! ollama list 2>/dev/null | grep -q "^$model"; then
+        run ollama pull "$model" || warn "Model pull failed; aeris-status uses OpenRouter or raw headlines"
+    fi
+    if ! gpu_has nvidia; then
+        # The OpenCode agents' local models don't fit in 4 GB: all on OpenRouter
+        # (aeris-status/aeris-watch use OpenRouter by themselves whenever Ollama is down)
         if [[ -f $HOME/.config/opencode/opencode.json ]]; then
             run sed -i -E 's#"ollama/[^"]*"#"openrouter/z-ai/glm-5.3-flash"#' "$HOME/.config/opencode/opencode.json"
             run sed -i -E 's#^model: ollama/.*#model: openrouter/z-ai/glm-5.3-flash#' "$HOME"/.config/opencode/agents/*.md
@@ -738,6 +749,18 @@ mod_boot() {
     [[ -f $preset.bak ]] || as_root cp "$preset" "$preset.bak"
     as_root sed -i "s|^#\?default_options=.*|default_options=\"--osrelease $osrel --splash $splash\"|" "$preset"
     as_root mkinitcpio -p linux
+
+    # T2 Macs boot linux-t2 from a plain loader entry (no UKI, no /etc/kernel/cmdline):
+    # quiet options on that entry, Plymouth in its initramfs
+    if is_t2; then
+        local entry
+        for entry in $(sudo grep -l 'vmlinuz-linux-t2' /boot/loader/entries/*.conf 2>/dev/null); do
+            for arg in quiet splash loglevel=3 rd.udev.log_level=3 vt.global_cursor_default=0; do
+                sudo grep -qE "^options.* $arg( |$)" "$entry" || as_root sed -i "/^options/ s|\$| $arg|" "$entry"
+            done
+        done
+        as_root mkinitcpio -p linux-t2
+    fi
     info "Reboot to see it. OS_NAME stays ASCII because firmware boot menus often can't draw Æ (the splash still shows ÆRIS)."
 }
 

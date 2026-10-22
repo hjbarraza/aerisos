@@ -114,8 +114,8 @@ def wdate(raw):
 GLOSS_CACHE = os.path.join(DATA_DIR, "gloss-cache.json")
 GLOSS_KEEP = 600
 OLLAMA = "http://127.0.0.1:11434"
-GLOSS_MODELS = ("qwen3.5:9b", "qwen3.5-9b-16k:latest", "gemma4:12b")
-# No local model (machines without an NVIDIA GPU, e.g. the T2 Mac): OpenRouter instead,
+GLOSS_MODELS = ("qwen3.5:9b", "qwen3.5-9b-16k:latest", "gemma4:12b", "qwen3.5:4b")
+# Ollama down or without a model: OpenRouter instead,
 # with the key `opencode auth login` saved (or $OPENROUTER_API_KEY)
 OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
 OR_MODEL = "z-ai/glm-5.3-flash"  # same as AERIS-CLOUD in opencode.json

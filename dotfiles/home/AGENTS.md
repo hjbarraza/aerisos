@@ -28,7 +28,7 @@ Update this file whenever a data location, threshold or pipeline changes.
 | Passes ISS/Tiangong | CelesTrak TLEs + own J2 propagator (`tle-cache.json`) | |
 | Bright sats overhead | CelesTrak `visual` group + same propagator (`vistle-cache.json`) | 12 h cache, elevation ≥10° now |
 | Next rocket launch | Launch Library 2, ll.thespacedevs.com (free, no key; `launch-cache.json`) | 1 h cache |
-| News headlines | 9 RSS feeds (`news-cache.json`) | 1 h cache; telegram-compressed via local Ollama (`tg-cache.json` memo, raw fallback) |
+| News headlines | 9 RSS feeds (`news-cache.json`) | 1 h cache; telegram-compressed via local Ollama (qwen3.5:9b on NVIDIA, qwen3.5:4b on Vulkan), OpenRouter when Ollama is down (`tg-cache.json` memo, raw fallback) |
 | Watchlist | `aeris-watch` findings republished into `status.json` `watch` + `lock.tsv` `watch.*` | aeris-watch.timer hourly |
 | Weather | Open-Meteo | |
 
