@@ -709,8 +709,8 @@ mod_wizard() {
     read -rp "  Install the defence-maps app? Needs access to its private repo [y/N]: " maps
     if [[ ${maps,,} == y* ]]; then
         maps=yes
-        read -rp "  Maps repo URL [${AERIS_MAPS_REPO:-git@github.com:hjbarraza/defence-maps.git}]: " maps_repo
-        maps_repo=${maps_repo:-${AERIS_MAPS_REPO:-git@github.com:hjbarraza/defence-maps.git}}
+        read -rp "  Maps repo URL [${AERIS_MAPS_REPO:-https://github.com/hjbarraza/defence-maps.git}]: " maps_repo
+        maps_repo=${maps_repo:-${AERIS_MAPS_REPO:-https://github.com/hjbarraza/defence-maps.git}}
     else
         maps=no; maps_repo=${AERIS_MAPS_REPO:-}
     fi
