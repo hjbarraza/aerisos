@@ -248,30 +248,6 @@ ShellRoot {
                     onClicked: root.sh("ghostty --class=aeris.tui-float -e ~/.local/bin/aeris-alerts")
                 }
             }
-            Text {   // unacknowledged watchlist findings
-                visible: aeris.watchShown > 0
-                text: "\u{F0208} " + (aeris.watchShown > 99 ? "99+" : aeris.watchShown)
-                color: root.fg
-                font { family: root.nerd; pixelSize: 12 }
-                leftPadding: 7; rightPadding: 8
-                MouseArea {
-                    anchors.fill: parent
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-                    // left: show the watch page (focus an open one); middle: mark all
-                    // watched (counter clears on the collector's next run); right: inbox
-                    onClicked: ev => {
-                        if (ev.button === Qt.MiddleButton) {
-                            root.sh("~/.local/bin/aeris-watch ack --all && notify-send 'AERIS' 'Watchlist acknowledged'")
-                            aeris.ackedAt = aeris.watchNew
-                        } else if (ev.button === Qt.RightButton)
-                            root.sh("ghostty --class=aeris.tui-float -e sh -c '~/.local/bin/aeris-inbox; printf \"\\n[enter to close] \"; read -r'")
-                        else {   // opening the page is reading it: watch-open acks after load
-                            root.sh("~/.local/bin/watch-open")
-                            aeris.ackedAt = aeris.watchNew
-                        }
-                    }
-                }
-            }
             Text {   // the collector stopped writing: everything above is old
                 visible: aeris.stale
                 text: "STALE"
