@@ -308,6 +308,7 @@ This is specific to this laptop, so it's not part of the default run.
 | Window borders | `active_border` (gradient colours + `angle`) / `inactive_border` / `border_size` in `~/.config/hypr/hyprland.lua`. Rotation speed: the `borderangle` line in the animations block (`speed` in tenths of a second per turn; lower is faster, `10` ≈ 1 s). Remove that line for a static gradient |
 | Text size | `font-size` in `~/.config/ghostty/config`, `font.pixelSize` in the Quickshell bar/dock QML, and the `Söhne 9` lines in the `theme` module |
 | Terminal greeting | `bin/aeris-greeting`, then `./setup.sh tools`. Window padding: `window-padding-x/-y` in `~/.config/ghostty/config`. Terminals at login: the `hl.exec_cmd(terminal)` lines in the autostart block of `hyprland.lua` |
+| Spoken login greeting | `dotfiles/home/.local/bin/aeris-hello`, run from the autostart block of `hyprland.lua`. Says the time of day, the date and a fun fact (fresh from a free OpenRouter model at each login, built-in fallback list) in Kokoro's `bf_emma` voice. Kokoro runs from `~/tts-samples` (`AERIS_KOKORO_DIR`); voice via `AERIS_HELLO_VOICE`; `aeris-hello --text` prints without speaking |
 | Dictation overlay | Off. To bring one back: `voxtype config set osd.enabled true && systemctl --user restart voxtype` |
 
 ## Undo

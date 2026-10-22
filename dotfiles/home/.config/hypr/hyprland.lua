@@ -88,6 +88,7 @@ hl.on("hyprland.start", function ()
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
     hl.exec_cmd("command -v vicinae >/dev/null && vicinae server")
     hl.exec_cmd("swayosd-server")
+    hl.exec_cmd("~/.local/bin/aeris-hello")   -- spoken greeting: date + fun fact (Kokoro, bf_emma)
     -- Two terminals after login (both show the AerisOS greeting). The left one runs ÆRIS Agent and falls back to a
     -- shell when it exits; the right one starts a moment later so ÆRIS always takes the left side of the layout.
     -- These run Ghostty (needs -e before a command); Super+Q etc. still use `terminal`.
