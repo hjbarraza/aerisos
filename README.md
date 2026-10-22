@@ -208,6 +208,7 @@ change rewrites it anyway.
 | `SUPER+RETURN` · `SUPER+E` | Terminal · Files |
 | `CMD+C/V/X/Z/A/T/N/W` | macOS-style: forwarded to the app as `Ctrl+…` (the "Cmd" is the key left of the spacebar: Super on Apple keyboards, left Alt on PC layouts) |
 | `CMD+Q` · `CMD+TAB` | Close window · cycle windows (macOS-style) |
+| `CMD+SHIFT+[` · `]` (Mac also `CMD+OPTION+←` · `→`) | Previous · next tab in the browser (forwarded as `Ctrl+PageUp/PageDown`); `Cmd+1–9` stays on workspaces |
 | `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize |
 | `SUPER+P` · `SUPER+J` | Pseudo-tile · flip split rows/columns |
 | `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag) |

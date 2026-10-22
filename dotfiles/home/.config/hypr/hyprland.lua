@@ -347,6 +347,13 @@ for _, k in ipairs({ "C", "V", "X", "Z", "A", "T", "N", "W" }) do
 end
 hl.bind(cmdMod .. " + SHIFT + Z", hl.dsp.send_shortcut({ mods = "CTRL+SHIFT", key = "Z" }), { description = "macOS-style: redo" })
 hl.bind(cmdMod .. " + Q", hl.dsp.window.close(), { description = "Close window (macOS quit)" })
+-- Browser/app tabs, macOS-style: Cmd+Shift+[ / ] (Cmd+1-9 is taken by workspaces)
+hl.bind(cmdMod .. " + SHIFT + bracketleft",  hl.dsp.send_shortcut({ mods = "CTRL", key = "Prior" }), { description = "macOS-style: previous tab" })
+hl.bind(cmdMod .. " + SHIFT + bracketright", hl.dsp.send_shortcut({ mods = "CTRL", key = "Next" }), { description = "macOS-style: next tab" })
+if cmdMod == "SUPER" then   -- Cmd+Option+arrows (Chrome/Brave on the Mac); on PC layouts ALT+ALT is not a combo
+    hl.bind("SUPER + ALT + left",  hl.dsp.send_shortcut({ mods = "CTRL", key = "Prior" }), { description = "macOS-style: previous tab" })
+    hl.bind("SUPER + ALT + right", hl.dsp.send_shortcut({ mods = "CTRL", key = "Next" }), { description = "macOS-style: next tab" })
+end
 if cmdMod ~= "ALT" then   -- ALT+Tab already cycles windows below; mirror it onto Cmd+Tab
     hl.bind(cmdMod .. " + Tab", hl.dsp.window.cycle_next(), { description = "Next window (Cmd+Tab)" })
     hl.bind(cmdMod .. " + Tab", hl.dsp.window.bring_to_top())
