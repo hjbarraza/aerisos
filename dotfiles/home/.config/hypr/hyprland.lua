@@ -47,7 +47,7 @@ if product == "MacBookPro16,1" then
     hl.monitor({
         output = "desc:Apple Computer Inc StudioDisplay 0x5DBACB3E",
         mode   = "3840x2160@60",
-        scale  = 1.5,
+        scale  = 1.25,   -- 3072x1728 logical: more real estate, still readable at 27"
     })
 end
 
@@ -150,7 +150,7 @@ hl.config({
 
         col = {
             active_border   = { colors = { "rgba(f2f2ffff)", "rgba(39ff88ff)", "rgba(b44dffff)" }, angle = 45 },   -- cyberpunk: white, green, purple
-            inactive_border = "rgba(000000ff)",   -- AerisOS: black
+            inactive_border = "rgba(000000ff)",   -- ÆrisOS: black
         },
 
         -- Set to true to enable resizing windows by clicking and dragging on borders and gaps
