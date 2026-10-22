@@ -15,11 +15,16 @@ for m in json.load(sys.stdin):
         break
 ')
 
-steps=(1.0 1.2 1.25 1.333333 1.5 1.6 2.0)
-new=$(python3 - "$scale" "$dir" <<'EOF'
+new=$(python3 - "$scale" "$dir" "$w" "$h" <<'EOF'
 import sys
 steps = [1.0, 1.2, 1.25, 1.333333, 1.5, 1.6, 2.0]
 cur, d = float(sys.argv[1]), sys.argv[2]
+w, h = int(sys.argv[3]), int(sys.argv[4])
+# Hyprland warns about scales that leave a fractional logical size (e.g. 2560/1.5),
+# so only offer steps that divide this mode evenly (1.333333 stands for 4/3).
+def clean(s):
+    return all(abs(v / s - round(v / s)) < 0.01 for v in (w, h))
+steps = [s for s in steps if clean(s)] or steps
 # nearest step to the current scale, then move one up or down
 i = min(range(len(steps)), key=lambda i: abs(steps[i] - cur))
 i = min(i + 1, len(steps) - 1) if d == "up" else max(i - 1, 0)

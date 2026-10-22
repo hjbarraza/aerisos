@@ -213,7 +213,7 @@ change rewrites it anyway.
 | `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize |
 | `SUPER+P` · `SUPER+J` | Pseudo-tile · flip split rows/columns |
 | `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag) |
-| `SUPER+SHIFT+PLUS` · `SUPER+SHIFT+MINUS` | Display scale: larger UI · more real estate (steps 1 → 1.2 → 1.25 → 1.33 → 1.5 → 1.6 → 2; runtime, reload returns to the saved scale) |
+| `SUPER+SHIFT+PLUS` · `SUPER+SHIFT+MINUS` | Display scale: larger UI · more real estate (steps through 1 → 1.2 → 1.25 → 1.33 → 1.5 → 1.6 → 2, skipping any that leave a fractional logical size on the current mode; runtime, reload returns to the saved scale) |
 | `SUPER+SHIFT+B` · `N` · `O` · `M` | Brave · Sublime Text · Obsidian · Signal |
 | `SUPER+SHIFT+C` · `Y` · `I` · `G` · `/` | Notion Calendar · YouTube · Claude · Gemini · Google (web apps) |
 | `SUPER+CTRL+A` · `W` · `B` | Audio · Wi-Fi · Bluetooth |
@@ -391,10 +391,7 @@ alongside; the first run records the current state silently so a restart never r
 | Launches | The next rocket launch is GO |
 | Outages | A major internet outage is reported |
 
-**Agent notifications:** Claude Code's `Stop` and `Notification` hooks (in
-`~/.claude/settings.json`, restored by `dotfiles`) call `aeris-agent-notify`, so Emma says
-when a task finished or Claude is waiting for you. Any other agent can do the same:
-`aeris-agent-notify "hermes" "finished the build"`.
+**Agent notifications:** none by default (the Claude Code and OpenCode hooks were removed as noisy). Any agent can still call `aeris-agent-notify "hermes" "finished the build"` by hand.
 
 **Custom announcements:** `aeris-speak` takes text as arguments or on stdin:
 

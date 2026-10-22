@@ -2,8 +2,8 @@
 """Spoken login greeting: time of day, the date and a fun fact, read by Kokoro (bf_emma).
 
 Run once per login from hyprland.lua. The fact comes from a free OpenRouter model, fresh at
-every login, with a built-in list as fallback (no network, rate limit, odd answer). Kokoro runs from the
-venv + models in ~/tts-samples (override with AERIS_KOKORO_DIR); the voice with AERIS_HELLO_VOICE.
+every login, with a built-in list as fallback (no network, rate limit, odd answer). Speaking goes
+through aeris-speak (the system voice, Kokoro bf_emma when ~/.local/share/aeris/tts-models exists).
 
   aeris-hello            speak the greeting
   aeris-hello --text     only print it
@@ -11,8 +11,7 @@ venv + models in ~/tts-samples (override with AERIS_KOKORO_DIR); the voice with 
 import datetime, fcntl, json, os, random, re, subprocess, sys, time, urllib.request
 
 HOME = os.path.expanduser("~")
-KOKORO = os.environ.get("AERIS_KOKORO_DIR", f"{HOME}/tts-samples")
-VOICE = os.environ.get("AERIS_HELLO_VOICE", "bf_emma")
+SPEAK = f"{HOME}/.local/bin/aeris-speak"
 MODEL = "nvidia/nemotron-3.5-lightning:free"   # free models only
 RUN = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
 
@@ -111,15 +110,9 @@ def main():
     if "--text" in sys.argv:
         return
 
-    wav = f"{RUN}/aeris-hello.wav"
-    synth = ("import sys,soundfile as sf\nfrom kokoro_onnx import Kokoro\n"
-             f"k=Kokoro('{KOKORO}/models/kokoro-v1.0.onnx','{KOKORO}/models/voices-v1.0.bin')\n"
-             f"s,sr=k.create(sys.stdin.read(),voice='{VOICE}',speed=1.0,lang='en-gb')\n"
-             f"sf.write('{wav}',s,sr)\n")
-    subprocess.run([f"{KOKORO}/venvs/kokoro/bin/python", "-c", synth], input=text.encode(), check=True)
     wait_for(lambda: subprocess.run(["pw-cli", "info", "0"], capture_output=True).returncode == 0, 20)
-    subprocess.run(["pw-play", wav])
-    os.remove(wav)
+    if os.path.isfile(SPEAK):
+        subprocess.run([SPEAK, text])   # the system voice; KeyError-style failures there are non-fatal
 
 
 if __name__ == "__main__":

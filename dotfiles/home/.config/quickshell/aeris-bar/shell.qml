@@ -459,7 +459,9 @@ ShellRoot {
         property var rows: []
         property string copied: ""
         anchor.window: bar
-        anchor.rect.x: tsIcon.mapToItem(null, 0, 0).x + tsIcon.width - implicitWidth
+        // mapToItem has no change signal, so a plain binding goes stale (menu far left):
+        // position is computed when the menu opens.
+        anchor.rect.x: 0
         anchor.rect.y: bar.implicitHeight
         implicitWidth: 252
         implicitHeight: tsCol.implicitHeight + 20
@@ -467,7 +469,10 @@ ShellRoot {
         color: "transparent"
         function toggle() {
             if (visible) visible = false
-            else { tsProc.running = true; visible = true }
+            else {
+                anchor.rect.x = tsIcon.mapToItem(null, 0, 0).x + tsIcon.width - implicitWidth
+                tsProc.running = true; visible = true
+            }
         }
         function act(c) { root.sh(c); actTimer.restart() }
         Timer { id: actTimer; interval: 800; onTriggered: { tsProc.running = true; root.refreshTick++ } }
