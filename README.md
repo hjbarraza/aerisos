@@ -204,7 +204,9 @@ change rewrites it anyway.
 | Right-click **Æ** | Search (Vicinae) |
 | `SUPER+SPACE` · `ALT+SPACE` | Search / launch (Vicinae) |
 | `ALT+TAB` · `ALT+SHIFT+TAB` | Next · previous window |
-| `SUPER+Q` · `SUPER+E` | Terminal · Files |
+| `SUPER+RETURN` · `SUPER+E` | Terminal · Files |
+| `CMD+C/V/X/Z/A/T/N/W` | macOS-style: forwarded to the app as `Ctrl+…` (the "Cmd" is the key left of the spacebar: Super on Apple keyboards, left Alt on PC layouts) |
+| `CMD+Q` · `CMD+TAB` | Close window · cycle windows (macOS-style) |
 | `SUPER+SHIFT+B` · `N` · `O` · `M` | Brave · Sublime Text · Obsidian · Signal |
 | `SUPER+SHIFT+C` · `Y` · `I` · `G` · `/` | Notion Calendar · YouTube · Claude · Gemini · Google (web apps) |
 | `SUPER+CTRL+A` · `W` · `B` | Audio · Wi-Fi · Bluetooth |

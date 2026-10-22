@@ -322,10 +322,35 @@ hl.device({
 local mainMod = "SUPER" -- Sets "Windows" key as main modifier
 
 -- Example binds, see https://wiki.hypr.land/Configuring/Basics/Binds/ for more
-hl.bind(mainMod .. " + Q", hl.dsp.exec_cmd(terminal), { description = "Open terminal" })
+hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal), { description = "Open terminal" })
 hl.bind(mainMod .. " + G", hl.dsp.exec_cmd("ghostty"), { description = "Open ghostty (trial)" })
-local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close(), { description = "Close window" })
--- closeWindowBind:set_enabled(false)
+
+-- macOS-style shortcuts: the key in the Cmd position (left of the spacebar) carries the
+-- familiar combos — Cmd itself (Super) on Apple keyboards, the left Alt on PC layouts
+-- (Razer). Letter combos are forwarded to the focused app as their Ctrl equivalents
+-- (ghostty/kitty accept Ctrl+C/V natively, so terminals behave too). Close window moved
+-- from SUPER+C to Cmd+Q (macOS "quit") so Cmd+C can be copy; terminal moved to
+-- mainMod+Return. Voxtype's dictation key (Right Option/Alt) is press/release only,
+-- so ALT+letter combos on the Razer don't disturb it.
+local cmdMod = "ALT"
+do
+    local f = io.open("/sys/class/dmi/id/sys_vendor")
+    if f then
+        if (f:read("l") or ""):find("Apple") then cmdMod = "SUPER" end
+        f:close()
+    end
+end
+for _, k in ipairs({ "C", "V", "X", "Z", "A", "T", "N", "W" }) do
+    hl.bind(cmdMod .. " + " .. k, hl.dsp.send_shortcut({ mods = "CTRL", key = k }), { description = "macOS-style: Ctrl+" .. k .. " to the app" })
+end
+hl.bind(cmdMod .. " + SHIFT + Z", hl.dsp.send_shortcut({ mods = "CTRL+SHIFT", key = "Z" }), { description = "macOS-style: redo" })
+hl.bind(cmdMod .. " + Q", hl.dsp.window.close(), { description = "Close window (macOS quit)" })
+if cmdMod ~= "ALT" then   -- ALT+Tab already cycles windows below; mirror it onto Cmd+Tab
+    hl.bind(cmdMod .. " + Tab", hl.dsp.window.cycle_next(), { description = "Next window (Cmd+Tab)" })
+    hl.bind(cmdMod .. " + Tab", hl.dsp.window.bring_to_top())
+    hl.bind(cmdMod .. " + SHIFT + Tab", hl.dsp.window.cycle_next({ next = false }), { description = "Previous window" })
+    hl.bind(cmdMod .. " + SHIFT + Tab", hl.dsp.window.bring_to_top())
+end
 -- No logout keybind: SUPER+M used to exit Hyprland instantly (no confirmation), too easy
 -- to hit by accident. Log out from the AerisOS menu (SUPER+ALT+SPACE) or `hyprctl dispatch exit`.
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager), { description = "File manager" })
