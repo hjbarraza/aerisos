@@ -219,7 +219,7 @@ ShellRoot {
                     }
                 }
                 Timer { interval: 3000; running: true; repeat: true; onTriggered: netProc.running = true }
-                MouseArea { anchors.fill: parent; onClicked: root.sh("ghostty --class=tui-float -e nmtui") }
+                MouseArea { anchors.fill: parent; onClicked: root.sh("ghostty --class=aeris.tui-float -e nmtui") }
             }
             Text {   // volume, live via PipeWire
                 readonly property var audio: Pipewire.defaultAudioSink?.audio ?? null
@@ -235,7 +235,7 @@ ShellRoot {
                     onClicked: ev => {
                         if (ev.button === Qt.RightButton) root.sh("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
                         else if (ev.button === Qt.MiddleButton) root.sh("pavucontrol")
-                        else root.sh("ghostty --class=tui-float -e wiremix")
+                        else root.sh("ghostty --class=aeris.tui-float -e wiremix")
                     }
                     onWheel: w => root.sh("wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%" + (w.angleDelta.y > 0 ? "+" : "-"))
                 }
@@ -248,11 +248,14 @@ ShellRoot {
                 readonly property var icons: ["󰁺","󰁻","󰁼","󰁽","󰁾","󰁿","󰂀","󰂁","󰂂","󰁹"]
                 readonly property var cicons: ["󰢜","󰂆","󰂇","󰂈","󰢝","󰂉","󰢞","󰂊","󰂋","󰂅"]
                 readonly property int idx: Math.max(0, Math.min(9, Math.floor(pct / 10)))
+                property bool showPct: false   // click toggles the % readout
                 visible: dev?.isLaptopBattery ?? false
-                text: (charging ? cicons[idx] : icons[idx]) + (pct <= 20 && !charging ? " " + Math.round(pct) + "%" : "")
+                text: (charging ? cicons[idx] : icons[idx])
+                    + (showPct || (pct <= 20 && !charging) ? " " + Math.round(pct) + "%" : "")
                 color: pct <= 20 && !charging ? root.warn : root.fg
                 font { family: root.nerd; pixelSize: 12 }
                 leftPadding: 7; rightPadding: 8
+                MouseArea { anchors.fill: parent; onClicked: parent.showPct = !parent.showPct }
             }
 
             // ---- tray drawer: 󰅁 expands tray + bt + backlight + cpu + power
@@ -305,7 +308,7 @@ ShellRoot {
                         "elif [ \"$(bluetoothctl devices Connected 2>/dev/null | wc -l)\" -gt 0 ]; then echo '{\"text\":\"󰂱\"}'; " +
                         "else echo '{\"text\":\"󰂯\"}'; fi"]
                     interval: 10000
-                    onClick: () => root.sh("ghostty --class=tui-float -e bluetui")
+                    onClick: () => root.sh("ghostty --class=aeris.tui-float -e bluetui")
                 }
                 Text {   // backlight
                     id: backlight

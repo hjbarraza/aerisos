@@ -24,9 +24,9 @@ entries=(
     "Capture — Record: area (run again to stop)|~/.local/bin/screenrecord area"
     "Capture — Record: screen (run again to stop)|~/.local/bin/screenrecord screen"
     "Capture — Colour picker|hyprpicker -a"
-    "Settings — Wi-Fi|ghostty --class=tui-float -e nmtui"
-    "Settings — Bluetooth|ghostty --class=tui-float -e bluetui"
-    "Settings — Audio|ghostty --class=tui-float -e wiremix"
+    "Settings — Wi-Fi|ghostty --class=aeris.tui-float -e nmtui"
+    "Settings — Bluetooth|ghostty --class=aeris.tui-float -e bluetui"
+    "Settings — Audio|ghostty --class=aeris.tui-float -e wiremix"
     "Settings — Razer (power, fans, logo)|razer-settings"
     "Battery — Hold at 90–95%|systemctl --user enable --now aeris-charge-limit.timer && systemctl --user start aeris-charge-limit.service && notify-send 'Battery' 'Holding between 90 and 95%'"
     "Battery — Charge to 100%|systemctl --user disable --now aeris-charge-limit.timer; razer-cli write bho off && notify-send 'Battery' 'Charging to 100%'"
@@ -34,9 +34,9 @@ entries=(
     "GPU — Integrated only (best battery, reboot)|pkexec envycontrol -s integrated && notify-send 'GPU: integrated' 'Reboot to switch to the Intel GPU only'"
     "GPU — Hybrid (Intel + NVIDIA on demand, reboot)|pkexec envycontrol -s hybrid && notify-send 'GPU: hybrid' 'Reboot to apply'"
     "GPU — Show current mode|notify-send 'GPU mode' \"$(envycontrol --query)\""
-    "System — Update AerisOS|ghostty --class=tui-float -e ~/.local/bin/aeris-update"
+    "System — Update AerisOS|ghostty --class=aeris.tui-float -e ~/.local/bin/aeris-update"
     "System — Keyboard shortcuts|~/.local/bin/keybinds"
-    "System — Activity monitor|ghostty --class=tui-float -e btop"
+    "System — Activity monitor|ghostty --class=aeris.tui-float -e btop"
 )
 
 labels=$(printf '%s\n' "${entries[@]}" | cut -d'|' -f1)
