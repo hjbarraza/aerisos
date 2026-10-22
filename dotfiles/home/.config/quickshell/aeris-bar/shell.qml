@@ -283,8 +283,8 @@ ShellRoot {
             Item { Layout.fillWidth: true }
 
             // ---- right: tailscale, net, audio, battery, drawer -----------
-            StatusModule { cmd: ["sh", "-c", "~/.local/bin/tailscale-status"]; interval: 10000
-                onClick: () => root.sh("~/.local/bin/tailscale-status toggle")
+            StatusModule { id: tsIcon; cmd: ["sh", "-c", "~/.local/bin/tailscale-status"]; interval: 10000
+                onClick: () => tsPopup.toggle()
                 onRightClick: () => root.sh("~/.local/bin/tailscale-status admin") }
             Text {   // network: type + wifi signal tiers, like waybar
                 id: net
@@ -445,6 +445,124 @@ ShellRoot {
                     interval: 10000
                     onClick: () => root.sh(
                         "p=$(powerprofilesctl get); case $p in balanced) n=performance;; performance) n=power-saver;; *) n=balanced;; esac; powerprofilesctl set $n")
+                }
+            }
+        }
+    }
+
+    // Tailscale submenu: click the bar icon. Devices with online dots (click a row to
+    // copy its IP), connect/disconnect, admin console. Monochrome like the rest of the
+    // bar; reads `tailscale status --json` directly (the user is the tailscale operator).
+    PopupWindow {
+        id: tsPopup
+        property string backend: ""
+        property var rows: []
+        property string copied: ""
+        anchor.window: bar
+        anchor.rect.x: tsIcon.mapToItem(null, 0, 0).x + tsIcon.width - implicitWidth
+        anchor.rect.y: bar.implicitHeight
+        implicitWidth: 252
+        implicitHeight: tsCol.implicitHeight + 20
+        visible: false
+        color: "transparent"
+        function toggle() {
+            if (visible) visible = false
+            else { tsProc.running = true; visible = true }
+        }
+        function act(c) { root.sh(c); actTimer.restart() }
+        Timer { id: actTimer; interval: 800; onTriggered: { tsProc.running = true; root.refreshTick++ } }
+        Timer { id: copyTimer; interval: 1500; onTriggered: tsPopup.copied = "" }
+        Process {
+            id: tsProc
+            command: ["tailscale", "status", "--json"]
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    try {
+                        const j = JSON.parse(text)
+                        tsPopup.backend = j.BackendState ?? ""
+                        const mk = (p, self) => ({
+                            // iOS devices report HostName "localhost": use the DNS name
+                            host: (!p.HostName || p.HostName === "localhost")
+                                  ? (p.DNSName ?? "?").split(".")[0] : p.HostName,
+                            ip: (p.TailscaleIPs ?? [""])[0] ?? "",
+                            online: self ? true : p.Online === true,
+                            self: self })
+                        const peers = Object.values(j.Peer ?? {}).map(p => mk(p, false))
+                        peers.sort((a, b) => (b.online - a.online) || a.host.localeCompare(b.host))
+                        tsPopup.rows = (j.Self ? [mk(j.Self, true)] : []).concat(peers)
+                    } catch (e) { tsPopup.backend = "Off"; tsPopup.rows = [] }
+                }
+            }
+        }
+        HyprlandFocusGrab { windows: [tsPopup]; active: tsPopup.visible; onCleared: tsPopup.visible = false }
+        Rectangle { anchors.fill: parent; color: root.bg; border.color: "#2a2a2a"; border.width: 1 }
+        Column {
+            id: tsCol
+            x: 12; y: 10
+            width: tsPopup.implicitWidth - 24
+            spacing: 3
+            RowLayout {
+                width: parent.width
+                Text { text: "TAILSCALE"; color: root.fg; font { family: root.sans; pixelSize: 11; letterSpacing: 1 } }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: tsPopup.backend === "Running" ? "CONNECTED"
+                        : tsPopup.backend === "Stopped" ? "DISCONNECTED"
+                        : tsPopup.backend === "NeedsLogin" ? "NEEDS LOGIN" : tsPopup.backend.toUpperCase()
+                    color: tsPopup.backend === "Running" ? root.fg : root.dim
+                    font { family: root.sans; pixelSize: 11; letterSpacing: 1 }
+                }
+            }
+            Item { width: 1; height: 3 }
+            Repeater {
+                model: tsPopup.rows
+                RowLayout {
+                    id: tsRow
+                    required property var modelData
+                    width: tsCol.width
+                    spacing: 6
+                    Text { text: tsRow.modelData.online ? "●" : "○"
+                        color: tsRow.modelData.online ? root.fg : root.dim
+                        font.pixelSize: 8 }
+                    Text {
+                        text: tsRow.modelData.host + (tsRow.modelData.self ? " · this" : "")
+                        color: tsRow.modelData.online ? root.fg : root.dim
+                        font { family: root.sans; pixelSize: 12 }
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        text: tsPopup.copied === tsRow.modelData.ip ? "copied" : tsRow.modelData.ip
+                        color: root.dim
+                        font { family: root.sans; pixelSize: 11 }
+                    }
+                    // Click anywhere on the row to copy the device's Tailscale IP
+                    TapHandler {
+                        onTapped: {
+                            root.sh("wl-copy " + tsRow.modelData.ip)
+                            tsPopup.copied = tsRow.modelData.ip
+                            copyTimer.restart()
+                        }
+                    }
+                }
+            }
+            Item { width: 1; height: 4 }
+            Rectangle { width: parent.width; height: 1; color: "#2a2a2a" }
+            Item { width: 1; height: 2 }
+            RowLayout {
+                width: parent.width
+                Text {
+                    text: tsPopup.backend === "Running" ? "DISCONNECT" : "CONNECT"
+                    color: root.fg
+                    font { family: root.sans; pixelSize: 11; letterSpacing: 1 }
+                    TapHandler { onTapped: tsPopup.act(tsPopup.backend === "Running" ? "tailscale down" : "tailscale up") }
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: "ADMIN ↗"
+                    color: root.dim
+                    font { family: root.sans; pixelSize: 11; letterSpacing: 1 }
+                    TapHandler { onTapped: { tsPopup.visible = false; root.sh("~/.local/bin/tailscale-status admin") } }
                 }
             }
         }
