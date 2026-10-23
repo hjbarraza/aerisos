@@ -16,8 +16,8 @@ if mountpoint -q /boot && [[ -d /boot/loader/entries ]]; then
 else                                            # live USB: mount the ESP
     ESP=$(lsblk -pnro NAME,FSTYPE /dev/nvme0n1 | awk '$2=="vfat"{print $1; exit}')
     [[ -b $ESP ]] || { echo "no vfat ESP on /dev/nvme0n1"; lsblk -f; exit 1; }
-    mkdir -p /mnt/esp; mountpoint -q /mnt/esp || mount "$ESP" /mnt/esp
-    B=/mnt/esp; UM=1
+    M=/run/aeris-esp; mkdir -p "$M"; mountpoint -q "$M" || mount "$ESP" "$M"
+    B=$M; UM=1
 fi
 E=$B/loader/entries
 SRC=$(ls "$E"/*t2*.conf 2>/dev/null | grep -v nowifi | head -1)
@@ -38,6 +38,6 @@ else
     echo "--- $NEW"; cat "$NEW"
 fi
 echo "--- loader.conf"; cat "$B/loader/loader.conf"
-(( UM )) && { sync; umount /mnt/esp; }
+(( UM )) && { sync; umount "$B"; }
 echo
 echo "Now:  reboot   (4-5 times in a row). Wi-Fi back after login:  sudo modprobe brcmfmac"
