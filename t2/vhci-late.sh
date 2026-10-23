@@ -9,7 +9,8 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/vhci-late.sh | bash
 #
-# Adds boot entry "Arch T2 (vhci late)" and makes it the default (menu 5 s).
+# Adds boot entry "Arch T2 (vhci late)" and makes it the default (menu 5 s); removes
+# the wifi/radios/gpu test entries. Only t2bce_vhci is delayed; everything else is normal.
 # The keyboard appears ~3 s after boot. Undo:  ... | bash -s undo
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
@@ -35,6 +36,8 @@ E=$B/loader/entries
 SRC=$(ls "$E"/*t2*.conf 2>/dev/null | grep -v -e nowifi -e noradio -e nogpu -e vhcilate | head -1)
 [[ -f $SRC ]] || { echo "no T2 boot entry in $E:"; ls "$E"; exit 1; }
 NEW=$E/arch-t2-vhcilate.conf
+# the earlier panic tests only added entries; drop them (the normal entry was never touched)
+rm -f "$E"/arch-t2-nowifi.conf "$E"/arch-t2-noradio.conf "$E"/arch-t2-nogpu.conf
 UNIT=$R/etc/systemd/system/t2bce-vhci-late.service
 WANT=$R/etc/systemd/system/multi-user.target.wants/t2bce-vhci-late.service
 
