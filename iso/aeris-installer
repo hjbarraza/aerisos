@@ -106,7 +106,7 @@ if (( T2 )); then
     printf '[keyfile]\nunmanaged-devices=mac:ac:de:48:00:11:22\n' > /mnt/etc/NetworkManager/conf.d/t2-ibridge.conf
     BOOT_OPTS+=" intel_iommu=on iommu=pt pcie_ports=compat"
     # linux-t2 7.2.x cold-boot panic in t2bce_vhci (t2linux/kernel#37): keep it out of
-    # early boot and load it 2 s later from a unit (see t2/vhci-late2.sh)
+    # early boot and load it 2 s later from a unit (see t2/vhci-late.sh)
     BOOT_OPTS+=" modprobe.blacklist=t2bce_vhci"
     install -Dm644 /root/aerisos/t2/t2bce-vhci-late.service /mnt/etc/systemd/system/t2bce-vhci-late.service
 fi

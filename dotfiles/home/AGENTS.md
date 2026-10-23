@@ -103,7 +103,7 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   (t2linux/kernel#37, open, no upstream fix yet). Not Wi-Fi/Bluetooth/amdgpu (all tested).
 - Workaround in place: boot entry `arch-t2-vhcilate.conf` ("Arch T2 (vhci late)", default,
   `modprobe.blacklist=t2bce_vhci`) + unit `t2bce-vhci-late.service` loading it 2 s into boot.
-  Applied/undone with `~/aerisos/t2/vhci-late2.sh` (`| bash -s undo` once upstream fixes it).
+  Applied/undone with `~/aerisos/t2/vhci-late.sh` (`| bash -s undo` once upstream fixes it).
 - Recovery from the live USB (curl | bash, repo raw URLs): `t2/repair.sh` (reinstall kernel),
   `t2/diag.sh` (journal of failed boots, `DIAG_UPLOAD=1` -> paste.rs), `t2/kernel-downgrade.sh`
   (pin 7.2.8). T2 installer ISO: `T2_FIRMWARE_TAR=~/backups/t2fw/firmware.tar sudo -E iso/build.sh --t2`

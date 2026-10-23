@@ -7,7 +7,7 @@
 # seconds later, when the T2 is quiet. Run from the live USB (as root, no network
 # needed) or from the installed system (sudo):
 #
-#   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/vhci-late2.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/vhci-late.sh | bash
 #
 # Adds boot entry "Arch T2 (vhci late)" and makes it the default (menu 5 s); removes
 # the wifi/radios/gpu test entries. Only t2bce_vhci is delayed; everything else is normal.
