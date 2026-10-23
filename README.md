@@ -66,6 +66,13 @@ the firmware, and a boot entry with the T2 kernel options. After the reboot,
 `cd ~/aerisos && ./setup.sh` as usual. The firmware is Apple's: keep that ISO to
 yourself.
 
+**Installed system won't boot (kernel panic)?** Boot the T2 USB, connect Wi-Fi, then
+`curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/repair.sh | bash`:
+it finds the install on the NVMe, mounts the subvolumes, and in a chroot reinstalls
+`linux-t2`, rebuilds the initramfs and refreshes systemd-boot. Not on a T2 Mac but have a
+`firmware.tar` from one? `T2_FIRMWARE_TAR=/path/firmware.tar sudo -E iso/build.sh --t2`
+bakes it in instead of fetching from the host.
+
 **No T2 Mac running yet?** Stock Arch ISO + a USB keyboard, then:
 1. Install with archinstall; before rebooting, `arch-chroot /mnt` and run
    `bash t2/chroot.sh` (repo, kernel, firmware fetcher, default `Arch T2` boot

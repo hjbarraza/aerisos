@@ -17,6 +17,8 @@
 #
 # Write it to a USB stick (ERASES the stick):
 #   sudo cp iso/out/aerisos-*.iso /dev/sdX && sync
+#
+# --t2 on a machine that isn't a T2 Mac: T2_FIRMWARE_TAR=/path/firmware.tar sudo -E ./build.sh --t2
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
 T2=0
@@ -79,7 +81,14 @@ if (( T2 )); then
     # Firmware the fetcher put in /usr/lib/firmware/brcm (no package owns it). The list
     # tells aeris-installer what to copy onto the new system
     mapfile -t FW < <(comm -23 <(find /usr/lib/firmware/brcm -type f | sort) <(pacman -Qlq | sort))
-    if (( ${#FW[@]} )); then
+    if [[ -n ${T2_FIRMWARE_TAR:-} ]]; then
+        # Not on a T2 Mac: use a firmware.tar made there (flat brcm files, e.g. the T2FW stick's)
+        mkdir -p "$PROFILE/airootfs/usr/lib/firmware/brcm" "$PROFILE/airootfs/usr/local/share/aerisos"
+        tar -xf "$T2_FIRMWARE_TAR" -C "$PROFILE/airootfs/usr/lib/firmware/brcm"
+        find "$PROFILE/airootfs/usr/lib/firmware/brcm" -type f -printf '/usr/lib/firmware/brcm/%P\n' \
+            > "$PROFILE/airootfs/usr/local/share/aerisos/t2-firmware.list"
+        echo "   $(wc -l < "$PROFILE/airootfs/usr/local/share/aerisos/t2-firmware.list") firmware files baked in from $T2_FIRMWARE_TAR"
+    elif (( ${#FW[@]} )); then
         mkdir -p "$PROFILE/airootfs/usr/lib/firmware/brcm" "$PROFILE/airootfs/usr/local/share/aerisos"
         cp -a "${FW[@]}" "$PROFILE/airootfs/usr/lib/firmware/brcm/"
         printf '%s\n' "${FW[@]}" > "$PROFILE/airootfs/usr/local/share/aerisos/t2-firmware.list"
