@@ -75,6 +75,7 @@ HOME_PATHS=(
     .local/bin/aeris-alerts
     .local/bin/watch-open
     .local/bin/aeris-speak
+    .local/bin/aeris-orbit
     .local/bin/aeris-announce
     .local/bin/aeris-agent-notify
     .config/autostart/nm-applet.desktop

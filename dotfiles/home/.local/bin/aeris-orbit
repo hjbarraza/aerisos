@@ -1,0 +1,15 @@
+#!/bin/sh
+# Orbit popup (quickshell): map with ISS/Tiangong tracks and satellites overhead. Click target of the
+# bar's alert pill. Running it again while open closes it.
+dir="$HOME/.config/quickshell/aeris-orbit"
+pidf="${XDG_RUNTIME_DIR:-/tmp}/aeris-orbit.pid"
+if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then kill "$(cat "$pidf")"; exit 0; fi
+echo $$ > "$pidf"
+python3 "$HOME/.config/quickshell/aeris-screensaver/compute-tracks.py" &   # fresh tracks, refreshed every 60 s
+helper=$!
+trap 'kill $helper $loop 2>/dev/null; rm -f "$pidf"' EXIT INT TERM
+python3 "$dir/launches.py" &                                                  # launch list: reused if < 25 min old
+( while sleep 1800; do python3 "$dir/launches.py"; done ) &
+loop=$!
+for _ in $(seq 20); do [ -s /tmp/aeris-screensaver-tracks.json ] && break; sleep 0.25; done
+qs -p "$dir/shell.qml"

@@ -201,14 +201,27 @@ ShellRoot {
                     function parse() { try { aeris.d = JSON.parse(this.text()) } catch (e) { aeris.d = ({}) } }
                     Component.onCompleted: parse()
                 }
-                // One short label per status.json alert
-                readonly property var labels: {
+                // Airspace events (jamming, squawk, ISS/CSS overhead) have their own pill; these
+                // alerts stay out of the general one
+                readonly property var airAlerts: ["air.gnss", "air.emergency", "space.iss", "space.css"]
+                readonly property var airHot: {
                     const out = []
                     for (const a of d.alerts || []) {
                         if (a === "air.gnss") out.push("GNSS " + String(d.air?.gnss ?? "JAMMED").split(" ")[0])
                         else if (a === "air.emergency") out.push("SQUAWK " + String(d.air?.emergency ?? "").split(" ")[0])
                         else if (a === "space.iss") out.push("ISS OVERHEAD")
                         else if (a === "space.css") out.push("CSS OVERHEAD")
+                    }
+                    return out
+                }
+                // Bright satellites above 10 degrees right now ("5 O/H · ARIANE 40 R/B")
+                readonly property int airSats: parseInt(/^\s*(\d+)\s*O\/H/.exec(String(d.space?.sats ?? ""))?.[1] ?? "0")
+                readonly property var airLabels: airHot.concat(airSats > 0 ? [airSats + " SAT" + (airSats === 1 ? "" : "S") + " O/H"] : [])
+                // One short label per remaining status.json alert
+                readonly property var labels: {
+                    const out = []
+                    for (const a of d.alerts || []) {
+                        if (airAlerts.includes(a)) continue
                         else if (a === "space.scales") out.push((/G\d/.exec(String(d.space?.scales ?? ""))?.[0] ?? "G?") + " STORM")
                         else if (a === "world.outages") out.push("NET OUTAGE " + (String(d.net?.city ?? "").split(", ").pop() ?? ""))
                         else out.push(a.toUpperCase())
@@ -243,9 +256,34 @@ ShellRoot {
                     color: "#000000"
                     font { family: root.sans; pixelSize: 11; letterSpacing: 1 }
                 }
-                MouseArea {
+                MouseArea {   // left: orbit popup (map + readouts); right: plain-text alert list
                     anchors.fill: parent
-                    onClicked: root.sh("ghostty --class=aeris.tui-float -e ~/.local/bin/aeris-alerts")
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: ev => root.sh(ev.button === Qt.RightButton
+                        ? "ghostty --class=aeris.tui-float -e ~/.local/bin/aeris-alerts"
+                        : "~/.local/bin/aeris-orbit")
+                }
+            }
+            Rectangle {   // airspace: inverted for notable events, outlined when only satellites are up
+                readonly property bool hot: aeris.airHot.length > 0
+                visible: aeris.airLabels.length > 0
+                color: hot ? "#ffffff" : "transparent"; radius: 3
+                border { width: hot ? 0 : 1; color: root.fg }
+                implicitWidth: airText.implicitWidth + 12
+                implicitHeight: 16
+                Text {
+                    id: airText
+                    anchors.centerIn: parent
+                    text: aeris.airLabels.join(" · ")
+                    color: parent.hot ? "#000000" : root.fg
+                    font { family: root.sans; pixelSize: 11; letterSpacing: 1 }
+                }
+                MouseArea {   // left: orbit popup (map + readouts); right: plain-text alert list
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: ev => root.sh(ev.button === Qt.RightButton
+                        ? "ghostty --class=aeris.tui-float -e ~/.local/bin/aeris-alerts"
+                        : "~/.local/bin/aeris-orbit")
                 }
             }
             Text {   // the collector stopped writing: everything above is old
