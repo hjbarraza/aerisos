@@ -4,7 +4,7 @@
 # one, makes it the default and shows the menu for 5 s. Run from the live USB
 # (as root, no Wi-Fi needed) or from the installed system (sudo):
 #
-#   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/wifi-late.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/wifi-late2.sh | bash
 #
 # Then reboot 4-5 times. Wi-Fi is off on those boots; once logged in,
 # `sudo modprobe brcmfmac` brings it back. Undo:  ... | bash -s undo
