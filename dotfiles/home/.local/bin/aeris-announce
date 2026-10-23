@@ -4,8 +4,8 @@
 Polls /var/lib/aeris/status.json, diffs it against what was already announced and
 says new events through aeris-speak (Kokoro bf_emma) plus a dunst notification:
   A) new unacknowledged watchlist findings
-  B) ISS / Tiangong passes
-  C) new entries in the alerts list
+  B) ISS / Tiangong passes (satellites overhead and overhead alerts: bar pill only)
+  C) new entries in the alerts list (GPS jamming and airspace alerts: bar pill only)
   D) emergency squawks
 State lives in /tmp/aeris-announce-state.json. On the very first run (no state file)
 the current status is recorded silently, so a restart does not replay old events.
@@ -25,6 +25,7 @@ STATUS = "/var/lib/aeris/status.json"
 STATE = "/tmp/aeris-announce-state.json"
 SPEAK = os.path.expanduser("~/.local/bin/aeris-speak")
 POLL = 15
+BAR_ONLY = {"air.gnss", "air.emergency", "space.iss", "space.css"}   # airspace pill / own check
 NO_EMERGENCY = {"", "NONE", "—", "-", "NULL"}
 
 UNIT = """[Unit]
@@ -48,8 +49,9 @@ def log(msg):
     print(msg, file=sys.stderr, flush=True)
 
 
-def announce(title, text):
-    log(f"announce: {text}")
+def announce(title, text, say=None):
+    """Notify with `text`, speak `say` (default: the same text)."""
+    log(f"announce: {say or text}")
     if DRY:
         return
     try:
@@ -58,7 +60,7 @@ def announce(title, text):
     except (OSError, subprocess.SubprocessError) as e:
         log(f"dunstify failed: {e}")
     try:
-        subprocess.run([SPEAK, text], timeout=120, check=False)
+        subprocess.run([SPEAK, say or text], timeout=120, check=False)
     except (OSError, subprocess.SubprocessError) as e:
         log(f"aeris-speak failed: {e}")
 
@@ -93,6 +95,7 @@ def finding_title(f):
 def check_watch(s, state):
     seen = set(state.setdefault("watch", []))
     current = set()
+    topics = []   # (name, [fresh findings]) per watched topic
     for item in (s.get("watch") or {}).get("items") or []:
         name = item.get("name", "?")
         fresh = []
@@ -102,7 +105,17 @@ def check_watch(s, state):
             if key not in seen:
                 fresh.append(f)
         if fresh:
-            announce("Watchlist", f"New watchlist finding: {name}. {clean_title(finding_title(fresh[0]))}")
+            topics.append((name, fresh))
+    # One announcement per update, not one per finding: spoken is only the count and the topics,
+    # the notification carries the headlines
+    if topics:
+        n = sum(len(f) for _, f in topics)
+        names = [t for t, _ in topics]
+        say = f"{n} new watchlist event{'s' if n != 1 else ''}"
+        say += ": " + ", ".join(names[:3]) + (" and more." if len(names) > 3 else ".")
+        lines = [f"{t}: {clean_title(finding_title(f[0]))}" + (f" (+{len(f) - 1})" if len(f) > 1 else "")
+                 for t, f in topics[:6]]
+        announce("Watchlist", "\n".join(lines), say)
     # keep only still-unacknowledged keys, so acked-then-reappearing items speak again
     state["watch"] = sorted(current)
 
@@ -140,7 +153,7 @@ def check_alerts(s, state):
     current = [a for a in (s.get("alerts") or []) if isinstance(a, str)]
     seen = set(state.setdefault("alerts", []))
     for a in current:
-        if a not in seen:
+        if a not in seen and a not in BAR_ONLY:
             announce("Alert", f"Alert: {a}")
     state["alerts"] = current
 
@@ -224,7 +237,8 @@ def process(s, state):
     check_watch(s, state)
     check_pass(s, state, "iss", "ISS pass", "ISS")
     check_pass(s, state, "css", "Tiangong pass", "Tiangong")
-    # satellites overhead: no longer announced (too frequent)
+    # satellites overhead and GPS jamming live on the bar's airspace pill, not in speech;
+    # emergency squawks stay spoken (check_emergency)
     check_alerts(s, state)
     check_emergency(s, state)
     check_space_weather(s, state)

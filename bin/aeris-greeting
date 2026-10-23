@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-line AerisOS greeting for new terminal windows (called from ~/.bashrc).
-#   ÆRIS OS  こんばんは
+#   ÆRIS OS  こんばんは  · hostname
 
 white=$'\e[1;97m' grey=$'\e[38;2;122;122;122m' reset=$'\e[0m'
 
@@ -10,4 +10,38 @@ elif (( hour >= 11 && hour < 18 )); then hello="こんにちは"             # h
 else hello="こんばんは"                                              # good evening
 fi
 
-printf '%sÆRIS OS%s  %s%s%s\n\n' "$white" "$reset" "$grey" "$hello" "$reset"
+host=$(uname -n)
+
+# Notable alerts and unread watchlist findings from the cached status board (no network).
+# Skipped when the collector's output is older than 30 min so the banner never shows stale data.
+inv=$'\e[7m'
+extra=$(python3 -I - <<'PY' 2>/dev/null
+import json, os, time
+f = "/var/lib/aeris/status.json"
+try:
+    if time.time() - os.path.getmtime(f) > 1800:
+        raise SystemExit
+    s = json.load(open(f))
+except (OSError, ValueError):
+    raise SystemExit
+out = []
+for a in s.get("alerts") or []:
+    out.append("\x01" + (a if isinstance(a, str) else str(a.get("text") or a.get("msg") or a)) + "\x02")
+sp = s.get("space") or {}
+for label, k in (("ISS", "iss"), ("CSS", "css")):
+    v = [x.strip() for x in str(sp.get(k) or "").split("\u00b7")]
+    if len(v) >= 2 and v[0][:1].isdigit():
+        out.append(f"{label} {v[0]} {v[1]}")
+sats = str(sp.get("sats") or "").strip()
+if sats[:1].isdigit() and not sats.startswith("0"):
+    out.append("sats " + sats.replace(" \u00b7", ""))
+n = sum(len(i.get("new") or []) for i in (s.get("watch") or {}).get("items", []))
+if n:
+    out.append(f"watch {n}")
+print("  · ".join(out))
+PY
+)
+extra=${extra//$'\x01'/$inv }
+extra=${extra//$'\x02'/ $reset$grey}
+
+printf '%sÆRIS OS%s  %s%s  · %s%s%s\n\n' "$white" "$reset" "$grey" "$hello" "$host" "${extra:+  · $extra}" "$reset"
