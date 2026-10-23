@@ -69,6 +69,7 @@ HOME_PATHS=(
     .local/bin/display-scale
     .local/bin/tailscale-status
     .local/bin/aeris-watch
+    .local/bin/aeris-watch-publish
     .local/bin/aeris-inbox
     .local/bin/aeris-onto
     .local/bin/aeris-alerts
@@ -81,6 +82,7 @@ HOME_PATHS=(
     .config/opencode
     .config/systemd/user/aeris-watch.service
     .config/systemd/user/aeris-watch.timer
+    .config/systemd/user/aeris-watch.service.d
     .config/systemd/user/aeris-announce.service
     .config/systemd/user/defence-maps.service
     .claude/skills

@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""Publish a sanitised copy of watch.html to GitHub Pages (notes/errors stripped)."""
+import re, subprocess, sys, os
+src = os.path.expanduser("~/.local/share/aeris/watch.html")
+repo = os.path.expanduser("~/.local/share/aeris/pages")
+if not os.path.isdir(os.path.join(repo, ".git")):  # fresh machine: fetch the Pages repo
+    subprocess.run(["gh", "repo", "clone", "hjbarraza/aeris-watch", repo], check=True)
+html = open(src, encoding="utf-8").read()
+# topic chips carry the private note (or collection error) as a hover title
+html = re.sub(r'(<span class="t[^"]*" data-f="[^"]*") title="[^"]*"', r'\1', html)
+html = html.replace("<head>", '<head><meta name="robots" content="noindex,nofollow">', 1)
+out = os.path.join(repo, "index.html")
+old = open(out, encoding="utf-8").read() if os.path.exists(out) else ""
+# ignore the regenerated-at stamp when deciding whether anything changed
+stamp = re.compile(r"REGENERATED [^<]*")
+if stamp.sub("", old) == stamp.sub("", html):
+    sys.exit(0)
+open(out, "w", encoding="utf-8").write(html)
+g = ["git", "-C", repo]
+subprocess.run(g + ["add", "-A"], check=True)
+subprocess.run(g + ["commit", "-qm", "update"], check=True)
+subprocess.run(g + ["push", "-q", "origin", "main"], check=True)
