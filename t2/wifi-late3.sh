@@ -4,7 +4,7 @@
 # one, makes it the default and shows the menu for 5 s. Run from the live USB
 # (as root, no Wi-Fi needed) or from the installed system (sudo):
 #
-#   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/wifi-late2.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/wifi-late3.sh | bash
 #
 # Then reboot 4-5 times. Wi-Fi is off on those boots; once logged in,
 # `sudo modprobe brcmfmac` brings it back. Undo:  ... | bash -s undo
@@ -16,7 +16,11 @@ if mountpoint -q /boot && [[ -d /boot/loader/entries ]]; then
 else                                            # live USB: mount the ESP
     ESP=$(lsblk -pnro NAME,FSTYPE /dev/nvme0n1 | awk '$2=="vfat"{print $1; exit}')
     [[ -b $ESP ]] || { echo "no vfat ESP on /dev/nvme0n1"; lsblk -f; exit 1; }
-    M=/run/aeris-esp; mkdir -p "$M"; mountpoint -q "$M" || mount "$ESP" "$M"
+    # drop read-only mounts left by diag.sh (a second mount would inherit ro)
+    umount -R /mnt 2>/dev/null || true
+    while findmnt -n "$ESP" >/dev/null; do umount "$ESP" || break; done
+    M=/run/aeris-esp; mkdir -p "$M"; mount -o rw "$ESP" "$M"
+    touch "$M/.rwtest" && rm "$M/.rwtest" || { echo "ESP still read-only; run:  umount -R /mnt; umount $ESP  and retry"; exit 1; }
     B=$M; UM=1
 fi
 E=$B/loader/entries
