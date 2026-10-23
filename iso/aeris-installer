@@ -105,6 +105,10 @@ if (( T2 )); then
     printf '[device]\nwifi.backend=iwd\n' > /mnt/etc/NetworkManager/conf.d/wifi_backend.conf
     printf '[keyfile]\nunmanaged-devices=mac:ac:de:48:00:11:22\n' > /mnt/etc/NetworkManager/conf.d/t2-ibridge.conf
     BOOT_OPTS+=" intel_iommu=on iommu=pt pcie_ports=compat"
+    # linux-t2 7.2.x cold-boot panic in t2bce_vhci (t2linux/kernel#37): keep it out of
+    # early boot and load it 2 s later from a unit (see t2/vhci-late2.sh)
+    BOOT_OPTS+=" modprobe.blacklist=t2bce_vhci"
+    install -Dm644 /root/aerisos/t2/t2bce-vhci-late.service /mnt/etc/systemd/system/t2bce-vhci-late.service
 fi
 
 # --- the repo -----------------------------------------------------------------
@@ -120,7 +124,7 @@ locale-gen
 echo LANG=en_US.UTF-8 > /etc/locale.conf
 echo aerisos > /etc/hostname     # the setup wizard asks for the real name
 systemctl enable NetworkManager
-if [ $T2 = 1 ]; then systemctl enable iwd; fi
+if [ $T2 = 1 ]; then systemctl enable iwd t2bce-vhci-late; fi
 
 useradd -m -G wheel -s /bin/bash "$NEW_USER"
 echo '%wheel ALL=(ALL:ALL) ALL' > /etc/sudoers.d/10-wheel

@@ -9,7 +9,11 @@ set -e
 # Does NOT reboot.  Usage: bash chroot.sh [root-partition]
 
 R=${1:-$(findmnt -no SOURCE / | sed 's/\[.*//')}
-P="intel_iommu=on iommu=pt pcie_ports=compat"
+P="intel_iommu=on iommu=pt pcie_ports=compat modprobe.blacklist=t2bce_vhci"
+# t2bce_vhci is blacklisted at boot and loaded 2 s later by a unit: linux-t2 7.2.x
+# cold-boot panic "Fatal exception in interrupt" (t2linux/kernel#37)
+install -Dm644 "$(dirname "$(readlink -f "$0")")/t2bce-vhci-late.service" /etc/systemd/system/t2bce-vhci-late.service
+systemctl enable t2bce-vhci-late || true
 
 mountpoint -q /boot || { echo "/boot is not mounted: mount the EFI partition at /mnt/boot before arch-chroot"; exit 1; }
 [ -b "$R" ] || { echo "root partition '$R' not found; pass it: bash chroot.sh /dev/nvme0n1p2"; exit 1; }

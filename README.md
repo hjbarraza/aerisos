@@ -66,6 +66,16 @@ the firmware, and a boot entry with the T2 kernel options. After the reboot,
 `cd ~/aerisos && ./setup.sh` as usual. The firmware is Apple's: keep that ISO to
 yourself.
 
+**Random kernel panic at cold boot ("Fatal exception in interrupt", about every other
+boot) on linux-t2 7.2.x:** that is the `t2bce_vhci` driver (internal keyboard/trackpad over
+the T2) racing its own firmware events ([t2linux/kernel#37](https://github.com/t2linux/kernel/issues/37)).
+Fix from the live USB, no network needed:
+`curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/vhci-late2.sh | bash`:
+it adds the boot entry "Arch T2 (vhci late)" (`modprobe.blacklist=t2bce_vhci`) and a unit
+that loads the driver 2 s into boot; the keyboard appears ~3 s after boot. New T2 installs
+(`aeris-installer`, `t2/chroot.sh`) ship with this already. `t2/diag.sh` collects the
+journal of the failed boots when something else is wrong.
+
 **Installed system won't boot (kernel panic)?** Boot the T2 USB, connect Wi-Fi, then
 `curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/repair.sh | bash`:
 it finds the install on the NVMe, mounts the subvolumes, and in a chroot reinstalls
