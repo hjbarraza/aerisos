@@ -9,7 +9,7 @@
 #   - the guided installer (aeris-installer) + a login hint to run it
 # Output: ~/aerisos/iso/out/aerisos-<date>-x86_64.iso  (~1.2 GB, gitignored)
 #
-# T2 Macs:  sudo ~/aerisos/iso/build.sh --t2   (build it ON a working T2 Mac)
+# T2 Macs:  sudo ~/aerisos/iso/build.sh --t2   (on a working T2 Mac, or anywhere with T2_FIRMWARE_TAR, below)
 #   live system on the linux-t2 kernel (internal keyboard/trackpad work), the
 #   arch-mact2 repo, and this Mac's fetched Apple Wi-Fi/Bluetooth firmware baked
 #   in, so Wi-Fi works on the USB and on the installed system without tethering.

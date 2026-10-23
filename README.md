@@ -49,39 +49,41 @@ built from, so rebuild it now and then.
 
 ### T2 Macs (Intel MacBook Pro/Air 2018–2020 etc.)
 
-The stock Arch kernel has no internal keyboard, trackpad or Wi-Fi on these.
-The way that works: **build the T2 USB on a T2 Mac that already runs AerisOS**
-(this one), so it carries the `linux-t2` kernel and the Apple Wi-Fi firmware:
+The stock Arch kernel has no internal keyboard, trackpad or Wi-Fi on these, so the
+T2 USB carries the `linux-t2` kernel and Apple's Wi-Fi/Bluetooth firmware. Build it
+either **on a T2 Mac that already runs AerisOS** (it has the firmware fetched), or
+**on any machine** from a `firmware.tar` saved from one (the 148 `brcm/` files;
+keep a copy, e.g. `~/backups/t2fw/`):
 
 ```bash
-sudo ~/aerisos/iso/build.sh --t2                       # → iso/out/aerisos-t2-*.iso
-sudo cp iso/out/aerisos-t2-*.iso /dev/sdX && sync      # write to USB (ERASES it)
+sudo ~/aerisos/iso/build.sh --t2                                        # on a T2 Mac
+T2_FIRMWARE_TAR=~/backups/t2fw/firmware.tar sudo -E ~/aerisos/iso/build.sh --t2   # elsewhere
+sudo dd if=iso/out/aerisos-t2-*.iso of=/dev/sdX bs=4M status=progress oflag=sync  # ERASES the stick
 ```
 
 Hold **Option** at power-on and pick the USB (Startup Security Utility must
 allow booting from external media). Keyboard and Wi-Fi work on the USB:
 `iwctl station wlan0 connect "SSID"`, then **`aeris-installer`**. It sees the T2
 chip and installs `linux-t2` (from the arch-mact2 repo, kept in `pacman.conf`),
-the firmware, and a boot entry with the T2 kernel options. After the reboot,
-`cd ~/aerisos && ./setup.sh` as usual. The firmware is Apple's: keep that ISO to
-yourself.
+the firmware, the boot entry with the T2 kernel options and the `t2bce_vhci`
+late-load workaround below. After the reboot, `cd ~/aerisos && ./setup.sh` as
+usual. The firmware is Apple's: keep that ISO to yourself.
 
-**Random kernel panic at cold boot ("Fatal exception in interrupt", about every other
-boot) on linux-t2 7.2.x:** that is the `t2bce_vhci` driver (internal keyboard/trackpad over
-the T2) racing its own firmware events ([t2linux/kernel#37](https://github.com/t2linux/kernel/issues/37)).
-Fix from the live USB, no network needed:
-`curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/vhci-late.sh | bash`:
-it adds the boot entry "Arch T2 (vhci late)" (`modprobe.blacklist=t2bce_vhci`) and a unit
-that loads the driver 2 s into boot; the keyboard appears ~3 s after boot. New T2 installs
-(`aeris-installer`, `t2/chroot.sh`) ship with this already. `t2/diag.sh` collects the
-journal of the failed boots when something else is wrong.
+#### Recovery from the live USB
 
-**Installed system won't boot (kernel panic)?** Boot the T2 USB, connect Wi-Fi, then
-`curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/repair.sh | bash`:
-it finds the install on the NVMe, mounts the subvolumes, and in a chroot reinstalls
-`linux-t2`, rebuilds the initramfs and refreshes systemd-boot. Not on a T2 Mac but have a
-`firmware.tar` from one? `T2_FIRMWARE_TAR=/path/firmware.tar sudo -E iso/build.sh --t2`
-bakes it in instead of fetching from the host.
+The same stick is the recovery medium. Boot it, connect Wi-Fi, and `curl | bash`
+a script straight from this repo (the ISO also carries them in `/root/aerisos/t2/`):
+
+| Script | Does |
+|---|---|
+| `t2/vhci-late.sh` | **Fixes the random cold-boot panic** on linux-t2 7.2.x ("Fatal exception in interrupt", about every other boot): `t2bce_vhci` (keyboard/trackpad over the T2) races its own firmware events ([t2linux/kernel#37](https://github.com/t2linux/kernel/issues/37)). Adds the default boot entry "Arch T2 (vhci late)" (`modprobe.blacklist=t2bce_vhci`) plus a unit that loads the driver 2 s into boot; the keyboard appears ~3 s after boot. No network needed. `\| bash -s undo` once upstream fixes it. New installs ship with it. |
+| `t2/repair.sh` | Won't boot at all: mounts the install, reinstalls `linux-t2`, rebuilds the initramfs, refreshes systemd-boot. |
+| `t2/diag.sh` | Collects the journal of the failed boots, boot entries, pacman log, hardware into `/root/t2-diag.txt`; `DIAG_UPLOAD=1` uploads it to paste.rs to read from another machine. |
+| `t2/kernel-downgrade.sh` | Pins an older `linux-t2` (`VER=…`, default 7.2.8) when a kernel release is broken. |
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/t2/vhci-late.sh | bash
+```
 
 **No T2 Mac running yet?** Stock Arch ISO + a USB keyboard, then:
 1. Install with archinstall; before rebooting, `arch-chroot /mnt` and run
