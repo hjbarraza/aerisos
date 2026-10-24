@@ -2,6 +2,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "model": "opus",
   "enabledPlugins": {
     "gitlab@anthropic-plugin-directory": true
   },
@@ -36,6 +37,5 @@
       "**Trusted repo**: The git repository at /home/h (its working directory) — no remotes configured, so no remote trust extends beyond local work",
       "**Org-specific CLIs**: None configured — observed CLIs (pacman, voxtype, vicinae, hyprctl, yay, systemctl, wpctl, dunstctl, etc.) appear to be personal desktop/system-administration tools, not org-specific"
     ]
-  },
-  "model": "claude-fable-5"
+  }
 }

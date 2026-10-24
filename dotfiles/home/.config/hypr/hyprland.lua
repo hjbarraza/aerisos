@@ -342,7 +342,7 @@ local mainMod = "SUPER" -- Sets "Windows" key as main modifier
 
 -- Example binds, see https://wiki.hypr.land/Configuring/Basics/Binds/ for more
 hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal), { description = "Open terminal" })
-hl.bind(mainMod .. " + G", hl.dsp.exec_cmd("ghostty"), { description = "Open ghostty (trial)" })
+hl.bind(mainMod .. " + SHIFT + Return", hl.dsp.exec_cmd("ghostty"), { description = "Open ghostty (trial)" })   -- was SUPER+G, now Cmd+G (find next)
 
 -- macOS-style shortcuts: the key in the Cmd position (left of the spacebar) carries the
 -- familiar combos — Cmd itself (Super) on Apple keyboards and on the Razer (Win/Alt
@@ -360,18 +360,57 @@ do
     end
 end
 if isRazer then cmdMod = "SUPER" end
-for _, k in ipairs({ "C", "V", "X", "Z", "A", "T", "N", "W" }) do
+-- Full macOS layout when Cmd is Super (Apple keyboards, Razer): the Super combos that macOS
+-- uses in apps (Cmd+F/S/P/G/K/J, Cmd+arrows, Cmd+1-9) go to the app, and window management
+-- moves to Ctrl+Option (Rectangle-style), workspaces to Ctrl+1-9 / Ctrl+arrows (macOS Spaces),
+-- full screen to Cmd+Ctrl+F. On PC layouts (Cmd = left Alt) the SUPER tier stays as it was.
+local mac = cmdMod == "SUPER"
+local wm = mac and "CTRL + ALT" or mainMod
+for _, k in ipairs({ "C", "V", "X", "Z", "A", "T", "N", "W", "F", "S", "P", "O", "R", "G", "K", "J", "D", "B", "I", "U", "Y",
+                     "comma", "equal", "minus", "0" }) do
     hl.bind(cmdMod .. " + " .. k, hl.dsp.send_shortcut({ mods = "CTRL", key = k }), { description = "macOS-style: Ctrl+" .. k .. " to the app" })
 end
-hl.bind(cmdMod .. " + SHIFT + Z", hl.dsp.send_shortcut({ mods = "CTRL+SHIFT", key = "Z" }), { description = "macOS-style: redo" })
+-- Cmd+Shift combos that aren't app launchers (Shift+Z redo, T reopen tab, R hard reload, P palette, F find in files, S save as)
+for _, k in ipairs({ "Z", "T", "R", "P", "F", "S" }) do
+    hl.bind(cmdMod .. " + SHIFT + " .. k, hl.dsp.send_shortcut({ mods = "CTRL+SHIFT", key = k }), { description = "macOS-style: Ctrl+Shift+" .. k .. " to the app" })
+end
+if mac then
+    -- Text navigation: Cmd+arrows line/document ends, Option+arrows by word, with Shift to select
+    local nav = {
+        { "SUPER + left", "", "Home", "line start" }, { "SUPER + right", "", "End", "line end" },
+        { "SUPER + up", "CTRL", "Home", "document start" }, { "SUPER + down", "CTRL", "End", "document end" },
+        { "SUPER + SHIFT + left", "SHIFT", "Home", "select to line start" }, { "SUPER + SHIFT + right", "SHIFT", "End", "select to line end" },
+        { "SUPER + SHIFT + up", "CTRL+SHIFT", "Home", "select to document start" }, { "SUPER + SHIFT + down", "CTRL+SHIFT", "End", "select to document end" },
+        { "ALT + left", "CTRL", "left", "word left" }, { "ALT + right", "CTRL", "right", "word right" },
+        { "ALT + SHIFT + left", "CTRL+SHIFT", "left", "select word left" }, { "ALT + SHIFT + right", "CTRL+SHIFT", "right", "select word right" },
+        { "ALT + BackSpace", "CTRL", "BackSpace", "delete word" },
+        { "SUPER + bracketleft", "ALT", "left", "back" }, { "SUPER + bracketright", "ALT", "right", "forward" },
+    }
+    for _, n in ipairs(nav) do
+        hl.bind(n[1], hl.dsp.send_shortcut({ mods = n[2], key = n[3] }), { description = "macOS-style: " .. n[4], repeating = true })
+    end
+    hl.bind("SUPER + BackSpace", function ()
+        hl.dispatch(hl.dsp.send_shortcut({ mods = "SHIFT", key = "Home" }))
+        hl.dispatch(hl.dsp.send_shortcut({ mods = "", key = "BackSpace" }))
+    end, { description = "macOS-style: delete to line start" })
+    hl.bind("SUPER + CTRL + Q", hl.dsp.exec_cmd("loginctl lock-session"), { description = "Lock screen (macOS Cmd+Ctrl+Q)" })
+end
 hl.bind(cmdMod .. " + Q", hl.dsp.window.close(), { description = "Close window (macOS quit)" })
--- Browser/app tabs, macOS-style: Cmd+Shift+[ / ] (Cmd+1-9 is taken by workspaces)
+-- Browser/app tabs, macOS-style: Cmd+Shift+[ / ] (Cmd+1-9 goes to the app on the macOS layout)
 hl.bind(cmdMod .. " + SHIFT + bracketleft",  hl.dsp.send_shortcut({ mods = "CTRL", key = "Prior" }), { description = "macOS-style: previous tab" })
 hl.bind(cmdMod .. " + SHIFT + bracketright", hl.dsp.send_shortcut({ mods = "CTRL", key = "Next" }), { description = "macOS-style: next tab" })
 if cmdMod == "SUPER" then   -- Cmd+Option+arrows (Chrome/Brave on the Mac); on PC layouts ALT+ALT is not a combo
     hl.bind("SUPER + ALT + left",  hl.dsp.send_shortcut({ mods = "CTRL", key = "Prior" }), { description = "macOS-style: previous tab" })
     hl.bind("SUPER + ALT + right", hl.dsp.send_shortcut({ mods = "CTRL", key = "Next" }), { description = "macOS-style: next tab" })
 end
+-- Cmd+L, macOS-style: address bar in Brave/Chromium (Ctrl+L itself is the lock screen)
+hl.bind(cmdMod .. " + L", function ()
+    local w = hl.get_active_window()
+    local class = w and (w.class or ""):lower() or ""
+    if class:find("brave") or class:find("chromium") or class:find("chrome") then
+        hl.dispatch(hl.dsp.send_shortcut({ mods = "CTRL", key = "L" }))
+    end
+end, { description = "macOS-style: address bar (Brave/Chromium)" })
 if cmdMod ~= "ALT" then   -- ALT+Tab already cycles windows below; mirror it onto Cmd+Tab
     hl.bind(cmdMod .. " + Tab", hl.dsp.window.cycle_next(), { description = "Next window (Cmd+Tab)" })
     hl.bind(cmdMod .. " + Tab", hl.dsp.window.bring_to_top())
@@ -387,7 +426,7 @@ hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }), { d
 hl.bind(mainMod .. " + SHIFT + V", hl.dsp.exec_cmd("cliphist list | wofi --dmenu | cliphist decode | wl-copy"), { description = "Clipboard history" })
 hl.bind(mainMod .. " + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- Spotlight-style search (Vicinae, falls back to hyprlauncher)
 hl.bind("ALT + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- alias
-hl.bind(mainMod .. " + K", hl.dsp.exec_cmd("~/.local/bin/keybinds"), { description = "Keyboard shortcuts cheat sheet" })
+hl.bind(wm .. " + K", hl.dsp.exec_cmd("~/.local/bin/keybinds"), { description = "Keyboard shortcuts cheat sheet" })
 -- Web apps (Omarchy-style): open the site in its own frameless Brave window
 local function webapp(url) return hl.dsp.exec_cmd("brave --app=" .. url) end
 hl.bind(mainMod .. " + SHIFT + C", webapp("https://calendar.notion.so"), { description = "Notion Calendar" })
@@ -414,8 +453,8 @@ hl.bind(mainMod .. " + CTRL + S", hl.dsp.exec_cmd("~/.local/bin/nightlight toggl
 hl.bind(mainMod .. " + CTRL + C", hl.dsp.exec_cmd("hyprpicker -a"), { description = "Pick a colour (copies hex)" })
 hl.bind("CTRL + L", hl.dsp.exec_cmd("loginctl lock-session"), { description = "Lock screen" })
 hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), { description = "Lock + screen off (laptop stays awake)" })
-hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
-hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })
+hl.bind(mac and "SUPER + CTRL + F" or mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
+hl.bind(mac and "CTRL + ALT + Return" or mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })
 -- Screenshots & recordings, macOS layout on the Cmd-position key (cmdMod, defined
 -- above: Cmd/Super on Apple keyboards and the Razer, left Alt on other PC layouts): Shift+3 whole screen,
 -- 4 select area, 5 record area, 6 record whole screen (recordings toggle off on a
@@ -445,8 +484,8 @@ hl.bind("ALT + Alt_R", hl.dsp.exec_cmd("voxtype record stop"), { description = "
 hl.bind("Control_R", hl.dsp.exec_cmd("voxtype record start"), { description = "Dictate: hold, speak, release (voxtype)", non_consuming = true })
 hl.bind("Control_R", hl.dsp.exec_cmd("voxtype record stop"), { description = "Dictate: stop (release)", release = true, non_consuming = true })
 hl.bind("CTRL + Control_R", hl.dsp.exec_cmd("voxtype record stop"), { description = "Dictate: stop (release)", release = true, non_consuming = true })
-hl.bind(mainMod .. " + P", hl.dsp.window.pseudo(), { description = "Pseudo-tile window" })
-hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"), { description = "Flip split: rows / columns" })    -- dwindle only
+hl.bind(wm .. " + P", hl.dsp.window.pseudo(), { description = "Pseudo-tile window" })
+hl.bind(wm .. " + J", hl.dsp.layout("togglesplit"), { description = "Flip split: rows / columns" })    -- dwindle only
 
 -- Switch windows like Alt+Tab elsewhere: cycle focus and raise the window
 hl.bind("ALT + Tab", hl.dsp.window.cycle_next(), { description = "Next window (Alt+Tab)" })
@@ -454,15 +493,15 @@ hl.bind("ALT + Tab", hl.dsp.window.bring_to_top())
 hl.bind("ALT + SHIFT + Tab", hl.dsp.window.cycle_next({ next = false }), { description = "Previous window" })
 hl.bind("ALT + SHIFT + Tab", hl.dsp.window.bring_to_top())
 
--- Move focus with mainMod + arrow keys
-hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }), { description = "Focus window left" })
-hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }), { description = "Focus window right" })
-hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }), { description = "Focus window up" })
-hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }), { description = "Focus window down" })
-hl.bind(mainMod .. " + SHIFT + left",  hl.dsp.window.move({ direction = "left" }), { description = "Move window left" })
-hl.bind(mainMod .. " + SHIFT + right", hl.dsp.window.move({ direction = "right" }), { description = "Move window right" })
-hl.bind(mainMod .. " + SHIFT + up",    hl.dsp.window.move({ direction = "up" }), { description = "Move window up" })
-hl.bind(mainMod .. " + SHIFT + down",  hl.dsp.window.move({ direction = "down" }), { description = "Move window down" })
+-- Move focus with the window-management tier (wm: SUPER, or Ctrl+Option on the macOS layout) + arrow keys
+hl.bind(wm .. " + left",  hl.dsp.focus({ direction = "left" }), { description = "Focus window left" })
+hl.bind(wm .. " + right", hl.dsp.focus({ direction = "right" }), { description = "Focus window right" })
+hl.bind(wm .. " + up",    hl.dsp.focus({ direction = "up" }), { description = "Focus window up" })
+hl.bind(wm .. " + down",  hl.dsp.focus({ direction = "down" }), { description = "Focus window down" })
+hl.bind(wm .. " + SHIFT + left",  hl.dsp.window.move({ direction = "left" }), { description = "Move window left" })
+hl.bind(wm .. " + SHIFT + right", hl.dsp.window.move({ direction = "right" }), { description = "Move window right" })
+hl.bind(wm .. " + SHIFT + up",    hl.dsp.window.move({ direction = "up" }), { description = "Move window up" })
+hl.bind(wm .. " + SHIFT + down",  hl.dsp.window.move({ direction = "down" }), { description = "Move window down" })
 hl.bind(mainMod .. " + CTRL + left",  hl.dsp.window.resize({ x = -60, y = 0, relative = true }), { description = "Resize: narrower", repeating = true })
 hl.bind(mainMod .. " + CTRL + right", hl.dsp.window.resize({ x = 60, y = 0, relative = true }), { description = "Resize: wider", repeating = true })
 hl.bind(mainMod .. " + CTRL + up",    hl.dsp.window.resize({ x = 0, y = -60, relative = true }), { description = "Resize: shorter", repeating = true })
@@ -481,13 +520,17 @@ hl.bind(mainMod .. " + SHIFT + KP_Subtract", hl.dsp.exec_cmd("~/.local/bin/displ
 for i = 1, 10 do
     local key = i % 10 -- 10 maps to key 0
     -- Move is on ALT (not SHIFT): SUPER+SHIFT+3/4/5/6 are the macOS-style capture keys
-    hl.bind(mainMod .. " + " .. key,             hl.dsp.focus({ workspace = i}), { description = "Go to workspace " .. i })
+    hl.bind((mac and "CTRL + " or mainMod .. " + ") .. key, hl.dsp.focus({ workspace = i}), { description = "Go to workspace " .. i })
     hl.bind(mainMod .. " + ALT + " .. key,       hl.dsp.window.move({ workspace = i }), { description = "Move window to workspace " .. i })
+end
+if mac then   -- macOS Spaces: Ctrl+left/right steps through workspaces
+    hl.bind("CTRL + left",  hl.dsp.focus({ workspace = "e-1" }), { description = "Previous workspace" })
+    hl.bind("CTRL + right", hl.dsp.focus({ workspace = "e+1" }), { description = "Next workspace" })
 end
 
 -- Example special workspace (scratchpad)
-hl.bind(mainMod .. " + S",         hl.dsp.workspace.toggle_special("magic"), { description = "Toggle scratchpad workspace" })
-hl.bind(mainMod .. " + SHIFT + S", hl.dsp.window.move({ workspace = "special:magic" }), { description = "Move window to scratchpad" })
+hl.bind(wm .. " + S",         hl.dsp.workspace.toggle_special("magic"), { description = "Toggle scratchpad workspace" })
+hl.bind(wm .. " + SHIFT + S", hl.dsp.window.move({ workspace = "special:magic" }), { description = "Move window to scratchpad" })
 
 -- Scroll through existing workspaces with mainMod + scroll
 hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ workspace = "e+1" }), { description = "Next workspace" })

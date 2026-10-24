@@ -3,6 +3,9 @@
 # Monochrome: white accent on black, greys for everything else.
 mode = "dark"
 
+# Hype: default slide typeface for decks on this theme.
+font = "Söhne"
+
 accent = "#ffffff"
 selection = "#2a2a2a"
 muted = "#7a7a7a"

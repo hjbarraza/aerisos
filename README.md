@@ -220,29 +220,34 @@ change rewrites it anyway.
 
 `SUPER+K` shows every shortcut, searchable. The essentials:
 
+The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade): every Cmd combo behaves as on a Mac, and window management moves to `CTRL+OPTION`.
+
 | Keys | Action |
 |---|---|
 | `SUPER+ALT+SPACE`, or click **Æ** in the top bar | **AerisOS menu**: power, toggles, capture, Wi-Fi/Bluetooth/audio, Razer, battery mode, update |
 | Right-click **Æ** | Search (Vicinae) |
 | `SUPER+SPACE` · `ALT+SPACE` | Search / launch (Vicinae) |
 | `ALT+TAB` · `ALT+SHIFT+TAB` | Next · previous window |
-| `SUPER+RETURN` · `SUPER+E` | Terminal · Files |
-| `CMD+C/V/X/Z/A/T/N/W` | macOS-style: forwarded to the app as `Ctrl+…` (the "Cmd" is the key left of the spacebar: Super on Apple keyboards and the Razer Blade, whose left Win/Alt are swapped into the MacBook order Ctrl · Fn · Option · Cmd; left Alt on other PC layouts) |
+| `SUPER+RETURN` · `SUPER+SHIFT+RETURN` · `SUPER+E` | Terminal · Ghostty · Files |
+| `CMD+C/V/X/Z/A/T/N/W/F/S/P/O/R/G/K/J/D/B/I/U/Y` · `CMD+,` `=` `-` `0` · `CMD+SHIFT+Z/T/R/P/F/S` | macOS-style: forwarded to the app as `Ctrl+…` (the "Cmd" is the key left of the spacebar: Super on Apple keyboards and the Razer Blade, whose left Win/Alt are swapped into the MacBook order Ctrl · Fn · Option · Cmd; left Alt on other PC layouts) |
 | `CMD+Q` · `CMD+TAB` | Close window · cycle windows (macOS-style) |
-| `CMD+SHIFT+[` · `]` (Mac also `CMD+OPTION+←` · `→`) | Previous · next tab in the browser (forwarded as `Ctrl+PageUp/PageDown`); `Cmd+1–9` stays on workspaces |
-| `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize |
-| `SUPER+P` · `SUPER+J` | Pseudo-tile · flip split rows/columns |
-| `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag) |
+| `CMD+SHIFT+[` · `]` (Mac also `CMD+OPTION+←` · `→`) | Previous · next tab in the browser (forwarded as `Ctrl+PageUp/PageDown`); `Cmd+1–9` goes to the app (tab N) on the macOS layout |
+| `CMD+L` | Address bar in Brave/Chromium (forwarded as `Ctrl+L`; does nothing in other apps) |
+| `CMD+←/→` · `CMD+↑/↓` · `OPTION+←/→` (add `SHIFT` to select) | macOS layout: line start/end · document start/end · word left/right |
+| `CMD+BACKSPACE` · `OPTION+BACKSPACE` · `CMD+[` · `]` | macOS layout: delete to line start · delete word · back · forward |
+| `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize (macOS layout: `CMD+CTRL+F` full screen, `CTRL+OPTION+RETURN` maximize) |
+| `SUPER+P` · `SUPER+J` · `SUPER+K` · `SUPER+S` | Pseudo-tile · flip split rows/columns · shortcut cheat sheet · scratchpad (macOS layout: `CTRL+OPTION+` the same letter) |
+| `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag); macOS layout: `CTRL+OPTION+arrows` focus, `CTRL+OPTION+SHIFT+arrows` move |
 | `SUPER+SHIFT+PLUS` · `SUPER+SHIFT+MINUS` | Display scale: larger UI · more real estate (steps through 1 → 1.2 → 1.25 → 1.33 → 1.5 → 1.6 → 2, skipping any that leave a fractional logical size on the current mode; runtime, reload returns to the saved scale) |
 | `SUPER+SHIFT+B` · `N` · `O` · `M` · `H` | Brave · Sublime Text · Obsidian · Signal · Hype (presentations) |
 | `SUPER+SHIFT+C` · `Y` · `I` · `G` · `/` | Notion Calendar · YouTube · Claude · Gemini · Google (web apps) |
 | `SUPER+CTRL+A` · `W` · `B` | Audio · Wi-Fi · Bluetooth |
 | `SUPER+CTRL+N` · `S` · `I` · `C` | Do Not Disturb · Night light · Stay awake · Colour picker |
-| `CTRL+L` · `SUPER+SHIFT+L` | Lock · Lock + screen off (laptop stays awake until unlock) |
+| `CTRL+L` (Mac also `CMD+CTRL+Q`) · `SUPER+SHIFT+L` | Lock · Lock + screen off (laptop stays awake until unlock) |
 | `CMD+SHIFT+3` · `4` · `D` | Screenshot (macOS-style, on the Cmd-position key: Super on Apple keyboards and the Razer, left Alt on other PC layouts): whole screen · select area · annotate (aliases: `SHIFT+Print` · `Print` · `CTRL+Print`) |
 | `CMD+SHIFT+5` · `6` | Screen recording: area · whole screen, press again to stop (aliases: `ALT+Print` · `ALT+SHIFT+Print`) |
 | `CMD+SHIFT+7` | Camera recording (Monologue): Space records or pauses, Enter stops and opens the trimmer |
-| `SUPER+1–9` · `SUPER+ALT+1–9` | Go to workspace · move window to workspace (Cmd · Cmd+Option on the Mac) |
+| `SUPER+1–9` · `SUPER+ALT+1–9` | Go to workspace · move window to workspace (macOS layout: `CTRL+1–9` and `CTRL+←/→` like Spaces; move stays `CMD+OPTION+1–9`) |
 | Right `Option/Alt` or Right `Ctrl` (hold) | Dictate (the MacBook T2 keyboard has no Right Ctrl or Print key; the letter binds work everywhere) |
 
 Add a web app: copy a file in `webapps/`, change `Name` and the URL, add a `webapp(...)`
@@ -420,7 +425,6 @@ alongside; the first run records the current state silently so a restart never r
 | Event | Spoken when |
 |---|---|
 | Watchlist | A new unacknowledged finding appears |
-| Passes | An ISS or Tiangong pass is coming up (time and peak elevation) |
 | Alerts | A new entry joins the AERIS alerts list (GNSS jammed, etc.) |
 | Squawks | An emergency squawk (7500 / 7600 / 7700) within 50 km |
 | Space weather | A geomagnetic storm, an M- or X-class flare, or active NOAA scales |

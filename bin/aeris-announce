@@ -7,9 +7,9 @@
 Polls /var/lib/aeris/status.json, diffs it against what was already announced and
 says new events through aeris-speak (Kokoro bf_emma) plus a dunst notification:
   A) new unacknowledged watchlist findings
-  B) ISS / Tiangong passes (satellites overhead and overhead alerts: bar pill only)
-  C) new entries in the alerts list (GPS jamming and airspace alerts: bar pill only)
-  D) emergency squawks
+  B) new entries in the alerts list (GPS jamming and airspace alerts: bar pill only)
+  C) emergency squawks
+ISS / Tiangong passes and satellites overhead are not spoken: the bar's airspace pill shows them.
 State lives in /tmp/aeris-announce-state.json. On the very first run (no state file)
 the current status is recorded silently, so a restart does not replay old events.
 
@@ -123,35 +123,6 @@ def check_watch(s, state):
     state["watch"] = sorted(current)
 
 
-def check_pass(s, state, field, label, speak_name):
-    val = (s.get("space") or {}).get(field) or ""
-    last = state.setdefault("last", {}).get(field, "")
-    state["last"][field] = val
-    if not val or val == last:
-        return
-    m = re.match(r"\s*(\d{1,2}:\d{2})\s*·\s*(\d+)\s*°", val)
-    if m:
-        announce(label, f"{speak_name} pass in {m.group(1)}. Maximum elevation {m.group(2)} degrees.")
-    else:
-        announce(label, f"{speak_name} pass: {val}")
-
-
-def check_sats(s, state):
-    val = (s.get("space") or {}).get("sats") or ""
-    last = state.setdefault("last", {}).get("sats", "")
-    state["last"]["sats"] = val
-    if not val or val == last:
-        return
-    m = re.match(r"\s*(\d+)\s*O/H\s*(?:·\s*(.*))?", val)
-    if not m:
-        return
-    n, names = int(m.group(1)), (m.group(2) or "").strip()
-    text = f"{n} satellite{'s' if n != 1 else ''} overhead."
-    if names:
-        text += f" {names}."
-    announce("Satellites", text)
-
-
 def check_alerts(s, state):
     current = [a for a in (s.get("alerts") or []) if isinstance(a, str)]
     seen = set(state.setdefault("alerts", []))
@@ -238,9 +209,8 @@ def check_outages(s, state):
 
 def process(s, state):
     check_watch(s, state)
-    check_pass(s, state, "iss", "ISS pass", "ISS")
-    check_pass(s, state, "css", "Tiangong pass", "Tiangong")
-    # satellites overhead and GPS jamming live on the bar's airspace pill, not in speech;
+    # ISS / Tiangong passes, satellites overhead and GPS jamming live on the bar's airspace
+    # pill, not in speech;
     # emergency squawks stay spoken (check_emergency)
     check_alerts(s, state)
     check_emergency(s, state)
