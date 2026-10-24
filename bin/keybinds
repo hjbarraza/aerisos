@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # aeris:summary=Searchable cheat sheet of Hyprland shortcuts
 # aeris:group=system
-"""Searchable cheat sheet of Hyprland shortcuts (SUPER+K on every layout).
+"""Searchable cheat sheet of Hyprland shortcuts (Win key + K: Option+K on the macOS layout, SUPER+K elsewhere).
 
 Reads the live binds from `hyprctl binds -j`, so it always matches the config.
 Only binds with a description are listed; add one with

@@ -366,7 +366,7 @@ if isRazer then cmdMod = "SUPER" end
 -- full screen to Cmd+Ctrl+F. On PC layouts (Cmd = left Alt) the SUPER tier stays as it was.
 local mac = cmdMod == "SUPER"
 local wm = mac and "CTRL + ALT" or mainMod
-for _, k in ipairs({ "C", "V", "X", "Z", "A", "T", "N", "W", "F", "S", "P", "O", "R", "G", "J", "D", "B", "I", "U", "Y",
+for _, k in ipairs({ "C", "V", "X", "Z", "A", "T", "N", "W", "F", "S", "P", "O", "R", "G", "K", "J", "D", "B", "I", "U", "Y",
                      "comma", "0" }) do
     hl.bind(cmdMod .. " + " .. k, hl.dsp.send_shortcut({ mods = "CTRL", key = k }), { description = "macOS-style: Ctrl+" .. k .. " to the app" })
 end
@@ -426,7 +426,8 @@ hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }), { d
 hl.bind(mainMod .. " + SHIFT + V", hl.dsp.exec_cmd("cliphist list | wofi --dmenu | cliphist decode | wl-copy"), { description = "Clipboard history" })
 hl.bind(mainMod .. " + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- Spotlight-style search (Vicinae, falls back to hyprlauncher)
 hl.bind("ALT + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- alias
-hl.bind(mainMod .. " + K", hl.dsp.exec_cmd("~/.local/bin/keybinds"), { description = "Keyboard shortcuts cheat sheet" })
+-- Cheat sheet on the physical Win key + K: Option (ALT) on the macOS layout (Razer Win/Alt swapped), SUPER elsewhere
+hl.bind((mac and "ALT" or mainMod) .. " + K", hl.dsp.exec_cmd("~/.local/bin/keybinds"), { description = "Keyboard shortcuts cheat sheet" })
 -- Web apps (Omarchy-style): open the site in its own frameless Brave window
 local function webapp(url) return hl.dsp.exec_cmd("brave --app=" .. url) end
 hl.bind(mainMod .. " + SHIFT + C", webapp("https://calendar.notion.so"), { description = "Notion Calendar" })

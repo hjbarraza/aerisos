@@ -220,7 +220,7 @@ change rewrites it anyway.
 
 `SUPER+K` shows every shortcut, searchable. The essentials:
 
-The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade): every Cmd combo behaves as on a Mac, and window management moves to `CTRL+OPTION`. On the Razer, Cmd is the key labelled **Alt** and Option the key labelled **Win** (the cheat sheet and menu call it Super); on Apple keyboards they are Cmd and Option. The cheat sheet (`SUPER+K`, every layout) and the AERIS menu always show the keys as printed on the keyboard in use.
+The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade): every Cmd combo behaves as on a Mac, and window management moves to `CTRL+OPTION`. On the Razer, Cmd is the key labelled **Alt** and Option the key labelled **Win** (the cheat sheet and menu call it Super); on Apple keyboards they are Cmd and Option. The cheat sheet (`OPTION+K`: the Win key + K on the Razer) and the AERIS menu always show the keys as printed on the keyboard in use.
 
 | Keys | Action |
 |---|---|
@@ -236,7 +236,7 @@ The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade
 | `CMD+←/→` · `CMD+↑/↓` · `OPTION+←/→` (add `SHIFT` to select) | macOS layout: line start/end · document start/end · word left/right |
 | `CMD+BACKSPACE` · `OPTION+BACKSPACE` · `CMD+[` · `]` | macOS layout: delete to line start · delete word · back · forward |
 | `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize (macOS layout: `CMD+CTRL+F` full screen, `CTRL+OPTION+RETURN` maximize) |
-| `SUPER+P` · `SUPER+J` · `SUPER+K` · `SUPER+S` | Pseudo-tile · flip split rows/columns · shortcut cheat sheet · scratchpad (macOS layout: `CTRL+OPTION+` the same letter, except the cheat sheet, which is `SUPER+K` everywhere) |
+| `SUPER+P` · `SUPER+J` · `SUPER+K` · `SUPER+S` | Pseudo-tile · flip split rows/columns · shortcut cheat sheet · scratchpad (macOS layout: `CTRL+OPTION+` the same letter, except the cheat sheet: `OPTION+K`, the Win key on the Razer) |
 | `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag); macOS layout: `CTRL+OPTION+arrows` focus, `CTRL+OPTION+SHIFT+arrows` move |
 | `CMD+=` · `CMD+-` · `CMD+SHIFT+=` · `CMD+SHIFT+-` | Focused window wider · thinner · taller · shorter (Cmd = key left of the spacebar; hold to repeat) |
 | `SUPER+CTRL+=` · `SUPER+CTRL+-` | Display scale: larger UI · more real estate (steps through 1 → 1.2 → 1.25 → 1.33 → 1.5 → 1.6 → 2, skipping any that leave a fractional logical size on the current mode; runtime, reload returns to the saved scale) |
