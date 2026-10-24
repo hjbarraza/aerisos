@@ -11,14 +11,14 @@ import { useState } from "react";
 const BIN = `${homedir()}/.local/bin`;
 const RUN = process.env.XDG_RUNTIME_DIR ?? "/tmp";
 // Shortcut labels as printed on this keyboard. Hyprland's SUPER/ALT sit on the Cmd/Option
-// keys on Apple keyboards, and on the keys labelled Alt/Win on the Razer (left Win/Alt are
+// keys on Apple keyboards, and on the keys labelled Alt/Super (Win) on the Razer (left Win/Alt are
 // swapped into Mac order there). CMD is the Cmd-position key: SUPER on those two, left Alt elsewhere.
 const VENDOR = readFileSync("/sys/class/dmi/id/sys_vendor", { encoding: "utf8", flag: "r" }).trim();
 const MAC = /Apple|Razer/.test(VENDOR); // macOS layout in hyprland.lua
 const LABEL: Record<string, string> = /Apple/.test(VENDOR)
   ? { SUPER: "CMD", ALT: "OPTION", CMD: "CMD" }
   : /Razer/.test(VENDOR)
-    ? { SUPER: "ALT", ALT: "WIN", CMD: "ALT" }
+    ? { SUPER: "ALT", ALT: "SUPER", CMD: "ALT" }
     : { CMD: "ALT" };
 const keyLabel = (keys: string) => keys.split(" ").map((k) => LABEL[k] ?? k).join(" ");
 
