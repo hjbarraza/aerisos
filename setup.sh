@@ -745,14 +745,14 @@ mod_tts() {
 }
 
 mod_theme() {
-    log "Monochrome theme: neon gradient focus border, black inactive border, greyscale icons, one text size"
+    log "Monochrome theme: 1 px gray borders with a soft focus glow, greyscale icons, one text size"
 
-    # Window borders: rotating white/green/purple gradient active (2 px), black inactive
+    # Window borders: 1 px static gray active (glow from decoration.shadow), near-black inactive
     local hypr="$HOME/.config/hypr/hyprland.lua"
     if [[ -f $hypr ]]; then
         run sed -i -E \
-            -e 's|^(\s*active_border\s*=\s*).*|\1{ colors = { "rgba(f2f2ffff)", "rgba(39ff88ff)", "rgba(b44dffff)" }, angle = 45 },   -- cyberpunk: white, green, purple|' \
-            -e 's|^(\s*inactive_border\s*=\s*).*|\1"rgba(000000ff)",   -- AerisOS: black|' \
+            -e 's|^(\s*active_border\s*=\s*).*|\1"rgba(4a4a4aff)",   -- static gray; glow comes from decoration.shadow|' \
+            -e 's|^(\s*inactive_border\s*=\s*).*|\1"rgba(111111ff)",   -- neutral near-black|' \
             "$hypr"
     fi
 

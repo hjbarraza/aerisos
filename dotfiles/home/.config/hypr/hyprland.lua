@@ -154,8 +154,8 @@ hl.config({
         border_size = 1,
 
         col = {
-            active_border   = { colors = { "rgba(f2f2ffff)", "rgba(39ff88ff)", "rgba(b44dffff)" }, angle = 45 },   -- cyberpunk: white, green, purple
-            inactive_border = "rgba(000000ff)",   -- AerisOS: black
+            active_border   = "rgba(4a4a4aff)",   -- static gray; glow comes from decoration.shadow
+            inactive_border = "rgba(111111ff)",   -- neutral near-black
         },
 
         -- Set to true to enable resizing windows by clicking and dragging on borders and gaps
