@@ -375,8 +375,10 @@ for _, k in ipairs({ "Z", "T", "R", "P", "F", "S" }) do
     hl.bind(cmdMod .. " + SHIFT + " .. k, hl.dsp.send_shortcut({ mods = "CTRL+SHIFT", key = k }), { description = "macOS-style: Ctrl+Shift+" .. k .. " to the app" })
 end
 if mac then
-    -- Text navigation: Cmd+Shift+arrows select to line/document ends, Option+arrows by word, with Shift to select
+    -- Text navigation: Cmd+arrows line/document ends, Option+arrows by word, with Shift to select
     local nav = {
+        { "SUPER + left", "", "Home", "line start" }, { "SUPER + right", "", "End", "line end" },
+        { "SUPER + up", "CTRL", "Home", "document start" }, { "SUPER + down", "CTRL", "End", "document end" },
         { "SUPER + SHIFT + left", "SHIFT", "Home", "select to line start" }, { "SUPER + SHIFT + right", "SHIFT", "End", "select to line end" },
         { "SUPER + SHIFT + up", "CTRL+SHIFT", "Home", "select to document start" }, { "SUPER + SHIFT + down", "CTRL+SHIFT", "End", "select to document end" },
         { "ALT + left", "CTRL", "left", "word left" }, { "ALT + right", "CTRL", "right", "word right" },
@@ -384,10 +386,6 @@ if mac then
         { "ALT + BackSpace", "CTRL", "BackSpace", "delete word" },
         { "SUPER + bracketleft", "ALT", "left", "back" }, { "SUPER + bracketright", "ALT", "right", "forward" },
     }
-    -- Cmd+arrows (the key labelled Alt on the Razer) focus windows instead of jumping to line/document ends
-    for _, d in ipairs({ "left", "right", "up", "down" }) do
-        hl.bind("SUPER + " .. d, hl.dsp.focus({ direction = d }), { description = "Focus window " .. d })
-    end
     for _, n in ipairs(nav) do
         hl.bind(n[1], hl.dsp.send_shortcut({ mods = n[2], key = n[3] }), { description = "macOS-style: " .. n[4], repeating = true })
     end

@@ -233,11 +233,11 @@ The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade
 | `CMD+Q` · `CMD+TAB` | Close window · cycle windows (macOS-style) |
 | `CMD+SHIFT+[` · `]` (Mac also `CMD+OPTION+←` · `→`) | Previous · next tab in the browser (forwarded as `Ctrl+PageUp/PageDown`); `Cmd+1–9` goes to the app (tab N) on the macOS layout |
 | `CMD+L` | Address bar in Brave/Chromium (forwarded as `Ctrl+L`; does nothing in other apps) |
-| `CMD+SHIFT+←/→` · `CMD+SHIFT+↑/↓` · `OPTION+←/→` (add `SHIFT` to select) | macOS layout: select to line start/end · document start/end · word left/right (plain `CMD+arrows` focus windows) |
+| `CMD+←/→` · `CMD+↑/↓` · `OPTION+←/→` (add `SHIFT` to select) | macOS layout: line start/end · document start/end · word left/right |
 | `CMD+BACKSPACE` · `OPTION+BACKSPACE` · `CMD+[` · `]` | macOS layout: delete to line start · delete word · back · forward |
 | `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize (macOS layout: `CMD+CTRL+F` full screen, `CTRL+OPTION+RETURN` maximize) |
 | `SUPER+P` · `SUPER+J` · `SUPER+K` · `SUPER+S` | Pseudo-tile · flip split rows/columns · shortcut cheat sheet · scratchpad (macOS layout: `CTRL+OPTION+` the same letter, except the cheat sheet: `OPTION+K`, the Win key on the Razer) |
-| `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag); macOS layout: `CMD+arrows` (Alt-labelled key on the Razer) or `CTRL+OPTION+arrows` focus, `CTRL+OPTION+SHIFT+arrows` move |
+| `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag); macOS layout: `CTRL+OPTION+arrows` focus, `CTRL+OPTION+SHIFT+arrows` move |
 | `CMD+=` · `CMD+-` · `CMD+SHIFT+=` · `CMD+SHIFT+-` | Focused window wider · thinner · taller · shorter (Cmd = key left of the spacebar; hold to repeat) |
 | `SUPER+CTRL+=` · `SUPER+CTRL+-` | Display scale: larger UI · more real estate (steps through 1 → 1.2 → 1.25 → 1.33 → 1.5 → 1.6 → 2, skipping any that leave a fractional logical size on the current mode; runtime, reload returns to the saved scale) |
 | `SUPER+SHIFT+B` · `N` · `O` · `M` · `H` | Brave · Sublime Text · Obsidian · Signal · Hype (presentations) |
