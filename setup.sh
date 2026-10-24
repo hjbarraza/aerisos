@@ -1070,7 +1070,11 @@ mod_snapshot() {
     { pacman -Qqen; echo wl-clipboard; } | sort -u > "$PKG/pacman.txt"
     pacman -Qqem > "$PKG/aur.txt"
     info "$(wc -l < "$PKG/pacman.txt") repo packages, $(wc -l < "$PKG/aur.txt") AUR packages"
-    "$AERIS/archinstall/make-config" >/dev/null   # archinstall config follows the package list
+    # The archinstall config (sibling repo aerisos-archinstall) follows the package list
+    if [[ -x $HOME/aerisos-archinstall/make-config ]]; then
+        "$HOME/aerisos-archinstall/make-config" "$AERIS" >/dev/null
+        info "archinstall config regenerated in ~/aerisos-archinstall (commit and push it there)"
+    fi
     info "Configs: $(find "$DOT" -type f | wc -l) files"
 }
 
