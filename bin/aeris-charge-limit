@@ -1,4 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# aeris:summary=Hold a Razer battery between 90 and 95% (aeris-charge-limit.timer)
+# aeris:group=system
+# aeris:hidden=true
 # Hold the battery between LOW and HIGH percent on a Razer Blade.
 #
 # Razer's Battery Health Optimizer (BHO) only accepts limits of 50-80%. But switching
@@ -7,10 +10,11 @@
 #   capacity <  LOW   -> BHO off (charges back up to HIGH)
 # Run every couple of minutes by aeris-charge-limit.timer. Needs razer-cli + razer-daemon.
 
+set -euo pipefail
 HIGH=${AERIS_CHARGE_HIGH:-95}
 LOW=${AERIS_CHARGE_LOW:-90}
 
-bat=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1)
+bat=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1 || true)
 [[ -n $bat ]] || exit 0
 capacity=$(cat "$bat/capacity")
 

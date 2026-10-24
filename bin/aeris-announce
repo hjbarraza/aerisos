@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# aeris:summary=Speak new AERIS status events (aeris-announce.service)
+# aeris:group=voice
+# aeris:hidden=true
 """aeris-announce - speak and show AERIS status events.
 
 Polls /var/lib/aeris/status.json, diffs it against what was already announced and

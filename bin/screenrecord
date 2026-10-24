@@ -1,7 +1,12 @@
 #!/bin/bash
+# aeris:summary=Screen recording to ~/Videos/Screenrecordings; run again to stop
+# aeris:group=capture
+# aeris:args=[area|screen|status]
 # screenrecord [area|screen]  - start recording; run again (any mode) to stop and save.
 # screenrecord status         - Waybar JSON: red dot while recording, hidden otherwise.
 # Saves to ~/Videos/Screenrecordings, with desktop audio.
+
+set -euo pipefail
 if [[ ${1:-} == status ]]; then
   pgrep -x gpu-screen-reco >/dev/null \
     && printf '{"text":"","class":"on","tooltip":"Recording - click to stop and save"}\n' \
@@ -11,7 +16,7 @@ fi
 
 if pgrep -x gpu-screen-reco >/dev/null; then
   pkill -SIGINT -x gpu-screen-reco          # SIGINT = stop and finalize the file
-  sleep 0.5; qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
+  sleep 0.5; aeris-shell -q bar refresh
   notify-send "Screen recording saved" "~/Videos/Screenrecordings"
   exit
 fi
@@ -27,4 +32,4 @@ case "${1:-area}" in
 esac
 
 gpu-screen-recorder "${args[@]}" -f 60 -a default_output -o "$file" >/dev/null 2>&1 &
-sleep 0.5; qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
+sleep 0.5; aeris-shell -q bar refresh

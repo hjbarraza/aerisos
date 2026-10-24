@@ -1,11 +1,16 @@
 #!/bin/bash
+# aeris:summary=Night light (hyprsunset 4000K): state for the bar, or toggle
+# aeris:group=toggle
+# aeris:args=[toggle]
 # nightlight toggle  - warm screen (4000K) on/off via hyprsunset
 # nightlight         - Waybar JSON: moon icon while on, hidden otherwise.
+
+set -euo pipefail
 if [[ ${1:-} == toggle ]]; then
   if pgrep -x hyprsunset >/dev/null; then pkill -x hyprsunset
   else hyprsunset -t 4000 >/dev/null 2>&1 & disown
   fi
-  sleep 0.3; qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
+  sleep 0.3; aeris-shell -q bar refresh
   exit
 fi
 pgrep -x hyprsunset >/dev/null \

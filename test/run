@@ -1,0 +1,44 @@
+#!/bin/bash
+# Run every test/*-test.sh. Each file's output is kept; failures are listed with their logs.
+
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+
+shopt -s nullglob
+tests=()
+for t in "$ROOT"/test/*-test.sh; do
+  [[ $(basename -- "$t") == base-test.sh ]] && continue
+  tests+=("$t")
+done
+shopt -u nullglob
+(( ${#tests[@]} > 0 )) || { echo "no tests in $ROOT/test" >&2; exit 1; }
+
+workdir=$(mktemp -d -t aeris-test-run.XXXXXX)
+failed=()
+skipped=()
+
+for t in "${tests[@]}"; do
+  name=$(basename -- "$t")
+  printf '==> %s\n' "${t#"$ROOT"/}"
+  status=0
+  bash "$t" >"$workdir/$name.out" 2>&1 || status=$?
+  cat "$workdir/$name.out"
+  (( status == 0 )) || failed+=("${t#"$ROOT"/}")
+  grep -q '# SKIP$' "$workdir/$name.out" && skipped+=("${t#"$ROOT"/}")
+done
+
+if (( ${#skipped[@]} > 0 )); then
+  printf '\nSkipped checks in %d of %d files:\n' "${#skipped[@]}" "${#tests[@]}"
+  printf '  %s\n' "${skipped[@]}"
+fi
+
+if (( ${#failed[@]} > 0 )); then
+  printf '\n%d of %d test files failed:\n' "${#failed[@]}" "${#tests[@]}" >&2
+  for t in "${failed[@]}"; do
+    printf '  %s (log: %s/%s.out)\n' "$t" "$workdir" "$(basename -- "$t")" >&2
+  done
+  exit 1
+fi
+
+printf '\nAll %d test files passed. Logs: %s\n' "${#tests[@]}" "$workdir"

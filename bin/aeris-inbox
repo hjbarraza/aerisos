@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# aeris:summary=The watchlist as a numbered inbox
+# aeris:group=intel
+# aeris:args=[N] [--days D]
 """The watchlist as an inbox: a numbered list of this week's findings, newest first.
 
     aeris-inbox          the inbox (last 7 days, * = unacknowledged)

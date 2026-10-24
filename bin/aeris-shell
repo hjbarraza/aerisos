@@ -1,0 +1,23 @@
+#!/bin/bash
+# aeris:summary=Talk to the running shell over IPC (bar, dock)
+# aeris:group=desktop
+# aeris:args=[-q] TARGET METHOD [ARGS]
+# The one way commands reach the Quickshell process: aeris-shell bar refresh|toggle,
+# aeris-shell dock reveal|conceal|flip. -q is quiet best-effort (no error when the shell
+# is not running), for commands that push a refresh after changing state.
+
+set -euo pipefail
+
+quiet=0
+if [[ ${1:-} == -q ]]; then quiet=1; shift; fi
+if (( $# < 2 )); then
+  echo "usage: aeris-shell [-q] <target> <method> [args]   (targets: bar, dock)" >&2
+  exit 2
+fi
+
+conf="$HOME/.config/quickshell/aeris/shell.qml"
+if (( quiet )); then
+  qs ipc -p "$conf" call "$@" >/dev/null 2>&1 || true
+else
+  qs ipc -p "$conf" call "$@"
+fi

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Wipe the Samsung 980 PRO (old Omarchy install) and set it up as /mnt/games.
 set -euo pipefail
 

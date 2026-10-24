@@ -1,4 +1,10 @@
-#!/bin/sh
+#!/bin/bash
+# aeris:summary=One lock.tsv value for the lock screen
+# aeris:group=desktop
+# aeris:args=KEY
+# aeris:hidden=true
 # One pre-formatted value for the lock screen: aeris-lock-field air.traffic
 # Reads /var/lib/aeris/lock.tsv (written by aeris-status every minute); prints nothing if absent.
-exec awk -F'\t' -v k="$1" '$1 == k { print $2; exit }' "${AERIS_LOCK_TSV:-/var/lib/aeris/lock.tsv}" 2>/dev/null
+
+set -euo pipefail
+exec awk -F'\t' -v k="${1:-}" '$1 == k { print $2; exit }' "${AERIS_LOCK_TSV:-/var/lib/aeris/lock.tsv}" 2>/dev/null

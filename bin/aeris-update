@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# aeris:summary=Update everything on AerisOS in one go
+# aeris:group=system
 # Update everything on AerisOS, in one go (like omarchy-update):
 #   system + AUR packages (snap-pac takes btrfs snapshots before/after),
 #   package cache cleanup, firmware check, mono icons, razer-control, ~/aerisos snapshot.

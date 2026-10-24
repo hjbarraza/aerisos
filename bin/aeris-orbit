@@ -1,6 +1,9 @@
-#!/bin/sh
+#!/bin/bash
+# aeris:summary=Orbit popup: map with ISS/Tiangong tracks and satellites overhead
+# aeris:group=intel
 # Orbit popup (quickshell): map with ISS/Tiangong tracks and satellites overhead. Click target of the
 # bar's alert pill. Running it again while open closes it.
+set -euo pipefail
 dir="$HOME/.config/quickshell/aeris-orbit"
 pidf="${XDG_RUNTIME_DIR:-/tmp}/aeris-orbit.pid"
 if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then kill "$(cat "$pidf")"; exit 0; fi

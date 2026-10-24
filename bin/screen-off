@@ -1,8 +1,12 @@
 #!/bin/bash
+# aeris:summary=Lock and turn the screen off; the laptop stays awake
+# aeris:group=display
 # screen-off - lock and turn the screen off, keeping the laptop running.
 # Holds a systemd idle+sleep inhibitor while the lock screen is up, so hypridle's
 # 30-minute suspend never fires; unlocking releases it and normal idle behaviour
 # returns. Any key press turns the screen back on (misc.key_press_enables_dpms).
+
+set -euo pipefail
 loginctl lock-session
 for _ in $(seq 50); do pidof hyprlock >/dev/null && break; sleep 0.1; done
 sleep 0.3    # let hyprlock cover the screen before it goes dark

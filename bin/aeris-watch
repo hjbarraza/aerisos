@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# aeris:summary=AERIS watchlist: standing collection requirements, checked hourly
+# aeris:group=intel
+# aeris:args=COMMAND [ARGS]
 """AERIS watchlist: standing collection requirements, checked on a timer.
 
 Item types (all keyless, passive sources):

@@ -1,9 +1,13 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# aeris:summary=The AerisOS menu (SUPER+ALT+SPACE)
+# aeris:group=system
 # AerisOS system menu (SUPER+ALT+SPACE): one searchable list for power, toggles,
 # capture, settings, battery, GPU and system tasks.
 
 # The AerisOS Vicinae extension (vicinae/aerisos): sections, icons, live state.
 # The plain list below is the fallback when the extension isn't available.
+
+set -euo pipefail
 if command -v vicinae >/dev/null && vicinae cmd ls 2>/dev/null | grep -q '@aerisos/aerisos:menu'; then
     exec vicinae cmd launch @aerisos/aerisos:menu
 fi
@@ -18,7 +22,7 @@ entries=(
     "Toggle — Do Not Disturb|~/.local/bin/dnd toggle"
     "Toggle — Night light|~/.local/bin/nightlight toggle"
     "Toggle — Stay awake|~/.local/bin/stay-awake toggle"
-    "Toggle — Top bar|qs ipc -p ~/.config/quickshell/aeris-bar/shell.qml call bar toggle"
+    "Toggle — Top bar|aeris-shell bar toggle"
     "Capture — Screenshot: area|~/.local/bin/screenshot area"
     "Capture — Screenshot: area + annotate|~/.local/bin/screenshot annotate"
     "Capture — Screenshot: screen|~/.local/bin/screenshot screen"

@@ -1,8 +1,12 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# aeris:summary=Low-battery notifications (aeris-battery.timer)
+# aeris:group=system
+# aeris:hidden=true
 # Low-battery alerts (run every minute by aeris-battery.timer): a notice at 15%,
 # a critical alert at 7%, each once per discharge.
 
-bat=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1)
+set -euo pipefail
+bat=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1 || true)
 [[ -n $bat ]] || exit 0
 capacity=$(cat "$bat/capacity")
 status=$(cat "$bat/status")

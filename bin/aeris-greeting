@@ -1,7 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# aeris:summary=One-line terminal greeting (from .bashrc)
+# aeris:group=desktop
+# aeris:hidden=true
 # One-line AerisOS greeting for new terminal windows (called from ~/.bashrc).
 #   ÆRIS OS  こんばんは  · hostname
 
+set -euo pipefail
 white=$'\e[1;97m' grey=$'\e[38;2;122;122;122m' reset=$'\e[0m'
 
 hour=$((10#$(date +%H)))
@@ -15,7 +19,7 @@ host=$(uname -n)
 # Notable alerts and unread watchlist findings from the cached status board (no network).
 # Skipped when the collector's output is older than 30 min so the banner never shows stale data.
 inv=$'\e[7m'
-extra=$(python3 -I - <<'PY' 2>/dev/null
+extra=$(python3 -I - 2>/dev/null <<'PY' || true
 import json, os, time
 f = "/var/lib/aeris/status.json"
 try:

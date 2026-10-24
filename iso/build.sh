@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Build the AerisOS installer ISO (bootable USB), Omarchy-style.
 #
 #   sudo ~/aerisos/iso/build.sh

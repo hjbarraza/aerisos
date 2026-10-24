@@ -1,0 +1,134 @@
+#!/bin/bash
+# aeris:summary=List and run the AerisOS commands
+# aeris:group=system
+# aeris:args=[GROUP | COMMAND [ARGS] | list --json | help]
+#
+# The router: every command in this directory declares itself in a comment header
+# (see docs/commands.md). `aeris` lists them by group, `aeris <group>` lists one
+# group, `aeris <command> ...` runs it, `aeris <command> --help` prints its header
+# without running it. The route is the filename with any "aeris-" prefix removed:
+# `aeris update` runs aeris-update, `aeris dnd toggle` runs dnd.
+
+set -euo pipefail
+
+BIN=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+HEADER_LINES=12
+
+declare -A GROUP_DESC=(
+  [toggle]="On/off switches shown in the bar"
+  [capture]="Screenshots and screen recording"
+  [display]="Screen, scale, lock and icons"
+  [system]="Menu, updates, shortcuts, battery, this router"
+  [intel]="Watchlist, inbox, ontologies, alerts"
+  [voice]="The AERIS voice"
+  [net]="Network"
+  [desktop]="The shell (bar, dock) and lock-screen helpers"
+)
+
+declare -A FILE SUMMARY GROUP ARGS HIDDEN
+ROUTES=()
+
+scan() {
+  local f name route key value line
+  for f in "$BIN"/*; do
+    [[ -f $f && -x $f ]] || continue
+    name=$(basename -- "$f")
+    route=${name#aeris-}
+    [[ $name == aeris ]] && route=aeris
+    local found=0
+    while IFS= read -r line; do
+      [[ $line =~ ^(#|//)\ aeris:([a-z-]+)=(.*)$ ]] || continue
+      key=${BASH_REMATCH[2]} value=${BASH_REMATCH[3]}
+      case $key in
+        summary) SUMMARY[$route]=$value; found=1 ;;
+        group)   GROUP[$route]=$value ;;
+        args)    ARGS[$route]=$value ;;
+        hidden)  HIDDEN[$route]=$value ;;
+      esac
+    done < <(head -n "$HEADER_LINES" -- "$f")
+    (( found )) || continue
+    if [[ -n ${FILE[$route]:-} ]]; then
+      echo "aeris: route '$route' is claimed by both ${FILE[$route]} and $name" >&2
+      exit 1
+    fi
+    FILE[$route]=$name
+    : "${GROUP[$route]:=tools}"
+    ROUTES+=("$route")
+  done
+}
+
+list_group() {
+  local group=$1 all=$2 route shown=0
+  for route in "${ROUTES[@]}"; do
+    [[ ${GROUP[$route]} == "$group" ]] || continue
+    [[ $all == 1 || ${HIDDEN[$route]:-} != true ]] || continue
+    if (( ! shown )); then
+      printf '\n\033[1m%s\033[0m  %s\n' "$group" "${GROUP_DESC[$group]:-}"
+      shown=1
+    fi
+    printf '  %-18s %s%s\n' "$route" "${SUMMARY[$route]}" \
+      "$([[ ${HIDDEN[$route]:-} == true ]] && printf '  (hidden)')"
+  done
+}
+
+list_all() {
+  local all=$1 group
+  echo "AerisOS commands. aeris <command> [args] runs one; aeris <command> --help describes it."
+  for group in toggle capture display system intel voice net desktop; do list_group "$group" "$all"; done
+  for group in $(printf '%s\n' "${GROUP[@]}" | sort -u); do
+    case $group in toggle|capture|display|system|intel|voice|net|desktop) ;; *) list_group "$group" "$all" ;; esac
+  done
+  echo
+}
+
+list_json() {
+  local route
+  for route in "${ROUTES[@]}"; do
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$route" "${FILE[$route]}" "${GROUP[$route]}" \
+      "${HIDDEN[$route]:-false}" "${ARGS[$route]:-}" "${SUMMARY[$route]}"
+  done | python3 -I -c '
+import json, sys
+rows = []
+for line in sys.stdin:
+    route, file, group, hidden, args, summary = line.rstrip("\n").split("\t", 5)
+    rows.append({"route": route, "file": file, "group": group, "hidden": hidden == "true",
+                 "args": args, "summary": summary})
+print(json.dumps(sorted(rows, key=lambda r: (r["group"], r["route"])), indent=2))'
+}
+
+describe() {
+  local route=$1 f="$BIN/${FILE[$1]}" line
+  printf '\033[1maeris %s\033[0m%s\n  %s\n' "$route" "${ARGS[$route]:+ ${ARGS[$route]}}" "${SUMMARY[$route]}"
+  printf '  group: %s   file: %s\n' "${GROUP[$route]}" "$f"
+  # The description: the comment block that follows the metadata lines
+  local started=0
+  while IFS= read -r line; do
+    [[ $line =~ ^(#|//)\ aeris: ]] && { started=1; continue; }
+    (( started )) || continue
+    if [[ $line =~ ^(#|//)(\ ?(.*))?$ ]]; then
+      [[ -n ${BASH_REMATCH[3]:-} || $line == "#" ]] && printf '  %s\n' "${BASH_REMATCH[3]:-}"
+    else
+      break
+    fi
+  done < <(tail -n +2 -- "$f")
+}
+
+scan
+
+cmd=${1:-help}
+case $cmd in
+  help|-h|--help) list_all 0 ;;
+  list)
+    if [[ ${2:-} == --json ]]; then list_json; else list_all 1; fi ;;
+  *)
+    if [[ -n ${FILE[$cmd]:-} ]]; then
+      shift
+      if [[ ${1:-} == --help || ${1:-} == -h ]]; then describe "$cmd"; exit 0; fi
+      exec "$BIN/${FILE[$cmd]}" "$@"
+    elif [[ -n ${GROUP_DESC[$cmd]:-} ]] || printf '%s\n' "${GROUP[@]}" | grep -qx -- "$cmd"; then
+      list_group "$cmd" 1; echo
+    else
+      echo "aeris: no command or group named '$cmd' (try: aeris help)" >&2
+      exit 1
+    fi ;;
+esac

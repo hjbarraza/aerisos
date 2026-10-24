@@ -1,8 +1,13 @@
 #!/bin/bash
+# aeris:summary=Do Not Disturb: state for the bar, or toggle
+# aeris:group=toggle
+# aeris:args=[toggle]
 # Do Not Disturb (dunst). `dnd toggle` flips it; `dnd` prints Waybar JSON (hidden when off).
+
+set -euo pipefail
 if [[ ${1:-} == toggle ]]; then
   dunstctl set-paused toggle
-  qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
+  aeris-shell -q bar refresh
   exit
 fi
 if [[ $(dunstctl is-paused) == true ]]; then

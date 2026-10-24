@@ -1,4 +1,7 @@
 #!/bin/bash
+# aeris:summary=Speak and show a notification from an AI agent
+# aeris:group=voice
+# aeris:args=AGENT MESSAGE
 # aeris-agent-notify - TTS notification when an AI agent needs attention
 # Usage: aeris-agent-notify "hermes" "Task complete: built the TTS system"
 #        aeris-agent-notify "claude" "Needs review: PR #42 ready"

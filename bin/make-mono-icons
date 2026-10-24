@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# aeris:summary=Build the greyscale Mono icon theme from installed app icons
+# aeris:group=display
 """Build a grayscale ("Mono") icon theme from the installed app icons.
 
 Sources: breeze-dark app icons (preferred), then every app's own hicolor icons.

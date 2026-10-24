@@ -1,8 +1,12 @@
 #!/bin/bash
+# aeris:summary=Open the AERIS watch page and acknowledge what it shows
+# aeris:group=intel
 # watch-open - show the AERIS watch page: focus the browser window that already has it
 # (Hyprland switches workspace as needed), or open it in the default browser. Opening
 # counts as reading: everything shown is acknowledged a moment later, so the bar's
 # counter clears and the next page render turns the stars into dots.
+
+set -euo pipefail
 page="$HOME/.local/share/aeris/watch.html"
 if hyprctl clients -j | python3 -c '
 import json, sys

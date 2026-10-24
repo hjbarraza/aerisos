@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# aeris:summary=Spoken login greeting: time of day, date, a fun fact
+# aeris:group=voice
+# aeris:args=[--text]
 """Spoken login greeting: time of day, the date and a fun fact, read by Kokoro (bf_emma).
 
 Run once per login from hyprland.lua. The fact comes from a free OpenRouter model, fresh at

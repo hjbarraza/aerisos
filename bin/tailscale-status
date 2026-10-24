@@ -1,5 +1,10 @@
 #!/bin/bash
+# aeris:summary=Tailscale state for the bar; connect, disconnect, admin console
+# aeris:group=net
+# aeris:args=[toggle|admin]
 # Tailscale for Waybar. `tailscale-status` prints Waybar JSON; `toggle` connects/disconnects; `admin` opens the admin console.
+
+set -euo pipefail
 case ${1:-} in
   admin)
     exec brave --app=https://login.tailscale.com/admin/machines ;;
@@ -13,14 +18,14 @@ case ${1:-} in
     else
       tailscale up 2>/dev/null || notify-send "Tailscale" "Could not connect. Run: sudo tailscale up"
     fi
-    qs ipc -p "$HOME/.config/quickshell/aeris-bar/shell.qml" call bar refresh >/dev/null 2>&1 || true
+    aeris-shell -q bar refresh
     exit ;;
 esac
 if ! systemctl is-active -q tailscaled; then
   printf '{"text":"󰖂","class":"off","tooltip":"Tailscale is off (service not running)\\nRight-click: admin console"}\n'
   exit
 fi
-state=$(tailscale status --json 2>/dev/null | grep -o '"BackendState": *"[A-Za-z]*"' | grep -o '[A-Za-z]*"$' | tr -d '"')
+state=$(tailscale status --json 2>/dev/null | grep -o '"BackendState": *"[A-Za-z]*"' | grep -o '[A-Za-z]*"$' | tr -d '"' || true)
 if [[ $state == Running ]]; then
   ip=$(tailscale ip -4 2>/dev/null | head -1)
   printf '{"text":"󰖂","class":"connected","tooltip":"Tailscale connected - %s\\nClick: disconnect · Right-click: admin console"}\n' "$ip"

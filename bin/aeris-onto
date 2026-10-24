@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// aeris:summary=Query the defence-map ontologies in ~/maps
+// aeris:group=intel
+// aeris:args=COMMAND [ARGS]
 // AERIS ontology tool: query the defence-map ontologies in ~/maps/<map>/data/data.js.
 // Loads each data.js in an isolated context and applies the ENRICH merge exactly as the
 // map page does, so answers match what the map shows.

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# aeris:summary=Publish a sanitised watch.html to GitHub Pages (after each aeris-watch run)
+# aeris:group=intel
+# aeris:hidden=true
 """Publish a sanitised copy of watch.html to GitHub Pages (notes/errors stripped)."""
 import re, subprocess, sys, os
 src = os.path.expanduser("~/.local/share/aeris/watch.html")

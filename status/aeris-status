@@ -259,22 +259,29 @@ def aircraft(lat, lon):
     emergencies = sorted({a["squawk"] for a in ac if a.get("squawk") in ("7500", "7600", "7700")}
                          | {a["emergency"].upper() for a in ac if a.get("emergency") not in (None, "none")})
     out["emergency"] = " ".join(emergencies) or "NONE"
-    # GPSJAM's method, live: airborne aircraft reporting low navigation accuracy (NACp < 8).
-    # Surface targets are excluded: aerodrome beacons and ground vehicles report NACp 0 as a
-    # matter of course (the El Prat tower alone was turning a 13-aircraft sample into "LOW").
-    # One bad contact is never enough either -- uncertified GA GPS sets read 0 with no
-    # interference at all -- so LOW needs two and JAMMED three plus a >10% share.
+    out["gnss"] = gnss_status(ac)
+    return out
+
+
+def gnss_status(ac):
+    """GNSS jamming indicator from one adsb.fi sample: "OK 1/12", "LOW 2/9", "JAMMED 4/11".
+
+    GPSJAM's method, live: airborne aircraft reporting low navigation accuracy (NACp < 8).
+    Surface targets are excluded: aerodrome beacons and ground vehicles report NACp 0 as a
+    matter of course (the El Prat tower alone was turning a 13-aircraft sample into "LOW").
+    One bad contact is never enough either -- uncertified GA GPS sets read 0 with no
+    interference at all -- so LOW needs two and JAMMED three plus a >10% share.
+    Pure: no I/O, tested by test/gnss-test.sh.
+    """
     rated = [a["nac_p"] for a in ac
              if isinstance(a.get("nac_p"), int)
              and isinstance(a.get("alt_baro"), (int, float)) and a["alt_baro"] >= 1000]
     if not rated:
-        out["gnss"] = NA
-    else:
-        bad = sum(1 for n in rated if n < 8)
-        share = bad / len(rated)
-        word = "JAMMED" if bad >= 3 and share > 0.10 else "LOW" if bad >= 2 else "OK"
-        out["gnss"] = f"{word} {bad}/{len(rated)}"
-    return out
+        return NA
+    bad = sum(1 for n in rated if n < 8)
+    share = bad / len(rated)
+    word = "JAMMED" if bad >= 3 and share > 0.10 else "LOW" if bad >= 2 else "OK"
+    return f"{word} {bad}/{len(rated)}"
 
 
 def gps_jamming():

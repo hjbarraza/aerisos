@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# aeris:summary=Searchable cheat sheet of Hyprland shortcuts (SUPER+K)
+# aeris:group=system
 """Searchable cheat sheet of Hyprland shortcuts (SUPER+K).
 
 Reads the live binds from `hyprctl binds -j`, so it always matches the config.

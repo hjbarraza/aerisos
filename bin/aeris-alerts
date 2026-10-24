@@ -1,6 +1,10 @@
 #!/bin/bash
+# aeris:summary=Readable summary of the AERIS alert fields
+# aeris:group=intel
 # aeris-alerts - readable summary of the AERIS alert fields (bar pill click target).
 # Alerting rows (status.json "alerts") are marked with *.
+
+set -euo pipefail
 python3 - <<'EOF'
 import json
 

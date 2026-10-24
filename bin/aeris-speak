@@ -1,4 +1,7 @@
 #!/bin/bash
+# aeris:summary=The AERIS voice: Kokoro text to speech
+# aeris:group=voice
+# aeris:args=TEXT | stdin
 # aeris-speak - AERIS system TTS voice (Kokoro 82M, bf_emma)
 # Usage: aeris-speak "text to speak"
 #        echo "text" | aeris-speak

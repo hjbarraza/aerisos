@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # AerisOS setup: turns a fresh Arch Linux + Hyprland install into AerisOS.
 #
 # Usage: ./setup.sh [--dry-run] [module ...]
@@ -41,7 +41,8 @@ MODULES=(t2 essentials wizard packages hardware steam controller dotfiles login 
 # Only run when named: hardware unique to one machine, or maintenance
 OPTIONAL=(gamesdrive razer snapshot)
 
-# Configs captured by "snapshot" and restored by "dotfiles" (relative to $HOME)
+# Configs captured by "snapshot" and restored by "dotfiles" (relative to $HOME).
+# Commands are not here: they live in bin/ and are installed by the tools module.
 HOME_PATHS=(
     .bashrc
     .config/hypr
@@ -57,27 +58,6 @@ HOME_PATHS=(
     .config/vicinae/settings.json
     .local/share/vicinae/themes
     .local/share/fonts
-    .local/bin/dnd
-    .local/bin/dock-autohide
-    .local/bin/keybinds
-    .local/bin/make-mono-icons
-    .local/bin/nightlight
-    .local/bin/screenrecord
-    .local/bin/screenshot
-    .local/bin/stay-awake
-    .local/bin/screen-off
-    .local/bin/display-scale
-    .local/bin/tailscale-status
-    .local/bin/aeris-watch
-    .local/bin/aeris-watch-publish
-    .local/bin/aeris-inbox
-    .local/bin/aeris-onto
-    .local/bin/aeris-alerts
-    .local/bin/watch-open
-    .local/bin/aeris-speak
-    .local/bin/aeris-orbit
-    .local/bin/aeris-announce
-    .local/bin/aeris-agent-notify
     .config/autostart/nm-applet.desktop
     .local/share/aeris/watchlist.json
     .config/opencode
@@ -538,17 +518,19 @@ mod_tools() {
     log "Tools: AerisOS menu, update, battery alerts, web apps, codecs, Node + Git"
     run mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications" "$HOME/.config/systemd/user"
 
-    # aeris-menu (SUPER+ALT+SPACE), aeris-update, aeris-battery, aeris-greeting (new terminal
-    # windows; hooked in ~/.bashrc), aeris-lock-field (the lock screen's reader for
-    # /var/lib/aeris/lock.tsv). Keybinds live in hyprland.lua
-    run install -m755 "$AERIS/bin/aeris-menu" "$AERIS/bin/aeris-update" "$AERIS/bin/aeris-battery" \
-        "$AERIS/bin/aeris-greeting" "$AERIS/bin/aeris-lock-field" "$HOME/.local/bin/"
+    # Every AerisOS command (bin/, see docs/commands.md): the menu, update, toggles, capture,
+    # the watchlist tools, the voice, the bar and lock-screen helpers, and the `aeris` router
+    # that lists them. Keybinds live in hyprland.lua
+    local cmd
+    for cmd in "$AERIS"/bin/*; do
+        [[ -f $cmd && -x $cmd ]] && run install -m755 "$cmd" "$HOME/.local/bin/"
+    done
     # Lock screen: generated from the login screen's grid (lock/make-hyprlock).
     # hypridle listens for loginctl lock-session (SUPER+L, screen-off, suspend) and
     # runs hyprlock — without it the lock binds do nothing.
     run python3 "$AERIS/lock/make-hyprlock" "$HOME/.config/hypr/hyprlock.conf"
     run systemctl --user enable --now hypridle.service
-    run install -m644 "$AERIS/bin/aeris-battery.service" "$AERIS/bin/aeris-battery.timer" "$HOME/.config/systemd/user/"
+    run install -m644 "$AERIS/battery/aeris-battery.service" "$AERIS/battery/aeris-battery.timer" "$HOME/.config/systemd/user/"
     run systemctl --user daemon-reload
     run systemctl --user enable --now aeris-battery.timer
 
@@ -904,7 +886,7 @@ mod_razer() {
 
     # Battery: Razer's optimizer only goes to 80%, so a timer pauses charging at 95%
     run mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
-    run install -m755 "$AERIS/battery/aeris-charge-limit" "$HOME/.local/bin/aeris-charge-limit"
+    run install -m755 "$AERIS/bin/aeris-charge-limit" "$HOME/.local/bin/aeris-charge-limit"
     run install -m644 "$AERIS/battery/aeris-charge-limit.service" "$AERIS/battery/aeris-charge-limit.timer" \
         "$HOME/.config/systemd/user/"
     run systemctl --user daemon-reload

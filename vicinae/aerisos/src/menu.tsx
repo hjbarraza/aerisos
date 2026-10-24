@@ -166,7 +166,7 @@ export default function Command() {
       title: "Top Bar",
       icon: Icon.AppWindow,
       keys: "SUPER SHIFT SPACE",
-      run: () => runClosed("qs ipc -p ~/.config/quickshell/aeris-bar/shell.qml call bar toggle"),
+      run: () => runClosed("aeris-shell bar toggle"),
       keywords: ["bar", "quickshell", "hide", "show"],
     },
   ];

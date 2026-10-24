@@ -1,4 +1,7 @@
 #!/bin/bash
+# aeris:summary=Step the focused monitor's scale
+# aeris:group=display
+# aeris:args=up|down
 # display-scale up|down — step the focused monitor's scale through sane values.
 # "up" = larger UI (higher scale, less real estate), "down" = more real estate.
 # Runtime only: a Hyprland config reload returns to the configured scale.

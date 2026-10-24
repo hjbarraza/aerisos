@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # AerisOS bootstrap for a NEW machine.
 #
 # Start from a minimal Arch Linux install (archinstall is fine), log in as root:
