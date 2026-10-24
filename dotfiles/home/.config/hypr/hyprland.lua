@@ -87,6 +87,7 @@ hl.on("hyprland.start", function ()
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
     hl.exec_cmd("command -v vicinae >/dev/null && vicinae server")
     hl.exec_cmd("swayosd-server")
+    hl.exec_cmd("hyprpm reload -n")   -- load enabled hyprpm plugins (Screenix cursor bridge)
     hl.exec_cmd("~/.local/bin/aeris-hello")   -- spoken greeting: date + fun fact (Kokoro, bf_emma)
     -- Two terminals after login (both show the AerisOS greeting). The left one runs ÆRIS Agent and falls back to a
     -- shell when it exits; the right one starts a moment later so ÆRIS always takes the left side of the layout.
@@ -411,7 +412,7 @@ hl.bind(mainMod .. " + CTRL + N", hl.dsp.exec_cmd("~/.local/bin/dnd toggle"), { 
 hl.bind(mainMod .. " + CTRL + I", hl.dsp.exec_cmd("~/.local/bin/stay-awake toggle"), { description = "Stay Awake on / off" })
 hl.bind(mainMod .. " + CTRL + S", hl.dsp.exec_cmd("~/.local/bin/nightlight toggle"), { description = "Night light on / off" })
 hl.bind(mainMod .. " + CTRL + C", hl.dsp.exec_cmd("hyprpicker -a"), { description = "Pick a colour (copies hex)" })
-hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("loginctl lock-session"), { description = "Lock screen" })
+hl.bind("CTRL + L", hl.dsp.exec_cmd("loginctl lock-session"), { description = "Lock screen" })
 hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), { description = "Lock + screen off (laptop stays awake)" })
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
 hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })

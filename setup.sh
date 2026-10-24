@@ -527,7 +527,7 @@ mod_tools() {
         [[ -f $cmd && -x $cmd ]] && run install -m755 "$cmd" "$HOME/.local/bin/"
     done
     # Lock screen: generated from the login screen's grid (lock/make-hyprlock).
-    # hypridle listens for loginctl lock-session (SUPER+L, screen-off, suspend) and
+    # hypridle listens for loginctl lock-session (CTRL+L, screen-off, suspend) and
     # runs hyprlock — without it the lock binds do nothing.
     run python3 "$AERIS/lock/make-hyprlock" "$HOME/.config/hypr/hyprlock.conf"
     run systemctl --user enable --now hypridle.service
