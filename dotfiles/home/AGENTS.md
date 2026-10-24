@@ -1,5 +1,9 @@
 # AERISOS system map — persistent agent reference
 
+This is the map of the running system: where data lives and what it means. How the code
+is written (shell style, the `bin/` command header, tests, events over polling) is the
+contract in `~/aerisos/AGENTS.md`; developer reference pages are in `~/aerisos/docs/`.
+
 Standing knowledge so the agent can answer questions about data seen in the AERIS
 dashboard ("when I open AERIS and open code") without re-discovering it each session.
 Update this file whenever a data location, threshold or pipeline changes.
@@ -56,16 +60,22 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
 - To inspect now: `cd /var/lib/aeris && python3 -c "import json; s=json.load(open('status.json'))`
   and read `air-cache.json` / `gpsjam-cache.json`.
 
-## Dock (since 2026-10-22)
-- Bottom pill dock = quickshell 0.3.2 (replaces GTK3 nwg-dock-hyprland, which
-  could not render fractional-scale sharp at 1.6x).
-- Config: `~/.config/quickshell/aeris-dock/shell.qml` (running-apps pill, icons
-  via the Mono icon theme, hidden by sliding below the bottom edge).
-- Driver: `~/.local/bin/dock-autohide` now launches quickshell and drives
-  show/hide through IPC (`qs ipc -p <shell.qml> call dock reveal|conceal`;
-  note `show`/`hide` are reserved `qs ipc` subcommands). Backed up as
-  `dock-autohide.nwg.bak`. Launched at login from `~/.config/hypr/hyprland.lua`.
-- A parallel Claude Code session may run `~/quickshell-test/shell.qml` (test bar).
+## The shell: bar + dock (since 2026-10-24 one Quickshell process)
+- `~/.config/quickshell/aeris/shell.qml` (quickshell 0.3.2) hosts the top bar and the bottom
+  pill dock. Tree: `Commons/` (`Theme`, `Status`, `Shell` singletons), `Ui/` (`StatusModule`,
+  `Glyph`, `Caption`), `Bar/` (one file per widget), `Dock/Dock.qml`. Launched at login from
+  `~/.config/hypr/hyprland.lua`; restart: `pkill -f 'qs -p .*quickshell/aeris'` then relaunch
+  the same line (or log out/in).
+- IPC: `aeris-shell bar toggle|refresh`, `aeris-shell dock reveal|conceal|flip`
+  (`aeris-shell -q` quiet). Commands that change bar state push `aeris-shell -q bar refresh`.
+- Dock autohide is pointer-driven inside the shell: a 1 px strip on the bottom edge reveals,
+  leaving the pill plus a halo hides. The old `dock-autohide` cursor-polling script is gone.
+- Theme overrides: `~/.config/aeris/shell.json` (`{"version":1,"colors":{...},"fonts":{...}}`),
+  watched live. Status data: `Commons/Status.qml` watches `/var/lib/aeris/status.json`.
+- Bar refresh model: StatusModules re-run on IPC refresh, on click, and every 60 s as a
+  fallback; drawer modules (bluetooth, power profile, backlight) only while the drawer is open;
+  network follows `nmcli monitor` events.
+- The Radeon flicker rule for the Studio Display (see "This machine") is unrelated to the shell.
 
 ## Other standing infrastructure
 - Watchlist (news topics, feeds, real-time collection): manage with

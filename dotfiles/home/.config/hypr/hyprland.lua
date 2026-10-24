@@ -81,8 +81,7 @@ local menu = "hyprlauncher"
 --
 hl.on("hyprland.start", function ()
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
-    hl.exec_cmd("env QT_QPA_PLATFORMTHEME=gtk3 qs -p ~/.config/quickshell/aeris-bar/shell.qml")
-    hl.exec_cmd("~/.local/bin/dock-autohide")
+    hl.exec_cmd("env QT_QPA_PLATFORMTHEME=gtk3 qs -p ~/.config/quickshell/aeris/shell.qml")   -- the shell: top bar + pill dock, one process
     hl.exec_cmd("~/.local/bin/stay-awake on")   -- no sleep/suspend by default (coffee cup in the bar)
     hl.exec_cmd("wl-paste --type text --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
@@ -386,7 +385,7 @@ hl.bind(mainMod .. " + SHIFT + M", hl.dsp.exec_cmd("signal-desktop"), { descript
 -- AerisOS system menu: power, toggles, capture, settings, battery, update
 hl.bind(mainMod .. " + ALT + space", hl.dsp.exec_cmd("~/.local/bin/aeris-menu"), { description = "AerisOS menu" })
 -- Bar and quick panels (Omarchy-style)
-hl.bind(mainMod .. " + SHIFT + space", hl.dsp.exec_cmd("qs ipc -p ~/.config/quickshell/aeris-bar/shell.qml call bar toggle"), { description = "Hide / show top bar" })
+hl.bind(mainMod .. " + SHIFT + space", hl.dsp.exec_cmd("~/.local/bin/aeris-shell bar toggle"), { description = "Hide / show top bar" })
 hl.bind(mainMod .. " + CTRL + A", hl.dsp.exec_cmd("ghostty --class=aeris.tui-float -e wiremix"), { description = "Audio settings" })
 hl.bind(mainMod .. " + CTRL + W", hl.dsp.exec_cmd("ghostty --class=aeris.tui-float -e nmtui"), { description = "Wi-Fi / network settings" })
 hl.bind(mainMod .. " + CTRL + B", hl.dsp.exec_cmd("ghostty --class=aeris.tui-float -e bluetui"), { description = "Bluetooth" })
