@@ -26,9 +26,10 @@ MODELS = ("qwen3.5:9b", "qwen3.5-9b-16k:latest", "gemma4:e4b", "gemma4:12b", "qw
 CLASS = "aeris.ask"
 SPECIAL = "ask"
 FIFO = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-ask.fifo")
-SYSTEM = ("You answer quick questions in a small terminal on an Arch Linux desktop (Hyprland). "
-          "Be brief and direct: a few lines, the command or fact first. Plain text, no tables, "
-          "no headings; code or commands on their own lines.")
+SYSTEM = ("You answer quick questions in a small terminal. Be brief and direct: a few lines, the "
+          "answer first. Plain text, no tables, no headings. Give a shell command only when the "
+          "question asks how to do something on a computer, and only one you are sure exists; "
+          "never add unrelated commands or tips at the end.")
 DIM, BOLD, RESET = "\033[2m", "\033[1m", "\033[0m"
 
 
