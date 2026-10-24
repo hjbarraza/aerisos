@@ -1,3 +1,4 @@
+bibata-cursor-theme-bin
 brave-bin
 envycontrol
 hype
@@ -12,4 +13,3 @@ voxtype-bin
 xone-dkms
 xpadneo-dkms
 yay-bin
-bibata-cursor-theme-bin

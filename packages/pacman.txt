@@ -11,6 +11,7 @@ brightnessctl
 btop
 btrfs-progs
 cliphist
+cmake
 dkms
 dolphin
 dunst
@@ -47,6 +48,7 @@ hyprlauncher
 hyprlock
 hyprpaper
 hyprpicker
+hyprpm
 hyprpolkitagent
 hyprsunset
 imagemagick
@@ -68,6 +70,7 @@ libvpl
 linux
 linux-firmware
 linux-headers
+meson
 mkinitcpio
 mpv
 nano
@@ -131,6 +134,7 @@ vpl-gpu-rt
 vulkan-intel
 vulkan-nouveau
 vulkan-radeon
+w3m
 wget
 wiremix
 wl-clipboard
