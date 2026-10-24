@@ -458,6 +458,11 @@ hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), {
 -- Ask terminal: the physical Win key + ` (Option on the macOS layout, as the cheat sheet); Shift asks about the selection
 hl.bind((mac and "ALT" or mainMod) .. " + grave",         hl.dsp.exec_cmd("~/.local/bin/aeris-ask toggle"), { description = "Ask the local model (drop-down terminal)" })
 hl.bind((mac and "ALT" or mainMod) .. " + SHIFT + grave", hl.dsp.exec_cmd("~/.local/bin/aeris-ask toggle --selection"), { description = "Ask the local model about the selected text" })
+-- Escape hides it too; non-consuming, so every other window still gets its Escape
+hl.bind("Escape", function ()
+    local w = hl.get_active_window()
+    if w and w.class == "aeris.ask" then hl.dispatch(hl.dsp.workspace.toggle_special("ask")) end
+end, { non_consuming = true })
 hl.bind(mac and "SUPER + CTRL + F" or mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
 hl.bind(mac and "CTRL + ALT + Return" or mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })
 -- Screenshots & recordings, macOS layout on the Cmd-position key (cmdMod, defined
