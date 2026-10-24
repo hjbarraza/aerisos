@@ -1,5 +1,5 @@
 #!/bin/bash
-# aeris:summary=The AerisOS menu (SUPER+ALT+SPACE)
+# aeris:summary=The AerisOS menu
 # aeris:group=system
 # AerisOS system menu (SUPER+ALT+SPACE): one searchable list for power, toggles,
 # capture, settings, battery, GPU and system tasks.

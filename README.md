@@ -220,7 +220,7 @@ change rewrites it anyway.
 
 `SUPER+K` shows every shortcut, searchable. The essentials:
 
-The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade): every Cmd combo behaves as on a Mac, and window management moves to `CTRL+OPTION`.
+The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade): every Cmd combo behaves as on a Mac, and window management moves to `CTRL+OPTION`. On the Razer, Cmd is the key labelled **Alt** and Option the key labelled **Win** (the cheat sheet and menu call it Super); on Apple keyboards they are Cmd and Option. The cheat sheet (`CTRL+OPTION+K`) and the AERIS menu always show the keys as printed on the keyboard in use.
 
 | Keys | Action |
 |---|---|
