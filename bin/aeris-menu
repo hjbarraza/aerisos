@@ -28,6 +28,7 @@ entries=(
     "Capture — Screenshot: screen|~/.local/bin/screenshot screen"
     "Capture — Record: area (run again to stop)|~/.local/bin/screenrecord area"
     "Capture — Record: screen (run again to stop)|~/.local/bin/screenrecord screen"
+    "Capture — Record: camera (Monologue)|monologue"
     "Capture — Colour picker|hyprpicker -a"
     "Settings — Wi-Fi|ghostty --class=aeris.tui-float -e nmtui"
     "Settings — Bluetooth|ghostty --class=aeris.tui-float -e bluetui"

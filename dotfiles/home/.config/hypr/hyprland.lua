@@ -381,6 +381,7 @@ hl.bind(mainMod .. " + SHIFT + slash", webapp("https://www.google.com"), { descr
 hl.bind(mainMod .. " + SHIFT + B", hl.dsp.exec_cmd("brave"), { description = "Browser (Brave)" })
 hl.bind(mainMod .. " + SHIFT + N", hl.dsp.exec_cmd("subl"), { description = "Editor (Sublime Text)" })
 hl.bind(mainMod .. " + SHIFT + O", hl.dsp.exec_cmd("obsidian"), { description = "Notes (Obsidian)" })
+hl.bind(mainMod .. " + SHIFT + H", hl.dsp.exec_cmd("hype"), { description = "Presentations (Hype)" })
 hl.bind(mainMod .. " + SHIFT + M", hl.dsp.exec_cmd("signal-desktop"), { description = "Messages (Signal)" })
 -- AerisOS system menu: power, toggles, capture, settings, battery, update
 hl.bind(mainMod .. " + ALT + space", hl.dsp.exec_cmd("~/.local/bin/aeris-menu"), { description = "AerisOS menu" })
@@ -408,6 +409,7 @@ hl.bind(cmdMod .. " + SHIFT + 3",  hl.dsp.exec_cmd("~/.local/bin/screenshot scre
 hl.bind(cmdMod .. " + SHIFT + 4",  hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
 hl.bind(cmdMod .. " + SHIFT + 5",  hl.dsp.exec_cmd("~/.local/bin/screenrecord area"), { description = "Screen recording: area (press again to stop)" })
 hl.bind(cmdMod .. " + SHIFT + 6",  hl.dsp.exec_cmd("~/.local/bin/screenrecord screen"), { description = "Screen recording: whole screen (press again to stop)" })
+hl.bind(cmdMod .. " + SHIFT + 7",  hl.dsp.exec_cmd("monologue"), { description = "Camera recording (Monologue): Space records, Enter edits" })
 hl.bind(cmdMod .. " + SHIFT + D",  hl.dsp.exec_cmd("~/.local/bin/screenshot annotate"), { description = "Screenshot: select area and annotate (draw)" })
 hl.bind("Print",                    hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
 hl.bind("SHIFT + Print",            hl.dsp.exec_cmd("~/.local/bin/screenshot screen"), { description = "Screenshot: whole screen" })

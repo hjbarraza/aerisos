@@ -36,6 +36,19 @@ if [[ -d $src/.git ]]; then
     fi
 fi
 
+# Omarchy's apps (Monologue, Hype) are built from source: rebuild any whose upstream moved
+rebuild=()
+for app in monologue hype; do
+    src=~/.local/src/$app
+    [[ -d $src/.git ]] || continue
+    git -C "$src" fetch -q
+    if [[ $(git -C "$src" rev-parse HEAD) != $(git -C "$src" rev-parse '@{u}') ]]; then rebuild+=("$app"); fi
+done
+if (( ${#rebuild[@]} )); then
+    step "Omarchy apps updated upstream: ${rebuild[*]}"
+    ~/aerisos/setup.sh omacom
+fi
+
 step "Save the setup to ~/aerisos"
 ~/aerisos/setup.sh snapshot >/dev/null && echo "Configs and package lists saved."
 

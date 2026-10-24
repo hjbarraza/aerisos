@@ -199,6 +199,14 @@ export default function Command() {
       keys: "ALT SHIFT PRINT",
       run: () => runClosed(`${BIN}/screenrecord screen`),
     },
+    {
+      title: "Record: Camera",
+      subtitle: "Monologue: Space records, Enter edits",
+      icon: Icon.Video,
+      keys: "CMD SHIFT 7",
+      run: () => runClosed("monologue"),
+      keywords: ["webcam", "monologue", "video"],
+    },
     { title: "Colour Picker", icon: Icon.EyeDropper, keys: "SUPER CTRL C", run: () => runClosed("sleep 0.2; hyprpicker -a") },
   ];
 

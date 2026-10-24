@@ -37,7 +37,7 @@ CONF="$HOME/.config/aerisos/setup.conf"
 [[ -f $CONF ]] && source "$CONF"
 
 # Install modules, in the order "all" runs them
-MODULES=(t2 essentials wizard packages hardware steam controller dotfiles login voxtype tools aeris tts maps titan theme safety boot logins)
+MODULES=(t2 essentials wizard packages hardware steam controller dotfiles login voxtype tools omacom aeris tts maps titan theme safety boot logins)
 # Only run when named: hardware unique to one machine, or maintenance
 OPTIONAL=(gamesdrive razer snapshot)
 
@@ -59,6 +59,7 @@ HOME_PATHS=(
     .local/share/vicinae/themes
     .local/share/fonts
     .config/autostart/nm-applet.desktop
+    .config/omarchy/themes
     .local/share/aeris/watchlist.json
     .config/opencode
     .config/systemd/user/aeris-watch.service
@@ -601,6 +602,45 @@ mod_logins() {
     fi
     # Let this user control Tailscale without sudo (the bar widget needs it)
     as_root tailscale set --operator="$USER"
+}
+
+# Omarchy's native apps, built from source into Arch packages (no AUR entries yet):
+#   Monologue  webcam recorder with a built-in trimmer   https://github.com/omacom/monologue
+#   Hype       Markdown presentations, PDF/PPTX export    https://github.com/omacom/hype
+# Both read the current Omarchy theme, so ~/.local/state/omarchy/current/theme points at the
+# AERIS palette (dotfiles/home/.config/omarchy/themes/aeris, monochrome). Sources stay in
+# ~/.local/src/<app>; aeris-update rebuilds one when upstream moves.
+OMACOM_APPS=(monologue hype)
+
+# omacom_app NAME: clone or fast-forward ~/.local/src/NAME, build, and install the package
+omacom_app() {
+    local name=$1 src="$HOME/.local/src/$1" repo="https://github.com/omacom/$1"
+    if [[ -d $src/.git ]]; then
+        run git -C "$src" pull -q --ff-only
+    else
+        run git clone -q "$repo" "$src"
+    fi
+    (( DRY )) && { info "[dry-run] build + install $name"; return 0; }
+    (cd "$src" && ./bin/build >/dev/null && cd pkgbuild && makepkg -fsi --noconfirm) \
+        || { warn "$name: build or install failed (see above); re-run: ./setup.sh omacom"; return 0; }
+}
+
+mod_omacom() {
+    log "Omarchy apps: Monologue (camera recorder), Hype (presentations)"
+    pacman_install base-devel git qt6-base qt6-declarative qt6-multimedia qt6-imageformats qt6-svg \
+        ffmpeg libpulse source-highlight libwebp xdg-desktop-portal
+    # The theme the apps follow: the AERIS palette, restored by the dotfiles module
+    run mkdir -p "$HOME/.local/state/omarchy/current"
+    if [[ -d $HOME/.config/omarchy/themes/aeris ]]; then
+        run ln -sfn "$HOME/.config/omarchy/themes/aeris" "$HOME/.local/state/omarchy/current/theme"
+    else
+        warn "AERIS theme missing (run ./setup.sh dotfiles first); the apps fall back to their defaults"
+    fi
+    local app
+    for app in "${OMACOM_APPS[@]}"; do omacom_app "$app"; done
+    # Greyscale icons for the new apps
+    [[ -x $HOME/.local/bin/make-mono-icons ]] && run "$HOME/.local/bin/make-mono-icons" >/dev/null
+    info "Monologue: CMD+SHIFT+7 or the menu (Capture). Hype: SUPER+SHIFT+H or the launcher."
 }
 
 mod_aeris() {

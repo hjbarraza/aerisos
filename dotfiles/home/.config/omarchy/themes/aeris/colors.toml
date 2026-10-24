@@ -1,0 +1,34 @@
+# AerisOS theme in Omarchy's colors.toml schema, read by Omarchy-themed apps (Monologue,
+# Hype: `~/.local/state/omarchy/current/theme` points here; Hype also lists it as "aeris").
+# Monochrome: white accent on black, greys for everything else.
+mode = "dark"
+
+accent = "#ffffff"
+selection = "#2a2a2a"
+muted = "#7a7a7a"
+
+background = "#0a0a0a"
+dark_background = "#000000"
+darker_background = "#000000"
+lighter_background = "#1a1a1a"
+
+foreground = "#e6e6e6"
+dark_foreground = "#7a7a7a"
+light_foreground = "#f2f2f2"
+bright_foreground = "#ffffff"
+
+red = "#d0d0d0"
+yellow = "#e6e6e6"
+orange = "#bdbdbd"
+green = "#c8c8c8"
+cyan = "#b0b0b0"
+blue = "#ffffff"
+magenta = "#a0a0a0"
+brown = "#8a8a8a"
+
+bright_red = "#e6e6e6"
+bright_yellow = "#ffffff"
+bright_green = "#dcdcdc"
+bright_cyan = "#c8c8c8"
+bright_blue = "#ffffff"
+bright_magenta = "#b8b8b8"
