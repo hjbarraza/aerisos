@@ -133,6 +133,7 @@ vulkan-nouveau
 vulkan-radeon
 wget
 wiremix
+wl-clipboard
 wireplumber
 woff2-font-awesome
 wofi

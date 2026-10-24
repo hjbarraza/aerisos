@@ -154,8 +154,8 @@ hl.config({
         border_size = 1,
 
         col = {
-            active_border   = "rgba(4a4a4aff)",   -- static gray; glow comes from decoration.shadow
-            inactive_border = "rgba(111111ff)",   -- neutral near-black
+            active_border   = { colors = { "rgba(f2f2ffff)", "rgba(39ff88ff)", "rgba(b44dffff)" }, angle = 45 },   -- cyberpunk: white, green, purple
+            inactive_border = "rgba(000000ff)",   -- AerisOS: black
         },
 
         -- Set to true to enable resizing windows by clicking and dragging on borders and gaps
@@ -224,6 +224,8 @@ hl.animation({ leaf = "workspaces",    enabled = true,  speed = 1.94, bezier = "
 hl.animation({ leaf = "workspacesIn",  enabled = true,  speed = 1.21, bezier = "almostLinear", style = "fade" })
 hl.animation({ leaf = "workspacesOut", enabled = true,  speed = 1.94, bezier = "almostLinear", style = "fade" })
 hl.animation({ leaf = "zoomFactor",    enabled = true,  speed = 7,    bezier = "quick" })
+-- Scratchpads (the ask terminal, SUPER+S) slide down from the top instead of fading
+hl.animation({ leaf = "specialWorkspace", enabled = true, speed = 3.5, bezier = "easeOutQuint", style = "slidevert" })
 
 -- Ref https://wiki.hypr.land/Configuring/Basics/Workspace-Rules/
 -- "Smart gaps" / "No gaps when only"
@@ -453,6 +455,9 @@ hl.bind(mainMod .. " + CTRL + I", hl.dsp.exec_cmd("~/.local/bin/stay-awake toggl
 hl.bind(mainMod .. " + CTRL + S", hl.dsp.exec_cmd("~/.local/bin/nightlight toggle"), { description = "Night light on / off" })
 hl.bind(mainMod .. " + CTRL + C", hl.dsp.exec_cmd("hyprpicker -a"), { description = "Pick a colour (copies hex)" })
 hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), { description = "Lock + screen off (laptop stays awake)" })
+-- Ask terminal: the physical Win key + ` (Option on the macOS layout, as the cheat sheet); Shift asks about the selection
+hl.bind((mac and "ALT" or mainMod) .. " + grave",         hl.dsp.exec_cmd("~/.local/bin/aeris-ask toggle"), { description = "Ask the local model (drop-down terminal)" })
+hl.bind((mac and "ALT" or mainMod) .. " + SHIFT + grave", hl.dsp.exec_cmd("~/.local/bin/aeris-ask toggle --selection"), { description = "Ask the local model about the selected text" })
 hl.bind(mac and "SUPER + CTRL + F" or mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
 hl.bind(mac and "CTRL + ALT + Return" or mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })
 -- Screenshots & recordings, macOS layout on the Cmd-position key (cmdMod, defined
@@ -612,6 +617,17 @@ hl.window_rule({
     float = true,
 })
 
+
+-- Ask terminal (aeris-ask): lives on special:ask, a wide panel under the bar
+hl.window_rule({
+    name  = "aeris-ask",
+    match = { class = "^aeris\\.ask$" },
+
+    float     = true,
+    workspace = "special:ask",
+    size      = "monitor_w*0.6 monitor_h*0.55",
+    move      = "monitor_w*0.2 44",
+})
 
 -- Small floating window for terminal panels (wiremix, bluetui, nmtui)
 hl.window_rule({

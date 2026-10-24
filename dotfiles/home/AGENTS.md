@@ -78,6 +78,9 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
 - The Radeon flicker rule for the Studio Display (see "This machine") is unrelated to the shell.
 
 ## Other standing infrastructure
+- Ask terminal: `aeris-ask` (Win+` on the Razer) toggles a Ghostty window (class `aeris.ask`) on
+  `special:ask` running an Ollama chat (first installed of qwen3.5:9b, gemma4:e4b, …; override
+  `AERIS_ASK_MODEL`). Win+Shift+` sends the primary selection through `$XDG_RUNTIME_DIR/aeris-ask.fifo`.
 - Watchlist (news topics, feeds, real-time collection): manage with
   `/home/h/.local/bin/aeris-watch`; findings in `/home/h/.local/share/aeris/watchlist.json`.
   Current items (since 2026-10-21): cfsn-helsing (de-DE), palantir (en+de), anduril (en+de),
