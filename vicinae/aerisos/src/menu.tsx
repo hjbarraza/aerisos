@@ -10,6 +10,17 @@ import { useState } from "react";
 
 const BIN = `${homedir()}/.local/bin`;
 const RUN = process.env.XDG_RUNTIME_DIR ?? "/tmp";
+// Shortcut labels as printed on this keyboard. Hyprland's SUPER/ALT sit on the Cmd/Option
+// keys on Apple keyboards, and on the keys labelled Alt/Win on the Razer (left Win/Alt are
+// swapped into Mac order there). CMD is the Cmd-position key: SUPER on those two, left Alt elsewhere.
+const VENDOR = readFileSync("/sys/class/dmi/id/sys_vendor", { encoding: "utf8", flag: "r" }).trim();
+const MAC = /Apple|Razer/.test(VENDOR); // macOS layout in hyprland.lua
+const LABEL: Record<string, string> = /Apple/.test(VENDOR)
+  ? { SUPER: "CMD", ALT: "OPTION", CMD: "CMD" }
+  : /Razer/.test(VENDOR)
+    ? { SUPER: "ALT", ALT: "WIN", CMD: "ALT" }
+    : { CMD: "ALT" };
+const keyLabel = (keys: string) => keys.split(" ").map((k) => LABEL[k] ?? k).join(" ");
 
 // ---- live state ----
 
@@ -106,7 +117,7 @@ function Item({ e }: { e: Entry }) {
   const accessories: List.Item.Accessory[] = [];
   if (e.on !== undefined) accessories.push({ tag: e.on ? "ON" : "OFF" });
   if (e.active) accessories.push({ tag: "ACTIVE" });
-  if (e.keys) accessories.push({ text: e.keys });
+  if (e.keys) accessories.push({ text: keyLabel(e.keys) });
   return (
     <List.Item
       title={e.title}
@@ -127,13 +138,12 @@ export default function Command() {
   const [s] = useState<State>(readState);
 
   const power: Entry[] = [
-    { title: "Lock", icon: Icon.Lock, keys: "SUPER L", run: () => runClosed("loginctl lock-session") },
+    { title: "Lock", icon: Icon.Lock, keys: "CTRL L", run: () => runClosed("loginctl lock-session") },
     { title: "Screen Off, Stay Awake", icon: Icon.Lock, keys: "SUPER SHIFT L", run: () => runClosed("~/.local/bin/screen-off"), keywords: ["dpms", "dark"] },
     { title: "Suspend", icon: Icon.Moon, run: () => runClosed("systemctl suspend"), keywords: ["sleep"] },
     {
       title: "Log Out",
       icon: Icon.Logout,
-      keys: "SUPER M",
       run: () => runConfirmed("Log Out", "command -v hyprshutdown >/dev/null && hyprshutdown || hyprctl dispatch exit"),
     },
     { title: "Restart", icon: Icon.ArrowClockwise, run: () => runConfirmed("Restart", "systemctl reboot"), keywords: ["reboot"] },
@@ -275,7 +285,7 @@ export default function Command() {
       icon: Icon.Download,
       run: () => runClosed(`ghostty --class=aeris.tui-float -e ${BIN}/aeris-update`),
     },
-    { title: "Keyboard Shortcuts", icon: Icon.Keyboard, keys: "SUPER K", run: () => runClosed(`${BIN}/keybinds`) },
+    { title: "Keyboard Shortcuts", icon: Icon.Keyboard, keys: MAC ? "CTRL ALT K" : "SUPER K", run: () => runClosed(`${BIN}/keybinds`) },
     { title: "Activity Monitor", icon: Icon.Gauge, run: () => runClosed("ghostty --class=aeris.tui-float -e btop"), keywords: ["btop", "cpu"] },
   ];
 

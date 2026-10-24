@@ -393,7 +393,7 @@ if mac then
         hl.dispatch(hl.dsp.send_shortcut({ mods = "SHIFT", key = "Home" }))
         hl.dispatch(hl.dsp.send_shortcut({ mods = "", key = "BackSpace" }))
     end, { description = "macOS-style: delete to line start" })
-    hl.bind("SUPER + CTRL + Q", hl.dsp.exec_cmd("loginctl lock-session"), { description = "Lock screen (macOS Cmd+Ctrl+Q)" })
+    hl.bind("SUPER + CTRL + Q", hl.dsp.exec_cmd("loginctl lock-session"), { description = "Lock screen" })
 end
 hl.bind(cmdMod .. " + Q", hl.dsp.window.close(), { description = "Close window (macOS quit)" })
 -- Browser/app tabs, macOS-style: Cmd+Shift+[ / ] (Cmd+1-9 goes to the app on the macOS layout)
@@ -412,7 +412,7 @@ hl.bind(cmdMod .. " + L", function ()
     end
 end, { description = "macOS-style: address bar (Brave/Chromium)" })
 if cmdMod ~= "ALT" then   -- ALT+Tab already cycles windows below; mirror it onto Cmd+Tab
-    hl.bind(cmdMod .. " + Tab", hl.dsp.window.cycle_next(), { description = "Next window (Cmd+Tab)" })
+    hl.bind(cmdMod .. " + Tab", hl.dsp.window.cycle_next(), { description = "Next window" })
     hl.bind(cmdMod .. " + Tab", hl.dsp.window.bring_to_top())
     hl.bind(cmdMod .. " + SHIFT + Tab", hl.dsp.window.cycle_next({ next = false }), { description = "Previous window" })
     hl.bind(cmdMod .. " + SHIFT + Tab", hl.dsp.window.bring_to_top())
@@ -488,7 +488,7 @@ hl.bind(wm .. " + P", hl.dsp.window.pseudo(), { description = "Pseudo-tile windo
 hl.bind(wm .. " + J", hl.dsp.layout("togglesplit"), { description = "Flip split: rows / columns" })    -- dwindle only
 
 -- Switch windows like Alt+Tab elsewhere: cycle focus and raise the window
-hl.bind("ALT + Tab", hl.dsp.window.cycle_next(), { description = "Next window (Alt+Tab)" })
+hl.bind("ALT + Tab", hl.dsp.window.cycle_next(), { description = "Next window" })
 hl.bind("ALT + Tab", hl.dsp.window.bring_to_top())
 hl.bind("ALT + SHIFT + Tab", hl.dsp.window.cycle_next({ next = false }), { description = "Previous window" })
 hl.bind("ALT + SHIFT + Tab", hl.dsp.window.bring_to_top())

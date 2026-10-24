@@ -23,6 +23,18 @@ KEY_NAMES = {
     "XF86AudioPlay": "Play key", "XF86AudioPause": "Pause key",
 }
 
+# Show modifiers as printed on this keyboard: Hyprland's SUPER/ALT sit on Cmd/Option on Apple
+# keyboards and on the keys labelled Alt/Win on the Razer (left Win/Alt swapped into Mac order).
+try:
+    VENDOR = open("/sys/class/dmi/id/sys_vendor").read()
+except OSError:
+    VENDOR = ""
+if "Apple" in VENDOR:
+    MODS = [(64, "Cmd"), (4, "Ctrl"), (8, "Option"), (1, "Shift")]
+elif "Razer" in VENDOR:
+    MODS = [(64, "Alt"), (4, "Ctrl"), (8, "Win"), (1, "Shift")]
+    KEY_NAMES["Alt_R"] = "Right Alt"   # only the left pair is swapped
+
 
 def combo(bind):
     parts = [name for bit, name in MODS if bind["modmask"] & bit]
