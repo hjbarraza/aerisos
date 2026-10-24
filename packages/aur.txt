@@ -1,4 +1,10 @@
+brave-bin
 envycontrol
+hype
+hype-debug
+monologue
+monologue-debug
+nodejs-all-the-package-names
 sublime-text-4
 usbimager
 vicinae-bin
@@ -6,3 +12,4 @@ voxtype-bin
 xone-dkms
 xpadneo-dkms
 yay-bin
+bibata-cursor-theme-bin

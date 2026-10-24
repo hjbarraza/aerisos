@@ -102,7 +102,11 @@ end)
 
 -- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Environment-variables/
 
+-- Cursor: Bibata Modern Classic (black, white outline; AUR bibata-cursor-theme-bin).
+-- XCursor format, which hyprcursor also reads; GTK/gsettings set by setup.sh.
+hl.env("XCURSOR_THEME", "Bibata-Modern-Classic")
 hl.env("XCURSOR_SIZE", "24")
+hl.env("HYPRCURSOR_THEME", "Bibata-Modern-Classic")
 hl.env("HYPRCURSOR_SIZE", "24")
 
 -- XWayland apps render at native res (see xwayland block); make Steam scale its own UI to match the 1.6 monitor scale

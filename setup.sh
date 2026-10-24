@@ -764,6 +764,18 @@ mod_theme() {
         warn "make-mono-icons not found; run the 'dotfiles' module first"
     fi
     run gsettings set org.gnome.desktop.interface icon-theme Mono
+
+    # Cursor: Bibata Modern Classic (also set as XCURSOR_THEME/HYPRCURSOR_THEME in hyprland.lua);
+    # ~/.icons/default makes it the fallback for apps that read neither
+    aur_install bibata-cursor-theme-bin
+    run gsettings set org.gnome.desktop.interface cursor-theme Bibata-Modern-Classic
+    run gsettings set org.gnome.desktop.interface cursor-size 24
+    gtk_ini_set "$HOME/.config/gtk-3.0/settings.ini" gtk-cursor-theme-name Bibata-Modern-Classic
+    gtk_ini_set "$HOME/.config/gtk-4.0/settings.ini" gtk-cursor-theme-name Bibata-Modern-Classic
+    if (( ! DRY )); then
+        mkdir -p "$HOME/.icons/default"
+        printf '[Icon Theme]\nInherits=Bibata-Modern-Classic\n' > "$HOME/.icons/default/index.theme"
+    fi
     run gsettings set org.gnome.desktop.interface color-scheme prefer-dark
     gtk_ini_set "$HOME/.config/gtk-3.0/settings.ini" gtk-icon-theme-name Mono
     gtk_ini_set "$HOME/.config/gtk-4.0/settings.ini" gtk-icon-theme-name Mono
