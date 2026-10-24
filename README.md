@@ -227,7 +227,7 @@ change rewrites it anyway.
 | `SUPER+SPACE` · `ALT+SPACE` | Search / launch (Vicinae) |
 | `ALT+TAB` · `ALT+SHIFT+TAB` | Next · previous window |
 | `SUPER+RETURN` · `SUPER+E` | Terminal · Files |
-| `CMD+C/V/X/Z/A/T/N/W` | macOS-style: forwarded to the app as `Ctrl+…` (the "Cmd" is the key left of the spacebar: Super on Apple keyboards, left Alt on PC layouts) |
+| `CMD+C/V/X/Z/A/T/N/W` | macOS-style: forwarded to the app as `Ctrl+…` (the "Cmd" is the key left of the spacebar: Super on Apple keyboards and the Razer Blade, whose left Win/Alt are swapped into the MacBook order Ctrl · Fn · Option · Cmd; left Alt on other PC layouts) |
 | `CMD+Q` · `CMD+TAB` | Close window · cycle windows (macOS-style) |
 | `CMD+SHIFT+[` · `]` (Mac also `CMD+OPTION+←` · `→`) | Previous · next tab in the browser (forwarded as `Ctrl+PageUp/PageDown`); `Cmd+1–9` stays on workspaces |
 | `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize |
@@ -239,7 +239,7 @@ change rewrites it anyway.
 | `SUPER+CTRL+A` · `W` · `B` | Audio · Wi-Fi · Bluetooth |
 | `SUPER+CTRL+N` · `S` · `I` · `C` | Do Not Disturb · Night light · Stay awake · Colour picker |
 | `SUPER+L` · `SUPER+SHIFT+L` | Lock · Lock + screen off (laptop stays awake until unlock) |
-| `CMD+SHIFT+3` · `4` · `D` | Screenshot (macOS-style, on the Cmd-position key: Super on Apple keyboards, left Alt on PC layouts): whole screen · select area · annotate (aliases: `SHIFT+Print` · `Print` · `CTRL+Print`) |
+| `CMD+SHIFT+3` · `4` · `D` | Screenshot (macOS-style, on the Cmd-position key: Super on Apple keyboards and the Razer, left Alt on other PC layouts): whole screen · select area · annotate (aliases: `SHIFT+Print` · `Print` · `CTRL+Print`) |
 | `CMD+SHIFT+5` · `6` | Screen recording: area · whole screen, press again to stop (aliases: `ALT+Print` · `ALT+SHIFT+Print`) |
 | `CMD+SHIFT+7` | Camera recording (Monologue): Space records or pauses, Enter stops and opens the trimmer |
 | `SUPER+1–9` · `SUPER+ALT+1–9` | Go to workspace · move window to workspace (Cmd · Cmd+Option on the Mac) |

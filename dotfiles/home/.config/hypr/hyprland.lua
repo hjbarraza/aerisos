@@ -309,12 +309,24 @@ hl.gesture({
     action = "workspace"
 })
 
--- Example per-device config
--- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Devices/ for more
-hl.device({
-    name        = "epic-mouse-v1",
-    sensitivity = -0.5,
-})
+-- MacBook modifier row on the Razer Blade: left of the spacebar reads Ctrl, Fn, Win, Alt;
+-- swapping left Win/Alt gives Ctrl, Fn, Option, Cmd (Super next to the spacebar, as on a
+-- Mac). Fn is handled in the keyboard firmware and sends no key, so Ctrl/Fn cannot trade
+-- places. Per device, so an external Apple keyboard plugged in keeps its own layout.
+-- The built-in keyboard shows up as several HID interfaces (`hyprctl devices`).
+local isRazer = false
+do
+    local f = io.open("/sys/class/dmi/id/sys_vendor")
+    if f then
+        isRazer = (f:read("l") or ""):find("Razer") ~= nil
+        f:close()
+    end
+end
+if isRazer then
+    for _, n in ipairs({ "razer-razer-blade", "razer-razer-blade-1", "razer-razer-blade-3" }) do
+        hl.device({ name = n, kb_options = "altwin:swap_lalt_lwin" })
+    end
+end
 
 
 ---------------------
@@ -328,12 +340,12 @@ hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal), { description = "Open
 hl.bind(mainMod .. " + G", hl.dsp.exec_cmd("ghostty"), { description = "Open ghostty (trial)" })
 
 -- macOS-style shortcuts: the key in the Cmd position (left of the spacebar) carries the
--- familiar combos — Cmd itself (Super) on Apple keyboards, the left Alt on PC layouts
--- (Razer). Letter combos are forwarded to the focused app as their Ctrl equivalents
+-- familiar combos — Cmd itself (Super) on Apple keyboards and on the Razer (Win/Alt
+-- swapped above), the left Alt on other PC layouts. Letter combos are forwarded to the focused app as their Ctrl equivalents
 -- (ghostty/kitty accept Ctrl+C/V natively, so terminals behave too). Close window moved
 -- from SUPER+C to Cmd+Q (macOS "quit") so Cmd+C can be copy; terminal moved to
 -- mainMod+Return. Voxtype's dictation key (Right Option/Alt) is press/release only,
--- so ALT+letter combos on the Razer don't disturb it.
+-- so ALT+letter combos on PC layouts don't disturb it.
 local cmdMod = "ALT"
 do
     local f = io.open("/sys/class/dmi/id/sys_vendor")
@@ -342,6 +354,7 @@ do
         f:close()
     end
 end
+if isRazer then cmdMod = "SUPER" end
 for _, k in ipairs({ "C", "V", "X", "Z", "A", "T", "N", "W" }) do
     hl.bind(cmdMod .. " + " .. k, hl.dsp.send_shortcut({ mods = "CTRL", key = k }), { description = "macOS-style: Ctrl+" .. k .. " to the app" })
 end
@@ -399,7 +412,7 @@ hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), {
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
 hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })
 -- Screenshots & recordings, macOS layout on the Cmd-position key (cmdMod, defined
--- above: Cmd/Super on Apple keyboards, left Alt on the Razer): Shift+3 whole screen,
+-- above: Cmd/Super on Apple keyboards and the Razer, left Alt on other PC layouts): Shift+3 whole screen,
 -- 4 select area, 5 record area, 6 record whole screen (recordings toggle off on a
 -- second press), D annotate. Saved to ~/Pictures/Screenshots /
 -- ~/Videos/Screenrecordings; screenshots also go to the clipboard. Move-to-workspace
