@@ -367,7 +367,7 @@ if isRazer then cmdMod = "SUPER" end
 local mac = cmdMod == "SUPER"
 local wm = mac and "CTRL + ALT" or mainMod
 for _, k in ipairs({ "C", "V", "X", "Z", "A", "T", "N", "W", "F", "S", "P", "O", "R", "G", "K", "J", "D", "B", "I", "U", "Y",
-                     "comma", "equal", "minus", "0" }) do
+                     "comma", "0" }) do
     hl.bind(cmdMod .. " + " .. k, hl.dsp.send_shortcut({ mods = "CTRL", key = k }), { description = "macOS-style: Ctrl+" .. k .. " to the app" })
 end
 -- Cmd+Shift combos that aren't app launchers (Shift+Z redo, T reopen tab, R hard reload, P palette, F find in files, S save as)
@@ -506,14 +506,21 @@ hl.bind(mainMod .. " + CTRL + left",  hl.dsp.window.resize({ x = -60, y = 0, rel
 hl.bind(mainMod .. " + CTRL + right", hl.dsp.window.resize({ x = 60, y = 0, relative = true }), { description = "Resize: wider", repeating = true })
 hl.bind(mainMod .. " + CTRL + up",    hl.dsp.window.resize({ x = 0, y = -60, relative = true }), { description = "Resize: shorter", repeating = true })
 hl.bind(mainMod .. " + CTRL + down",  hl.dsp.window.resize({ x = 0, y = 60, relative = true }), { description = "Resize: taller", repeating = true })
--- Display scale stepper (runtime; a config reload returns to the saved scale).
--- plus/equal and minus/underscore both bound: with SHIFT held the keysym differs by layout.
-hl.bind(mainMod .. " + SHIFT + plus",        hl.dsp.exec_cmd("~/.local/bin/display-scale up"), { description = "Display scale: larger UI" })
-hl.bind(mainMod .. " + SHIFT + equal",       hl.dsp.exec_cmd("~/.local/bin/display-scale up"))
-hl.bind(mainMod .. " + SHIFT + KP_Add",      hl.dsp.exec_cmd("~/.local/bin/display-scale up"))
-hl.bind(mainMod .. " + SHIFT + minus",       hl.dsp.exec_cmd("~/.local/bin/display-scale down"), { description = "Display scale: more real estate" })
-hl.bind(mainMod .. " + SHIFT + underscore",  hl.dsp.exec_cmd("~/.local/bin/display-scale down"))
-hl.bind(mainMod .. " + SHIFT + KP_Subtract", hl.dsp.exec_cmd("~/.local/bin/display-scale down"))
+-- Resize the focused window with the Cmd key (left of the spacebar): = wider, - thinner;
+-- with Shift, taller / shorter. Replaces app zoom (Cmd+=/-) and the scale stepper's old keys.
+-- equal/plus and minus/underscore both bound: with SHIFT held the keysym differs by layout.
+hl.bind(cmdMod .. " + equal",              hl.dsp.window.resize({ x = 60, y = 0, relative = true }), { description = "Resize: wider", repeating = true })
+hl.bind(cmdMod .. " + minus",              hl.dsp.window.resize({ x = -60, y = 0, relative = true }), { description = "Resize: thinner", repeating = true })
+hl.bind(cmdMod .. " + SHIFT + equal",      hl.dsp.window.resize({ x = 0, y = 60, relative = true }), { description = "Resize: taller", repeating = true })
+hl.bind(cmdMod .. " + SHIFT + plus",       hl.dsp.window.resize({ x = 0, y = 60, relative = true }), { repeating = true })
+hl.bind(cmdMod .. " + SHIFT + minus",      hl.dsp.window.resize({ x = 0, y = -60, relative = true }), { description = "Resize: shorter", repeating = true })
+hl.bind(cmdMod .. " + SHIFT + underscore", hl.dsp.window.resize({ x = 0, y = -60, relative = true }), { repeating = true })
+-- Display scale stepper (runtime; a config reload returns to the saved scale), moved to SUPER+CTRL.
+hl.bind(mainMod .. " + CTRL + equal",       hl.dsp.exec_cmd("~/.local/bin/display-scale up"), { description = "Display scale: larger UI" })
+hl.bind(mainMod .. " + CTRL + plus",        hl.dsp.exec_cmd("~/.local/bin/display-scale up"))
+hl.bind(mainMod .. " + CTRL + KP_Add",      hl.dsp.exec_cmd("~/.local/bin/display-scale up"))
+hl.bind(mainMod .. " + CTRL + minus",       hl.dsp.exec_cmd("~/.local/bin/display-scale down"), { description = "Display scale: more real estate" })
+hl.bind(mainMod .. " + CTRL + KP_Subtract", hl.dsp.exec_cmd("~/.local/bin/display-scale down"))
 
 -- Switch workspaces with mainMod + [0-9]
 -- Move active window to a workspace with mainMod + SHIFT + [0-9]

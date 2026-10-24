@@ -238,7 +238,8 @@ The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade
 | `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize (macOS layout: `CMD+CTRL+F` full screen, `CTRL+OPTION+RETURN` maximize) |
 | `SUPER+P` · `SUPER+J` · `SUPER+K` · `SUPER+S` | Pseudo-tile · flip split rows/columns · shortcut cheat sheet · scratchpad (macOS layout: `CTRL+OPTION+` the same letter) |
 | `SUPER+arrows` · `SUPER+SHIFT+arrows` · `SUPER+CTRL+arrows` | Focus window · move window · resize window (also `SUPER` + right-mouse-drag); macOS layout: `CTRL+OPTION+arrows` focus, `CTRL+OPTION+SHIFT+arrows` move |
-| `SUPER+SHIFT+PLUS` · `SUPER+SHIFT+MINUS` | Display scale: larger UI · more real estate (steps through 1 → 1.2 → 1.25 → 1.33 → 1.5 → 1.6 → 2, skipping any that leave a fractional logical size on the current mode; runtime, reload returns to the saved scale) |
+| `CMD+=` · `CMD+-` · `CMD+SHIFT+=` · `CMD+SHIFT+-` | Focused window wider · thinner · taller · shorter (Cmd = key left of the spacebar; hold to repeat) |
+| `SUPER+CTRL+=` · `SUPER+CTRL+-` | Display scale: larger UI · more real estate (steps through 1 → 1.2 → 1.25 → 1.33 → 1.5 → 1.6 → 2, skipping any that leave a fractional logical size on the current mode; runtime, reload returns to the saved scale) |
 | `SUPER+SHIFT+B` · `N` · `O` · `M` · `H` | Brave · Sublime Text · Obsidian · Signal · Hype (presentations) |
 | `SUPER+SHIFT+C` · `Y` · `I` · `G` · `/` | Notion Calendar · YouTube · Claude · Gemini · Google (web apps) |
 | `SUPER+CTRL+A` · `W` · `B` | Audio · Wi-Fi · Bluetooth |
