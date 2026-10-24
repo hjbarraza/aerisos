@@ -638,8 +638,9 @@ mod_omacom() {
     fi
     local app
     for app in "${OMACOM_APPS[@]}"; do omacom_app "$app"; done
-    # Greyscale icons for the new apps
+    # Greyscale icons for the new apps, then a launcher restart so it indexes them with their icons
     [[ -x $HOME/.local/bin/make-mono-icons ]] && run "$HOME/.local/bin/make-mono-icons" >/dev/null
+    if pgrep -x vicinae-server >/dev/null && (( ! DRY )); then (setsid vicinae server --replace >/dev/null 2>&1 &); fi
     info "Monologue: CMD+SHIFT+7 or the menu (Capture). Hype: SUPER+SHIFT+H or the launcher."
 }
 
