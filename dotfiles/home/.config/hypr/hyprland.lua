@@ -403,7 +403,7 @@ if cmdMod == "SUPER" then   -- Cmd+Option+arrows (Chrome/Brave on the Mac); on P
     hl.bind("SUPER + ALT + left",  hl.dsp.send_shortcut({ mods = "CTRL", key = "Prior" }), { description = "macOS-style: previous tab" })
     hl.bind("SUPER + ALT + right", hl.dsp.send_shortcut({ mods = "CTRL", key = "Next" }), { description = "macOS-style: next tab" })
 end
--- Cmd+L, macOS-style: address bar in Brave/Chromium (Ctrl+L itself is the lock screen)
+-- Cmd+L, macOS-style: address bar in Brave/Chromium (plain Ctrl+L goes to the app)
 hl.bind(cmdMod .. " + L", function ()
     local w = hl.get_active_window()
     local class = w and (w.class or ""):lower() or ""
@@ -451,7 +451,6 @@ hl.bind(mainMod .. " + CTRL + N", hl.dsp.exec_cmd("~/.local/bin/dnd toggle"), { 
 hl.bind(mainMod .. " + CTRL + I", hl.dsp.exec_cmd("~/.local/bin/stay-awake toggle"), { description = "Stay Awake on / off" })
 hl.bind(mainMod .. " + CTRL + S", hl.dsp.exec_cmd("~/.local/bin/nightlight toggle"), { description = "Night light on / off" })
 hl.bind(mainMod .. " + CTRL + C", hl.dsp.exec_cmd("hyprpicker -a"), { description = "Pick a colour (copies hex)" })
-hl.bind("CTRL + L", hl.dsp.exec_cmd("loginctl lock-session"), { description = "Lock screen" })
 hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), { description = "Lock + screen off (laptop stays awake)" })
 hl.bind(mac and "SUPER + CTRL + F" or mainMod .. " + F", hl.dsp.window.fullscreen(), { description = "Full screen (covers bar)" })
 hl.bind(mac and "CTRL + ALT + Return" or mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }), { description = "Maximize window" })
