@@ -618,7 +618,7 @@ hl.window_rule({
 })
 
 
--- Ask terminal (aeris-ask): lives on special:ask, a wide panel under the bar
+-- Ask terminal (aeris-ask): lives on special:ask, a wide panel centred on the screen
 hl.window_rule({
     name  = "aeris-ask",
     match = { class = "^aeris\\.ask$" },
@@ -626,7 +626,7 @@ hl.window_rule({
     float     = true,
     workspace = "special:ask",
     size      = "monitor_w*0.6 monitor_h*0.55",
-    move      = "monitor_w*0.2 44",
+    center    = true,
 })
 
 -- Small floating window for terminal panels (wiremix, bluetui, nmtui)
