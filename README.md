@@ -26,6 +26,16 @@ and password**, creates the account with sudo, moves the repo into your home,
 and hands over to `setup.sh`, which runs the wizard and installs everything
 (Hyprland included). Then `reboot`.
 
+### Or: archinstall with every package preselected
+
+On the stock Arch ISO, after connecting to the network (`iwctl` for Wi-Fi):
+
+```bash
+archinstall --config-url https://raw.githubusercontent.com/hjbarraza/aerisos/main/archinstall/user_configuration.json
+```
+
+The menu opens with all AerisOS repo packages, PipeWire, NetworkManager, systemd-boot and multilib already set; you pick the **disk**, **user**, **timezone** and **graphics driver**, then Install. The repo is cloned to `/root/aerisos`, so after the reboot log in as root and run `bash /root/aerisos/install.sh` for the rest (AUR packages, configs, NVIDIA extras). The config is regenerated from the package list by `./setup.sh snapshot`. Not for T2 Macs: they need the AerisOS USB below.
+
 The **defence-maps app is optional** and lives in its own private repo; say yes
 in the wizard (or run `./setup.sh maps` later) and it's cloned to `~/maps`.
 

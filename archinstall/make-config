@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Write archinstall/user_configuration.json from packages/pacman.txt.
+
+Run by `./setup.sh snapshot` after the package lists are written, so the archinstall
+config always carries the same repo packages as the AerisOS install. Disk, users,
+timezone and the graphics driver are left for the archinstall menu; NVIDIA/CUDA/Steam
+are dropped here as setup.sh drops them on machines without an NVIDIA GPU (setup.sh
+adds them back where there is one). AUR packages come later from setup.sh.
+"""
+
+import json
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+GPU_ONLY = re.compile(r"^(lib32-)?nvidia|^libva-nvidia|^ollama-cuda$|^steam$")
+# Installed by archinstall itself (base system, kernel, bootloader, network)
+BASE = {"base", "linux", "linux-firmware", "networkmanager"}
+
+packages = [p for p in (ROOT / "packages/pacman.txt").read_text().split()
+            if not GPU_ONLY.search(p) and p not in BASE]
+
+config = {
+    "archinstall-language": "English",
+    "audio_config": {"audio": "pipewire"},
+    "bootloader_config": {"bootloader": "Systemd-boot", "uki": False, "removable": False},
+    "hostname": "aeris",
+    "kernels": ["linux"],
+    "locale_config": {"kb_layout": "us", "sys_enc": "UTF-8", "sys_lang": "en_US"},
+    "mirror_config": {"mirror_regions": {}, "custom_servers": [],
+                      "optional_repositories": ["multilib"], "custom_repositories": []},
+    "network_config": {"type": "nm"},
+    "ntp": True,
+    "packages": packages,
+    "pacman_config": {"color": True, "parallel_downloads": 5},
+    "profile_config": {"profile": {"main": "Minimal"}},
+    "swap": {"enabled": True, "algorithm": "zstd"},
+    # Ready for the second step: after the reboot, log in as root and run install.sh
+    "custom_commands": ["git clone https://github.com/hjbarraza/aerisos.git /root/aerisos"],
+}
+
+out = ROOT / "archinstall/user_configuration.json"
+out.write_text(json.dumps(config, indent=2) + "\n")
+print(f"{out.relative_to(ROOT)}: {len(packages)} packages")

@@ -101,7 +101,7 @@ def loop():
     model = pick_model()
     if not model:
         print("No Ollama model available. Start it with `sudo systemctl start ollama`.")
-    print(f"{BOLD}// ASK{RESET}  {DIM}{model or '-'} · /new clears · /model NAME switches · Win+` hides{RESET}\n")
+    print(f"{BOLD}// ASK{RESET}  {DIM}{model or '-'} · /new clears · /model NAME switches · Esc or Win+` hides{RESET}\n")
     if os.path.exists(FIFO):
         os.unlink(FIFO)
     os.mkfifo(FIFO, 0o600)
@@ -126,7 +126,7 @@ def loop():
             q = sys.stdin.readline()
             if not q:
                 break
-            q = q.strip()
+            q = q.replace("\x1b", "").strip()  # Escape (hides the window) also lands in the line
         if not q:
             continue
         if q == "/new":

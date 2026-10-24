@@ -1066,9 +1066,11 @@ mod_snapshot() {
 
     if (( DRY )); then info "[dry-run] write package lists"; return; fi
     mkdir -p "$PKG"
-    pacman -Qqen > "$PKG/pacman.txt"
+    # wl-clipboard (aeris-ask) is often only a dependency here, so -Qqe would drop it
+    { pacman -Qqen; echo wl-clipboard; } | sort -u > "$PKG/pacman.txt"
     pacman -Qqem > "$PKG/aur.txt"
     info "$(wc -l < "$PKG/pacman.txt") repo packages, $(wc -l < "$PKG/aur.txt") AUR packages"
+    "$AERIS/archinstall/make-config" >/dev/null   # archinstall config follows the package list
     info "Configs: $(find "$DOT" -type f | wc -l) files"
 }
 
