@@ -1,34 +1,120 @@
 #!/usr/bin/env python3
-# aeris:summary=Spoken login greeting: time of day, date, a fun fact
+# aeris:summary=Spoken login greeting: time of day, date, a fun fact of the day
 # aeris:group=voice
 # aeris:args=[--text]
-"""Spoken login greeting: time of day, the date and a fun fact, read by Kokoro (bf_emma).
+"""Spoken login greeting: time of day, the date and the fact of the day, read by Kokoro (bf_emma).
 
-Run once per login from hyprland.lua. The fact comes from a free OpenRouter model, fresh at
-every login, with a built-in list as fallback (no network, rate limit, odd answer). Speaking goes
-through aeris-speak (the system voice, Kokoro bf_emma when ~/.local/share/aeris/tts-models exists).
+Run once per login from hyprland.lua. The fact is one per day: the bank below is shuffled once
+with a fixed seed and indexed by the day number, so every day gets a different fact, the whole
+bank comes around before any repeats, and every login on the same day says the same fact.
+Speaking goes through aeris-speak (the system voice, Kokoro bf_emma when ~/.local/share/aeris/tts-models exists).
 
   aeris-hello            speak the greeting
   aeris-hello --text     only print it
 """
-import datetime, fcntl, json, os, random, re, subprocess, sys, time, urllib.request
+import datetime, fcntl, os, random, subprocess, sys, time
 
 HOME = os.path.expanduser("~")
 SPEAK = f"{HOME}/.local/bin/aeris-speak"
-MODEL = "nvidia/nemotron-3.5-lightning:free"   # free models only
 RUN = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+SEED = 2026  # fixed: changing it reshuffles the order (and so the day-to-fact mapping)
 
-FALLBACK = [
-    "Honey never spoils; edible honey has been found in ancient Egyptian tombs.",
-    "Octopuses have three hearts and blue blood.",
+# Each fact is checked to be true. Add new ones at the end of their group; keep each under ~260 characters.
+FACTS = [
+    # Space
+    "Sunlight takes about eight minutes and twenty seconds to reach Earth.",
     "A day on Venus is longer than its year.",
-    "Bananas are berries, but strawberries are not.",
-    "Wombats produce cube-shaped droppings.",
-    "The Eiffel Tower grows about fifteen centimetres taller in summer heat.",
-    "Sharks existed before trees did.",
-    "There are more possible chess games than atoms in the observable universe.",
-    "A group of flamingos is called a flamboyance.",
+    "Olympus Mons on Mars is about 22 kilometres high, the tallest known volcano in the solar system.",
+    "Footprints left on the Moon by Apollo astronauts may last for millions of years, since there is no wind or rain.",
+    "The International Space Station orbits Earth about sixteen times a day, so its crew sees about sixteen sunrises.",
+    "Voyager 1 crossed into interstellar space in 2012 and is still sending data back, from more than 20 billion kilometres away.",
+    "A year on Mercury lasts only 88 Earth days.",
+    "Neutron stars are so dense that a teaspoon of one would weigh billions of tonnes.",
+    "Jupiter's Great Red Spot is a storm that has been observed for more than 150 years.",
+    "Helium was discovered in the Sun's light before anyone found it on Earth.",
+
+    # Earth and geography
     "Lightning strikes the Earth about forty-four times every second.",
+    "Antarctica is the largest desert on Earth; it receives very little precipitation.",
+    "Russia spans eleven time zones.",
+    "Iceland has no mosquitoes.",
+    "Australia is wider than the Moon.",
+    "Vatican City is the smallest country in the world.",
+    "Canada has more lakes than any other country, with over two million of them.",
+    "Lake Baikal in Siberia holds about a fifth of the world's unfrozen fresh surface water.",
+    "Mount Everest grows by a few millimetres every year as the Indian plate pushes into Asia.",
+    "The Dead Sea is so salty that people float in it easily.",
+
+    # Animals
+    "Octopuses have three hearts and blue blood.",
+    "Wombats produce cube-shaped droppings.",
+    "Tardigrades can survive the vacuum of space.",
+    "Hummingbirds are the only birds that can fly backwards.",
+    "Owls cannot move their eyeballs, so they turn their whole heads instead.",
+    "Crows can recognise individual human faces and remember people who treated them badly.",
+    "Male seahorses carry and give birth to the young.",
+    "Axolotls can regrow lost limbs, and even parts of their brains.",
+    "Koalas have fingerprints that are nearly indistinguishable from human ones.",
+    "Dolphins give each other individual names in the form of signature whistles.",
+    "Pistol shrimp snap a claw so fast that the shockwave stuns their prey.",
+    "Bombardier beetles can spray a boiling chemical mixture to defend themselves.",
+    "Some turtles can breathe through their cloaca.",
+    "A group of flamingos is called a flamboyance.",
+    "A group of crows is called a murder.",
+    "Sharks existed before trees did.",
+    "Elephants are among the few animals that cannot jump.",
+    "Mantis shrimp have up to sixteen types of colour receptor, while humans have three.",
+    "Penguins of some species give pebbles to their mates as a courtship gift.",
+    "Sea otters often hold paws while they sleep so they do not drift apart.",
+
+    # Human body
+    "Your body contains roughly 30 trillion cells.",
+    "Babies are born with about 270 bones; many fuse together as the body grows, leaving adults with 206.",
+    "Your stomach lining is replaced every few days so that it does not digest itself.",
+    "Your heart beats roughly 100,000 times a day.",
+    "Fingernails grow faster than toenails.",
+    "Scientists have estimated that the human nose can tell apart over a trillion different smells.",
+
+    # Food and plants
+    "Bananas are berries, but strawberries are not.",
+    "Honey never spoils; edible honey has been found in ancient Egyptian tombs.",
+    "Bananas are slightly radioactive, because they contain potassium-40.",
+    "The Aztecs used cacao beans as currency.",
+    "Potatoes were first domesticated thousands of years ago in the Andes.",
+    "The Margherita pizza is said to be named after Queen Margherita of Italy, who visited Naples in 1889.",
+
+    # History and culture
+    "Oxford University was teaching students before the Aztec city of Tenochtitlan was founded.",
+    "Cleopatra lived closer in time to the Moon landing than to the building of the Great Pyramid.",
+    "Woolly mammoths were still alive on Wrangel Island when the Great Pyramid was built.",
+    "The Anglo-Zanzibar War of 1896 is the shortest war on record, lasting about 38 to 45 minutes.",
+    "Napoleon was of average height for his time; the myth of his shortness came partly from British propaganda.",
+    "Vikings did not wear horned helmets; no archaeological evidence for them has been found.",
+    "The Scottish national animal is the unicorn.",
+    "The Great Wall of China is generally not visible to the naked eye from low Earth orbit.",
+    "The Post-it note was invented by accident, when a 3M chemist made a weak adhesive.",
+    "The Wright brothers' first powered flight in 1903 lasted 12 seconds and covered 120 feet.",
+    "Basketball was invented in 1891 using peach baskets as the goals.",
+    "The first YouTube video, 'Me at the zoo', was uploaded in 2005.",
+    "The first computer bug was a real moth, found stuck in a relay in 1947.",
+
+    # Japan
+    "Japan has more than 6,800 islands.",
+    "Japan has around four million vending machines.",
+    "No passenger on a Shinkansen bullet train has died in a derailment or collision since the line opened in 1964.",
+    "The Japanese word 'tsundoku' describes buying books and leaving them unread.",
+    "The English word 'tsunami' comes from Japanese, meaning 'harbour wave'.",
+
+    # Language and numbers
+    "The verb 'run' has more senses in the Oxford English Dictionary than almost any other English word.",
+    "A googol is 1 followed by 100 zeros.",
+    "Pi has been calculated to more than 100 trillion digits.",
+    "There are exactly five Platonic solids.",
+    "The Rubik's Cube has 43 quintillion possible arrangements.",
+    "Zero was used as a placeholder for centuries before it was treated as a number in its own right.",
+
+    # Technology
+    "There are more possible chess games than atoms in the observable universe.",
 ]
 
 
@@ -42,38 +128,11 @@ def ordinal(n):
     return "thirtieth" if n == 30 else "thirty-first"
 
 
-def key():
-    try:
-        for line in open(f"{HOME}/.env"):
-            if line.startswith("OPENROUTER_KEY="):
-                return line.split("=", 1)[1].strip().strip("\"'")
-    except OSError:
-        pass
-    return os.environ.get("OPENROUTER_API_KEY", "")
-
-
-def fetch_fact(today):
-    k = key()
-    if not k:
-        return None
-    prompt = (f"Today is {today:%A, %d %B}. Give ONE true, surprising fun fact, ideally tied to this date "
-              "(an event or birthday on this day) or otherwise to science or nature. At most 30 words, one "
-              "or two plain sentences, no markdown, no emoji, no preamble. Only state things you are sure of.")
-    body = json.dumps({"model": MODEL, "max_tokens": 1500, "temperature": 0.8,
-                       "messages": [{"role": "user", "content": prompt}]}).encode()
-    req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", body,
-                                 {"Authorization": f"Bearer {k}", "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            text = (json.load(r)["choices"][0]["message"].get("content") or "").strip()
-    except Exception:
-        return None
-    text = re.sub(r"[*_`#>]+", "", text).replace("\n", " ").strip().strip('"')
-    text = re.sub(r"[‐-―−]", "-", text).replace(" ", " ").replace(" ", " ")
-    text = re.sub(r"^(fun fact|did you know)[:,]?\s*", "", text, flags=re.I)
-    if 20 <= len(text) <= 260 and text[-1] in ".!":
-        return text
-    return None
+def fact_of_the_day(today):
+    order = list(range(len(FACTS)))
+    random.Random(SEED).shuffle(order)
+    epoch_day = (today - datetime.date(2026, 1, 1)).days
+    return FACTS[order[epoch_day % len(FACTS)]]
 
 
 def wait_for(ready, seconds):
@@ -85,14 +144,6 @@ def wait_for(ready, seconds):
     return ready()
 
 
-def online():
-    try:
-        urllib.request.urlopen("https://openrouter.ai/api/v1/models", timeout=3).close()
-        return True
-    except Exception:
-        return False
-
-
 def main():
     today = datetime.date.today()
     lock = open(f"{RUN}/aeris-hello.lock", "w")
@@ -101,21 +152,17 @@ def main():
     except OSError:
         return  # already speaking
 
-    if "--text" not in sys.argv:
-        wait_for(online, 20)  # at login the network may still be coming up
-    fact = fetch_fact(today) or random.choice(FALLBACK)
-
     hour = datetime.datetime.now().hour
     hello = "Good morning" if 5 <= hour < 12 else "Good afternoon" if 12 <= hour < 18 else "Good evening"
     text = (f"{hello}. Today is {today:%A}, the {ordinal(today.day)} of {today:%B}. "
-            f"Fun fact: {fact}")
+            f"Fun fact: {fact_of_the_day(today)}")
     print(text)
     if "--text" in sys.argv:
         return
 
     wait_for(lambda: subprocess.run(["pw-cli", "info", "0"], capture_output=True).returncode == 0, 20)
     if os.path.isfile(SPEAK):
-        subprocess.run([SPEAK, text])   # the system voice; KeyError-style failures there are non-fatal
+        subprocess.run([SPEAK, text])   # the system voice; failures there are non-fatal
 
 
 if __name__ == "__main__":
