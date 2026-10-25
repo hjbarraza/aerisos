@@ -947,6 +947,24 @@ mod_razer() {
     info "GUI: Razer Settings in the app launcher. CLI: razer-cli read bho / write bho off"
 }
 
+# Hostname lock: written once a hostname has been set. The Titan/FIDO2 key
+# mapping depends on the hostname staying put, so changing a locked hostname
+# needs three separate confirmations (see the wizard and titan/).
+HOSTNAME_LOCK=/var/lib/aeris/hostname.lock
+hostname_locked() { [[ -f $HOSTNAME_LOCK ]]; }
+
+confirm_hostname_change() {
+    local old=$1 new=$2 answer step
+    warn "Hostname '$old' is already set and locked. Security key mappings depend on it."
+    for step in 1 2 3; do
+        read -rp "  Confirmation $step/3: change hostname '$old' -> '$new'? Type yes to continue: " answer
+        if [[ $answer != yes ]]; then
+            warn "Hostname change cancelled; keeping '$old'"
+            return 1
+        fi
+    done
+}
+
 # First-run wizard: the personal answers (git identity, hostname, maps app),
 # saved to ~/.config/aerisos/setup.conf and reused by every later run.
 # In a full run it only asks once; change answers with: ./setup.sh wizard
@@ -994,7 +1012,16 @@ EOF
         # shellcheck disable=SC1090
         source "$CONF"
     fi
-    [[ $host == "$cur_host" ]] || as_root hostnamectl set-hostname "$host"
+    if [[ $host != "$cur_host" ]]; then
+        if hostname_locked; then
+            confirm_hostname_change "$cur_host" "$host" || host=$cur_host
+        fi
+        as_root hostnamectl set-hostname "$host"
+    fi
+    # Once a hostname is set, it is locked: later changes need triple confirmation
+    if [[ $host == "$(hostnamectl hostname 2>/dev/null || hostname)" ]] && ! hostname_locked; then
+        printf '%s\n' "$host" | write_root_file "$HOSTNAME_LOCK"
+    fi
     info "Saved. Hardware extras when they apply: ./setup.sh razer | gamesdrive"
 }
 
