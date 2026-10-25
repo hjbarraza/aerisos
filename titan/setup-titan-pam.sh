@@ -59,13 +59,16 @@ echo "key: $KEY_LINE  (udev PRODUCT $PRODUCT)"
 KEY_DEV=${KEY_LINE%%:*}
 
 # True if the plugged-in key holds a credential from /etc/u2f_mappings for
-# $ORIGIN. Asks with up=false, so it needs no touch.
+# $ORIGIN. Asks with up=false, so it needs no touch; U2F-only keys (older
+# Titans) answer a known credential with USER_PRESENCE_REQUIRED, an unknown
+# one with NO_CREDENTIALS.
 enrolled_key_matches() {
     local cred tmp
     tmp=$(mktemp)
     for cred in $(cut -d: -f2- /etc/u2f_mappings | tr ':' '\n' | cut -d, -f1); do
         printf '%s\n%s\n%s\n' "$(head -c32 /dev/urandom | base64)" "$ORIGIN" "$cred" > "$tmp"
-        if fido2-assert -G -t up=false -i "$tmp" "$KEY_DEV" >/dev/null 2>&1; then
+        if fido2-assert -G -t up=false -i "$tmp" "$KEY_DEV" 2>&1 >/dev/null | grep -q USER_PRESENCE_REQUIRED \
+            || fido2-assert -G -t up=false -i "$tmp" "$KEY_DEV" >/dev/null 2>&1; then
             rm -f "$tmp"; return 0
         fi
     done
