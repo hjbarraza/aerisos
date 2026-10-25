@@ -5,8 +5,9 @@
 #
 # Run as root:  sudo bash ~/aerisos/titan/setup-titan-pam.sh
 # (or ./setup.sh titan, which runs this; the wizard offers it too)
-# Re-enroll (key rejected at login, new key):
-#   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/titan/setup-titan-pam.sh | sudo bash -s reenroll
+# Re-runs re-enroll on their own when the enrolled key is not the plugged-in
+# one (or was bound to another origin); 'reenroll' forces it. Remotely:
+#   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/titan/setup-titan-pam.sh | sudo bash
 #
 # Scope (deliberate):
 #   - Only /etc/pam.d/hyprlock and /etc/pam.d/sddm get the U2F factor.
@@ -55,8 +56,24 @@ PID=$(sed -n 's/.*product=0x\([0-9a-fA-F]*\).*/\1/p' <<<"$KEY_LINE")
 PRODUCT="$(printf '%x/%x' "0x$VID" "0x$PID")"
 echo "key: $KEY_LINE  (udev PRODUCT $PRODUCT)"
 
-if [[ -s /etc/u2f_mappings ]] && (( ! REENROLL )); then
-    echo "== 3/4 a key is already enrolled in /etc/u2f_mappings; keeping it (re-run with 'reenroll' to replace it) =="
+KEY_DEV=${KEY_LINE%%:*}
+
+# True if the plugged-in key holds a credential from /etc/u2f_mappings for
+# $ORIGIN. Asks with up=false, so it needs no touch.
+enrolled_key_matches() {
+    local cred tmp
+    tmp=$(mktemp)
+    for cred in $(cut -d: -f2- /etc/u2f_mappings | tr ':' '\n' | cut -d, -f1); do
+        printf '%s\n%s\n%s\n' "$(head -c32 /dev/urandom | base64)" "$ORIGIN" "$cred" > "$tmp"
+        if fido2-assert -G -t up=false -i "$tmp" "$KEY_DEV" >/dev/null 2>&1; then
+            rm -f "$tmp"; return 0
+        fi
+    done
+    rm -f "$tmp"; return 1
+}
+
+if [[ -s /etc/u2f_mappings ]] && (( ! REENROLL )) && enrolled_key_matches; then
+    echo "== 3/4 this key is already enrolled in /etc/u2f_mappings; keeping it =="
 else
     echo "== 3/4 enrolling the key: TOUCH it when it blinks =="
     [[ -s /etc/u2f_mappings ]] && cp /etc/u2f_mappings "/etc/u2f_mappings.bak.$(date +%s)"
