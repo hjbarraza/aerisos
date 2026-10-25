@@ -5,6 +5,8 @@
 #
 # Run as root:  sudo bash ~/aerisos/titan/setup-titan-pam.sh
 # (or ./setup.sh titan, which runs this; the wizard offers it too)
+# Re-enroll (key rejected at login, new key):
+#   curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/titan/setup-titan-pam.sh | sudo bash -s reenroll
 #
 # Scope (deliberate):
 #   - Only /etc/pam.d/hyprlock and /etc/pam.d/sddm get the U2F factor.
@@ -13,6 +15,8 @@
 #   - Unplugging the enrolled key terminates all of the user's sessions
 #     via udev, then restarts SDDM (sddm-helper crashes on terminate-user
 #     and the greeter is never respawned otherwise).
+#   - The credential is bound to the fixed origin pam://aeris, not pamu2fcfg's
+#     default pam://<hostname>, so renaming the machine does not lock you out.
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
 
@@ -20,7 +24,11 @@ set -euo pipefail
 TARGET_USER="${SUDO_USER:-}"
 [[ -n $TARGET_USER && $TARGET_USER != root ]] || { echo "run with sudo from your normal account, not as root" >&2; exit 1; }
 
-U2F_LINE='auth        required    pam_u2f.so authfile=/etc/u2f_mappings cue'
+REENROLL=0
+[[ ${1:-} == reenroll ]] && REENROLL=1
+
+ORIGIN=pam://aeris
+U2F_LINE="auth        required    pam_u2f.so authfile=/etc/u2f_mappings origin=$ORIGIN appid=$ORIGIN cue"
 
 echo "== 1/4 installing pam-u2f =="
 pacman -S --needed --noconfirm pam-u2f    # pulls libfido2 (fido2-token)
@@ -34,7 +42,7 @@ fi
 if (( ${#KEYS[@]} > 1 )); then
     echo "Several keys are plugged in:"
     for i in "${!KEYS[@]}"; do printf '  %d) %s\n' "$((i+1))" "${KEYS[$i]}"; done
-    read -rp "Which one guards the login? " N
+    read -rp "Which one guards the login? " N </dev/tty
     [[ $N =~ ^[0-9]+$ && $N -ge 1 && $N -le ${#KEYS[@]} ]] || { echo "invalid choice" >&2; exit 1; }
     KEY_LINE=${KEYS[$((N-1))]}
 else
@@ -47,12 +55,13 @@ PID=$(sed -n 's/.*product=0x\([0-9a-fA-F]*\).*/\1/p' <<<"$KEY_LINE")
 PRODUCT="$(printf '%x/%x' "0x$VID" "0x$PID")"
 echo "key: $KEY_LINE  (udev PRODUCT $PRODUCT)"
 
-if [[ -s /etc/u2f_mappings ]]; then
-    echo "== 3/4 a key is already enrolled in /etc/u2f_mappings; keeping it (delete the file to re-enroll) =="
+if [[ -s /etc/u2f_mappings ]] && (( ! REENROLL )); then
+    echo "== 3/4 a key is already enrolled in /etc/u2f_mappings; keeping it (re-run with 'reenroll' to replace it) =="
 else
     echo "== 3/4 enrolling the key: TOUCH it when it blinks =="
+    [[ -s /etc/u2f_mappings ]] && cp /etc/u2f_mappings "/etc/u2f_mappings.bak.$(date +%s)"
     # pamu2fcfg talks to the FIDO key and waits for a touch (and PIN, if one is set).
-    pamu2fcfg -u "$TARGET_USER" > /etc/u2f_mappings.new
+    pamu2fcfg -u "$TARGET_USER" -o "$ORIGIN" -i "$ORIGIN" > /etc/u2f_mappings.new
     # Public key handles only, not secrets; must be world-readable because
     # hyprlock runs PAM as the normal user.
     install -m 644 -o root -g root /etc/u2f_mappings.new /etc/u2f_mappings
@@ -61,6 +70,10 @@ else
 fi
 
 echo "== patching PAM (hyprlock + sddm) =="
+# An existing pam_u2f line (older installs had no origin) is replaced in place.
+for f in /etc/pam.d/hyprlock /etc/pam.d/sddm; do
+    sed -i "s|^auth.*pam_u2f\.so.*|$U2F_LINE|" "$f"
+done
 if ! grep -q pam_u2f /etc/pam.d/hyprlock; then
     sed -i "/^auth\s*include\s*login/a $U2F_LINE" /etc/pam.d/hyprlock
 fi
