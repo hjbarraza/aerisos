@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=tinyraven
+Description=tinyraven boot: the raven splash with a light sweeping the rule
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/tinyraven
+ScriptFile=/usr/share/plymouth/themes/tinyraven/tinyraven.script

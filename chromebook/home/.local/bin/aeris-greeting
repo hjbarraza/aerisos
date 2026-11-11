@@ -1,0 +1,18 @@
+#!/bin/bash
+# One-line greeting for new terminal windows (called from ~/.bashrc):
+#   tinyraven  こんばんは  · ontology terminal, weighs less than its opinions
+# The last part is a random line from ~/.config/tinyraven/phrases.txt, the boot phrases.
+
+set -euo pipefail
+plain=$'\e[97m' bold=$'\e[1;97m' grey=$'\e[38;2;122;122;122m' reset=$'\e[0m'
+
+hour=$((10#$(date +%H)))
+if (( hour >= 5 && hour < 11 )); then hello="おはようございます"      # good morning
+elif (( hour >= 11 && hour < 18 )); then hello="こんにちは"             # hello / good afternoon
+else hello="こんばんは"                                              # good evening
+fi
+
+phrase=$(grep -v '^#' ~/.config/tinyraven/phrases.txt 2>/dev/null | grep . | shuf -n 1 || true)
+phrase=${phrase,,}
+
+printf '%stiny%sraven%s  %s%s  · ontology terminal%s%s\n\n' "$plain" "$bold" "$reset" "$grey" "$hello" "${phrase:+, $phrase}" "$reset"

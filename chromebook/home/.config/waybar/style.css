@@ -1,0 +1,31 @@
+/* AERIS monochrome bar. Values worth noticing read inverted: black on white. */
+* {
+  font-family: "Die Grotesk VF", "Symbols Nerd Font", sans-serif;
+  font-size: 13px;
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+}
+
+window#waybar { background: #000000; color: #e6e6e6; }
+
+/* The Æ mark stays in Söhne: it is the AerisOS mark, not interface text. */
+#custom-aeris { padding: 0 8px 0 12px; color: #ffffff; font-family: "Sohne"; font-weight: 700; font-size: 15px; }
+
+#workspaces button { padding: 0 9px; color: #8c8c8c; background: transparent; }
+#workspaces button.active { color: #000000; background: #ffffff; }
+#workspaces button.urgent { color: #ffffff; }
+
+#clock, #network, #wireplumber, #battery, #memory,
+#custom-dnd, #custom-awake, #custom-tailscale, #custom-power { padding: 0 9px; }
+
+/* Off or disconnected reads dim. */
+#network.disconnected, #wireplumber.muted,
+#custom-awake.off, #custom-tailscale.off, #custom-tailscale.disconnected { color: #5a5a5a; }
+
+#memory.warning, #memory.critical,
+#battery.warning:not(.charging),
+#battery.critical:not(.charging) { color: #000000; background: #ffffff; }
+
+tooltip { background: #0a0a0a; border: 1px solid #2a2a2a; }
+tooltip label { color: #e6e6e6; }

@@ -1,0 +1,63 @@
+// AERIS monochrome bar: mark and workspaces left, clock centre, status right.
+// Icons are the AerisOS bar glyphs, from Symbols Nerd Font.
+{
+  "layer": "top",
+  "position": "top",
+  "height": 24,
+  "modules-left": ["custom/aeris", "hyprland/workspaces"],
+  "modules-center": ["clock"],
+  "modules-right": [
+    "custom/dnd", "custom/awake", "custom/tailscale",
+    "memory", "network", "wireplumber", "battery", "custom/power"
+  ],
+
+  // The AerisOS mark, drawn as text in Söhne bold like the AerisOS bar; click opens the app launcher.
+  "custom/aeris": { "format": "Æ", "tooltip": false, "on-click": "wofi --show drun" },
+
+  "hyprland/workspaces": { "format": "{id}" },
+
+  "clock": { "format": "{:%a %d %b  %H:%M}", "tooltip": false },
+
+  // Toggles from the AerisOS bar. Each script prints Waybar JSON and, after a
+  // toggle, sends signal 8 so the bar redraws at once. DND hides when off.
+  "custom/dnd":        { "exec": "~/.local/bin/dnd",        "return-type": "json", "interval": "once", "signal": 8, "on-click": "~/.local/bin/dnd toggle" },
+  "custom/awake":      { "exec": "~/.local/bin/stay-awake", "return-type": "json", "interval": "once", "signal": 8, "on-click": "~/.local/bin/stay-awake toggle" },
+  "custom/tailscale":  { "exec": "~/.local/bin/tailscale-status", "return-type": "json", "interval": 20, "signal": 8,
+                         "on-click": "~/.local/bin/tailscale-status toggle", "on-click-right": "~/.local/bin/tailscale-status admin" },
+
+  // 4 GB machine: inverted from 80% used. Click opens btop.
+  "memory": {
+    "format": "󰍛 {percentage}",
+    "interval": 5,
+    "states": { "warning": 80, "critical": 92 },
+    "tooltip-format": "{used:0.1f} of {total:0.1f} GiB used  ·  swap {swapUsed:0.1f} GiB",
+    "on-click": "kitty --class aeris.tui-float -e btop"
+  },
+
+  // Click opens the same floating panels as SUPER+CTRL+W and SUPER+CTRL+A.
+  "network": {
+    "format-wifi": "{icon}",
+    "format-icons": ["󰤟", "󰤢", "󰤥", "󰤨"],
+    "format-ethernet": "󰀂",
+    "format-disconnected": "󰤮",
+    "tooltip-format": "{essid}  ·  {ipaddr}  ·  signal {signalStrength}%",
+    "on-click": "kitty --class aeris.tui-float -e nmtui"
+  },
+
+  "wireplumber": {
+    "format": "{icon}",
+    "format-icons": ["󰕿", "󰖀", "󰕾"],
+    "tooltip-format": "Volume {volume}%",
+    "format-muted": "󰝟",
+    "on-click": "kitty --class aeris.tui-float -e wiremix"
+  },
+
+  "battery": {
+    "format": "{icon}",
+    "format-icons": { "default": ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"], "charging": ["󰢜", "󰂆", "󰂇", "󰂈", "󰢝", "󰂉", "󰢞", "󰂊", "󰂋", "󰂅"], "plugged": ["󰢜", "󰂆", "󰂇", "󰂈", "󰢝", "󰂉", "󰢞", "󰂊", "󰂋", "󰂅"] },
+    "tooltip-format": "{capacity}%  ·  {timeTo}",
+    "states": { "warning": 15, "critical": 7 }
+  },
+
+  "custom/power": { "format": "󰐥", "tooltip": false, "on-click": "~/.local/bin/power-menu" }
+}

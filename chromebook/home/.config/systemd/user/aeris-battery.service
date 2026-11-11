@@ -1,0 +1,6 @@
+[Unit]
+Description=AerisOS low-battery alert
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/aeris-battery

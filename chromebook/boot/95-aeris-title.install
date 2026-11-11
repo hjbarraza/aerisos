@@ -1,0 +1,6 @@
+#!/bin/sh
+# AerisOS: name this machine's boot menu entries "AerisOS TinyRaven".
+# kernel-install runs this after the scripts that write the entries; those take the
+# title from os-release, which stays untouched.
+[ "$1" = add ] || exit 0
+sed -i 's/^title\( *\)EndeavourOS/title\1AerisOS TinyRaven/' "${KERNEL_INSTALL_BOOT_ROOT:?}"/loader/entries/*.conf

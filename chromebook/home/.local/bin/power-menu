@@ -1,0 +1,8 @@
+#!/bin/bash
+# Power menu (bar PWR and SUPER+ESCAPE): pick an action in wofi; Esc cancels.
+choice=$(printf 'Log out\nRestart\nShut down\n' | wofi --dmenu --insensitive --prompt Power) || exit 0
+case $choice in
+  "Log out")   hyprctl dispatch 'hl.dsp.exit()' ;;
+  Restart)     systemctl reboot ;;
+  "Shut down") systemctl poweroff ;;
+esac

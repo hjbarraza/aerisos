@@ -1,0 +1,103 @@
+# tinyraven Plymouth theme (the AerisOS theme with this splash's geometry).
+# bg.png is chromebook/splash.svg (1366x768 design space) rendered at the panel's native size.
+# Three things are added at boot, all made by setup.sh:
+#   - the raven, alive: it sways about one degree either way, blinks twice now and then,
+#     and now and then does one of two small things: a dance (stomps each foot twice, one
+#     hop) or a ruffle (puffs up a little, a quick shake). Frames: bird-N.png and
+#     bird-N-blink.png, 13 angles; bird-dance-N.png and bird-ruffle-N.png, 11 steps each;
+#     mask.png hides the still bird in bg.png.
+#   - one phrase, picked at random from the phrase-N.png strips (from the phrases file)
+#   - a light gliding along the hairline, as a quiet loading indicator
+
+Window.SetBackgroundTopColor(0, 0, 0);
+Window.SetBackgroundBottomColor(0, 0, 0);
+
+W = Window.GetWidth();
+H = Window.GetHeight();
+s = Math.Min(W / 1366, H / 768);
+ox = (W - 1366 * s) / 2;
+oy = (H - 768 * s) / 2;
+
+bg = Sprite(Image("bg.png").Scale(1366 * s, 768 * s));
+bg.SetPosition(ox, oy, 0);
+
+# Phrase: each strip is 1366x24, its text centred, drawn over rows 488-512 of the splash.
+# @PHRASES@ is replaced with the number of strips when setup.sh installs this file.
+phrase_count = @PHRASES@;
+phrase = Sprite(Image("phrase-" + Math.Int(Math.Random() * phrase_count) + ".png").Scale(1366 * s, 24 * s));
+phrase.SetPosition(ox, oy + 488 * s, 1);
+
+# Raven: frames cover the box at (543,168), 280x224. Frame 6 is upright, the pose in bg.png
+# and in the firmware logo, and the sway starts there, so the hand-over shows no jump.
+mask = Sprite(Image("mask.png").Scale(280 * s, 224 * s));
+mask.SetPosition(ox + 543 * s, oy + 168 * s, 1);
+for (i = 0; i < 13; i++) {
+    bird_open[i] = Image("bird-" + i + ".png").Scale(280 * s, 224 * s);
+    bird_shut[i] = Image("bird-" + i + "-blink.png").Scale(280 * s, 224 * s);
+}
+for (i = 0; i < 11; i++) {
+    bird_dance[i]  = Image("bird-dance-" + i + ".png").Scale(280 * s, 224 * s);
+    bird_ruffle[i] = Image("bird-ruffle-" + i + ".png").Scale(280 * s, 224 * s);
+}
+bird = Sprite(bird_open[6]);
+bird.SetPosition(ox + 543 * s, oy + 168 * s, 2);
+sway_t = 0;              # the sway's own clock; it waits during a dance or a ruffle
+blink_at = 150;          # first blink after 3 s
+blink_start = -1000;
+act_at = 250;            # first act after 5 s
+act_start = -1000;
+act_kind = 0;            # 0 = dance, 1 = ruffle; they take turns
+# An act is 11 drawn steps: the dance holds each for 4 frames (0.9 s), the ruffle for 3 (0.66 s).
+
+sweep_w = 53 * s;
+sweep = Sprite(Image("sweep.png").Scale(sweep_w, 4 * s));
+sweep.SetY(oy + 534.5 * s);
+sweep.SetZ(3);
+
+rule_x = ox + 603 * s;
+rule_w = 160 * s;
+
+frame = 0;
+fun refresh() {
+    frame++;
+
+    r = frame - act_start;
+    if (r >= 0 && act_kind == 0 && r < 44) {
+        bird.SetImage(bird_dance[Math.Int(r / 4)]);       # drawn upright; the sway waits
+    } else if (r >= 0 && act_kind == 1 && r < 33) {
+        bird.SetImage(bird_ruffle[Math.Int(r / 3)]);
+    } else {
+        # Sway: one slow sine, 6 s per cycle at 50 fps, mapped onto the 13 angle frames
+        global.sway_t = sway_t + 1;
+        i = Math.Int((Math.Sin(sway_t * 2 * Math.Pi / 300) + 1) * 6 + 0.5);
+        # An act starts only as the bird passes upright, then not again for 9 to 17 s
+        if (frame >= act_at && i == 6) {
+            if (act_start > 0) global.act_kind = 1 - act_kind;
+            global.act_start = frame + 1;
+            global.act_at = frame + 450 + Math.Int(Math.Random() * 400);
+        }
+        # Double blink: shut 6 frames, open 6, shut 6; then again after 4 to 9 s
+        if (frame >= blink_at) {
+            global.blink_start = frame;
+            global.blink_at = frame + 200 + Math.Int(Math.Random() * 250);
+        }
+        d = frame - blink_start;
+        if ((d >= 0 && d < 6) || (d >= 12 && d < 18)) bird.SetImage(bird_shut[i]);
+        else bird.SetImage(bird_open[i]);
+    }
+
+    # Light: 90 frames across the hairline (~1.8 s at 50 fps), then 60 frames of rest
+    t = frame % 150;
+    if (t < 90) {
+        p = t / 90;
+        p = p * p * (3 - 2 * p);          # ease in-out
+        x = rule_x - sweep_w + p * (rule_w + sweep_w);
+        sweep.SetX(x);
+        # Fade near the ends so the light never hangs past the hairline
+        edge = Math.Min(x + sweep_w - rule_x, rule_x + rule_w - x);
+        sweep.SetOpacity(Math.Clamp(edge / sweep_w, 0, 1));
+    } else {
+        sweep.SetOpacity(0);
+    }
+}
+Plymouth.SetRefreshFunction(refresh);

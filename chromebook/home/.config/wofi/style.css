@@ -1,0 +1,17 @@
+/* AERIS monochrome launcher: near-black panel, white hairline, inverted selection. */
+* { font-family: "Die Grotesk VF", sans-serif; font-size: 13px; }
+
+window { background: #0a0a0a; border: 1px solid #ffffff; border-radius: 6px; }
+
+#input {
+  margin: 8px; padding: 6px 8px;
+  background: #000000; color: #e6e6e6;
+  border: 1px solid #2a2a2a; border-radius: 4px; box-shadow: none;
+}
+
+#outer-box, #inner-box, #scroll { background: transparent; margin: 0; }
+
+#entry { padding: 5px 12px; }
+#text { color: #e6e6e6; }
+#entry:selected { background: #ffffff; outline: none; }
+#entry:selected #text { color: #000000; }

@@ -1,0 +1,21 @@
+# AerisOS, Chromebook edition: everything installed on top of EndeavourOS (Xfce base).
+# Chosen for 4 GB of RAM: no Electron apps, one browser (Firefox, from the base install).
+
+# Desktop
+hyprland kitty waybar wofi xdg-desktop-portal-hyprland hyprpolkitagent
+hyprlock hypridle hyprpicker dunst brightnessctl breeze-icons
+
+# Clipboard, screenshots, viewers
+wl-clipboard cliphist grim slurp satty imv mpv zathura zathura-pdf-mupdf
+
+# Panels opened from the bar
+btop wiremix bluetui
+
+# Terminal tools
+fastfetch bat eza lazygit neovim tmux github-cli jq
+
+# System
+zram-generator tailscale pacman-contrib
+
+# Boot splash (librsvg renders splash.svg on the machine)
+plymouth librsvg
