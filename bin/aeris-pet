@@ -1,0 +1,1583 @@
+#!/usr/bin/env python3
+# aeris:summary=Desktop pet (dragon or raven) on a transparent overlay
+# aeris:group=desktop
+# aeris:args=[run|start|quit|toggle|status|set dragon|raven]
+"""aeris-pet: a small dragon companion for the desktop, outside any terminal.
+
+It swims through the air like Haku: its body undulates as it moves, and its
+fins flutter. On the ground it walks on four jointed legs (elbows and hocks
+bent back, clawed paws) and tucks them back in flight. It rests, dances, flies on arcs,
+perches on window title bars, pecks at crumbs, sleeps when idle, and says
+things from the greetings file. It also watches battery, pending updates and
+tailscale, and patrols when something needs attention.
+
+  left click     dance and greet
+  double click   fly to the top border of a window
+  middle click   drop crumbs on the floor
+  drag + throw   carry it, then let it fly
+  right click    open the pet menu in the top bar (which pet, hide)
+
+The pet menu lives in the AERIS bar (paw icon). Pets: dragon (default) or raven; the
+choice is kept in ~/.local/state/aeris-pet/pet and picked up by the running pet.
+
+  aeris-pet                 run the pet (one instance; a second start does nothing)
+  aeris-pet set dragon|raven  choose the pet, starting it if it is not running
+  aeris-pet quit            hide the pet
+  aeris-pet status          bar module JSON: {"text", "class", "pet"}
+
+The pet's windows never take keyboard focus (no_focus rule, no popup grabs), so it
+cannot swallow the keyboard.
+
+The dragon is drawn on a full-screen transparent window, so Hyprland never has
+to move it while it flies. Animation runs on the monitor's frame clock, so it
+uses the screen's full refresh rate.
+
+Test hooks: AERIS_PET_DEMO=1 drops crumbs shortly after start;
+AERIS_PET_STATS=1 prints frame timing every five seconds.
+"""
+import fcntl
+import glob
+import signal
+import sys
+import json
+import math
+import os
+import random
+import struct
+import subprocess
+import threading
+import time
+import wave
+
+import cairo
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("PangoCairo", "1.0")
+from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+
+APP = "aeris-pet"
+CRUMB_APP = "aeris-crumbs"
+SHARE = os.path.expanduser("~/.local/share/aeris-pet")
+SOUND_DIR = os.path.join(SHARE, "sounds")
+GREETINGS_FILE = os.path.expanduser("~/.config/tinyraven/greetings.txt")
+FALLBACK_LINES = ["caw", "still here", "don't mind me"]
+FEED_LINES = ["oh! crumbs.", "don't mind if i do", "a snack. the universe provides."]
+NEW_WINDOW_LINES = ["ooh, a new window", "what's this, then?", "new room, same dragon"]
+VOLUME = 0.35
+
+BUBBLE_SECONDS = 5.0
+BUBBLE_WRAP_PX = 110
+FONT = "Die Grotesk 8"
+
+# Dragon body: BODY_N spine points, BODY_SEG px apart, head first.
+BODY_N = 16
+BODY_SEG = 4.6
+HEAD_R = 7.5
+GROUND_PAD = 25                 # head centre sits this far above the bottom edge (legs stand under it)
+WALK_SPEED = 26.0               # px per second
+GOTO_SPEED = 40.0
+
+# Legs: spine points the front and rear legs hang from, and bone lengths (px).
+LEG_FRONT_AT = 3
+LEG_REAR_AT = 10
+FRONT_BONES = (9.5, 10.5)          # upper arm, forearm (elbow bends back)
+REAR_BONES = (7.0, 7.5, 8.0)      # thigh (angled forward), shank, metatarsal (hock bends back)
+STRIDE = 5.5                      # half a step, px
+
+PETS = (("dragon", "Dragon"), ("raven", "Raven"))
+CHOICE_FILE = os.path.expanduser("~/.local/state/aeris-pet/pet")
+RAVEN_SCALE = 0.2                 # the 200x200 raven drawing shown 40 px tall
+PID_FILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-pet.pid")
+BAR_GLYPH = "\U000F03E9"          # nf-md-paw
+
+CRUMB_H = 12
+SLEEP_AFTER = 600               # seconds of no activity before it sleeps
+PERCH_CHANCE = 0.6
+ATTN_CHECK_S = 300              # how often to look at battery, updates and tailscale
+ATTN_PATROL_S = 180             # how often to fly out while something needs attention
+STATS = bool(os.environ.get("AERIS_PET_STATS"))
+
+COL_BODY = (0.94, 0.94, 0.94)
+COL_LINE = (0.38, 0.38, 0.38)
+COL_FIN = (0.80, 0.80, 0.80)
+COL_EYE = (0.0, 0.0, 0.0)
+COL_TEXT = (0.0, 0.0, 0.0)
+COL_BUBBLE = (1.0, 1.0, 1.0)
+COL_EDGE = (0.75, 0.75, 0.75)
+COL_CRUMB = (0.55, 0.55, 0.55)
+
+
+# ---------------------------------------------------------------- helpers
+
+def clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+
+def load_lines():
+    lines = []
+    try:
+        with open(GREETINGS_FILE, encoding="utf-8") as f:
+            for raw in f:
+                s = raw.strip()
+                if s and not s.startswith("#"):
+                    lines.append(s)
+    except OSError:
+        pass
+    return lines or FALLBACK_LINES
+
+
+def load_choice():
+    kinds = [k for k, _ in PETS]
+    env = os.environ.get("AERIS_PET")
+    if env in kinds:
+        return env
+    try:
+        with open(CHOICE_FILE, encoding="utf-8") as f:
+            k = f.read().strip()
+            if k in kinds:
+                return k
+    except OSError:
+        pass
+    return "dragon"
+
+
+def save_choice(kind):
+    try:
+        os.makedirs(os.path.dirname(CHOICE_FILE), exist_ok=True)
+        with open(CHOICE_FILE, "w", encoding="utf-8") as f:
+            f.write(kind + "\n")
+    except OSError:
+        pass
+
+
+def svg_path(d):
+    """Parse an absolute M/L/C/Z path into (op, coords) pairs for cairo."""
+    import re
+    ops, cur, nums = [], None, []
+    for tok in re.findall(r"[MLCZmlcz]|-?[0-9.]+", d):
+        if tok.isalpha():
+            if cur:
+                ops.append((cur, nums))
+            cur, nums = tok.upper(), []
+        else:
+            nums.append(float(tok))
+    if cur:
+        ops.append((cur, nums))
+    return ops
+
+
+def trace(cr, ops):
+    for op, v in ops:
+        if op == "M":
+            cr.move_to(*v[:2])
+        elif op == "L":
+            cr.line_to(*v[:2])
+        elif op == "C":
+            cr.curve_to(*v[:6])
+        elif op == "Z":
+            cr.close_path()
+
+
+def two_bone(root, target, l1, l2, bend):
+    """Knee and end point of a two-bone limb reaching from root toward target.
+    The knee goes to the side of the root->target line that `bend` points to."""
+    dx, dy = target[0] - root[0], target[1] - root[1]
+    d = math.hypot(dx, dy)
+    if d < 1e-3:
+        dx, dy, d = bend[0], bend[1], 1.0
+    ux, uy = dx / d, dy / d
+    d = clamp(d, abs(l1 - l2) + 0.5, l1 + l2 - 0.05)
+    a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+    h = math.sqrt(max(0.0, l1 * l1 - a * a))
+    px, py = -uy, ux
+    if px * bend[0] + py * bend[1] < 0:
+        px, py = -px, -py
+    knee = (root[0] + ux * a + px * h, root[1] + uy * a + py * h)
+    end = (root[0] + ux * d, root[1] + uy * d)
+    return knee, end
+
+
+# The raven, from ~/.local/share/aeris-pet/raven.svg (200x200, facing right). The wing is
+# hinged at the shoulder (125,92) so it can flap.
+RAVEN_BODY = svg_path("M186,74 C172,62 160,52 146,48 C128,40 110,46 102,62 C88,84 66,112 48,142 "
+                      "C36,160 22,178 10,192 C30,186 46,178 60,170 C80,170 100,168 116,158 "
+                      "C136,146 148,124 150,100 C151,90 156,82 162,80 C170,78 178,76 186,74 Z")
+RAVEN_WING = svg_path("M0,0 C-18,10 -44,34 -72,64 C-44,56 -16,40 6,16 Z")   # relative to the hinge
+RAVEN_HINGE = (125, 92)
+RAVEN_EYE = (150, 63)
+RAVEN_HIPS = (96, 104)            # x of the two legs, which hang from y=160 to the feet
+RAVEN_FEET_Y = 196
+
+
+def hypr(dispatch):
+    try:
+        subprocess.run(["hyprctl", "dispatch", dispatch], capture_output=True, timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def hypr_eval(code):
+    try:
+        subprocess.run(["hyprctl", "eval", code], capture_output=True, timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def hypr_json(*args):
+    try:
+        out = subprocess.run(["hyprctl", *args, "-j"], capture_output=True, timeout=2, text=True).stdout
+        return json.loads(out) if out.strip() else None
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------- sounds
+
+def _write_wav(path, samples, rate=11025):
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<h", int(clamp(s, -1, 1) * 32000)) for s in samples))
+
+
+def _silence(dur, rate=11025):
+    return [0.0] * int(dur * rate)
+
+
+def _wobble_tone(f0, f1, dur, rate=11025, vib_hz=6.0, vib_depth=0.03, noise=0.0):
+    """A soft, wobbly tone: pitch glides f0->f1 with vibrato, like a tape-warped toy."""
+    n = int(dur * rate)
+    out, phase = [], 0.0
+    for i in range(n):
+        t = i / n
+        f = f0 + (f1 - f0) * t
+        f *= 1 + vib_depth * math.sin(2 * math.pi * vib_hz * i / rate)
+        phase += 2 * math.pi * f / rate
+        env = min(1.0, t * 12, (1 - t) * 6) ** 0.8
+        s = math.sin(phase) + 0.2 * math.sin(2 * phase)
+        s += noise * (random.random() * 2 - 1)
+        out.append(0.45 * env * s)
+    return out
+
+
+def _lofi(samples, rate=11025, levels=40):
+    """Lo-fi: quantize to few levels, add tape hiss and a little room hum."""
+    out = []
+    for i, s in enumerate(samples):
+        q = round(s * levels) / levels
+        hiss = 0.012 * (random.random() * 2 - 1)
+        hum = 0.008 * math.sin(2 * math.pi * 60 * i / rate)
+        out.append(q + hiss + hum)
+    return out
+
+
+def _giggle(rate=11025):
+    """Cute giggle: a run of short, bouncy 'ha' bursts with breath."""
+    s = []
+    for k in range(6):
+        base = 620 + 40 * (k % 2) - 10 * k
+        s += _wobble_tone(base, base * 1.35, 0.075, rate=rate, vib_hz=18, vib_depth=0.05, noise=0.06)
+        s += _silence(0.035, rate)
+    return s
+
+
+def make_sounds():
+    """Synthesize lo-fi caws, giggles and songs once, into SOUND_DIR."""
+    os.makedirs(SOUND_DIR, exist_ok=True)
+    for old in os.listdir(SOUND_DIR):
+        if not old.startswith("v2_"):
+            os.remove(os.path.join(SOUND_DIR, old))
+    made = {"caw": [], "song": [], "giggle": []}
+    random.seed(7)
+    rate = 11025
+    for i in range(3):
+        path = os.path.join(SOUND_DIR, f"v2_caw{i}.wav")
+        if not os.path.exists(path):
+            s = _wobble_tone(1150 - 60 * i, 640, 0.2, rate, vib_hz=7, noise=0.15)
+            s += _silence(0.05, rate)
+            s += _wobble_tone(1000, 560, 0.18, rate, vib_hz=7, noise=0.15)
+            _write_wav(path, _lofi(s, rate), rate)
+        made["caw"].append(path)
+    for i in range(3):
+        path = os.path.join(SOUND_DIR, f"v2_giggle{i}.wav")
+        if not os.path.exists(path):
+            _write_wav(path, _lofi(_giggle(rate), rate), rate)
+        made["giggle"].append(path)
+    for i, notes in enumerate([(523, 659, 784, 659), (784, 880, 698, 523), (440, 523, 587, 659, 523)]):
+        path = os.path.join(SOUND_DIR, f"v2_song{i}.wav")
+        if not os.path.exists(path):
+            s = []
+            for n in notes:
+                s += _wobble_tone(n, n * 1.01, 0.22, rate, vib_hz=4.5, vib_depth=0.012) + _silence(0.04, rate)
+            _write_wav(path, _lofi(s, rate), rate)
+        made["song"].append(path)
+    return made
+
+
+def play(path):
+    try:
+        subprocess.Popen(["pw-play", f"--volume={VOLUME}", path],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------- dragon
+
+def radius_at(i):
+    """Body radius at spine point i: head is widest, tail tapers."""
+    s = i / (BODY_N - 1)
+    return HEAD_R * (1 - 0.72 * s) ** 0.85
+
+
+class Pet:
+    def __init__(self):
+        self.lines = load_lines()
+        self.sounds = make_sounds()
+
+        display = Gdk.Display.get_default()
+        mon = display.get_primary_monitor() or display.get_monitor(0)
+        geo = mon.get_geometry()
+        self.mon_x, self.mon_y = geo.x, geo.y
+        self.mon_w, self.mon_h = geo.width, geo.height
+
+        self.ground_y = self.mon_y + self.mon_h - GROUND_PAD
+        self.min_x = self.mon_x + 30
+        self.max_x = self.mon_x + self.mon_w - 30
+        self.kind = load_choice()
+        self.choice_mtime = self.read_choice_mtime()
+
+        now = time.monotonic()
+        self.t_start = now
+        # head position (screen px) and body shape
+        self.hx = float(self.min_x + (self.max_x - self.min_x) // 3)
+        self.hy = float(self.ground_y)
+        self.dir = 1
+        self.pitch = self.pitch_t = 0.0
+        self.amp = self.amp_t = 1.6
+        self.speed = self.speed_t = 2.0
+        self.phase = 0.0
+        self.bow = self.bow_t = 0.0
+        self.gait = 0.0
+        self.stride = 0.0
+        self.prev_hx = self.hx
+
+        self.mode = "rest"              # rest walk goto peck dance fly perch sleep drag toss
+        self.mode_until = now + random.uniform(4, 10)
+        self.fly = None
+        self.perch = None
+        self.perch_target = None
+        self.goto_x = None
+        self.goto_kind = None
+        self.goto_crumb = None
+        self.peck_until = 0.0
+        self.peck_kind = None
+        self.dance_started = 0.0
+        self.dance_until = 0.0
+        self.next_dance = now + random.uniform(30, 60)
+        self.next_fly = now + random.uniform(240, 480)
+        self.next_peck = now + random.uniform(90, 240)
+        self.next_sound = now + random.uniform(120, 300)
+        self.next_perch = now + random.uniform(300, 600)
+        self.next_active_perch = 0.0
+        self.blink_until = 0.0
+        self.next_blink = now + random.uniform(2, 4)
+        self.bubble_text = None
+        self.bubble_until = 0.0
+        self.next_bubble = now + random.uniform(15, 30)
+
+        self.drag = None
+        self.toss = None
+        self.samples = []
+        self.pending_click = None
+
+        self.crumbs = []
+        self.crumb_win = None
+        self.crumb_area = None
+
+        self.last_activity = now
+        self.known = None
+        self.last_active = None
+        self.clients_cache = {}
+        self.attn = {}
+        self.last_updates_n = 0
+        self.next_attn = now + 15
+        self.next_patrol = 0.0
+
+        self.frame_t = now
+        self.prev_bbox = None
+        self.last_input = None
+        self.stats_t0 = now
+        self.stats_frames = 0
+        self.stats_draw = 0.0
+
+        # One full-screen transparent window. Only the dragon's area takes clicks.
+        self.win = Gtk.Window(title=APP)
+        self.win.set_default_size(self.mon_w, self.mon_h)
+        self.win.set_decorated(False)
+        self.win.set_skip_taskbar_hint(True)
+        self.win.set_skip_pager_hint(True)
+        self.win.set_accept_focus(False)
+        self.win.set_focus_on_map(False)
+        self.win.set_app_paintable(True)
+        self.win.set_size_request(self.mon_w, self.mon_h)
+        self.win.set_resizable(False)
+        rgba = self.win.get_screen().get_rgba_visual()
+        if rgba is not None:
+            self.win.set_visual(rgba)
+        self.area = Gtk.DrawingArea()
+        self.area.set_size_request(self.mon_w, self.mon_h)
+        self.area.connect("draw", self.on_draw)
+        self.win.add(self.area)
+        self.win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK
+                            | Gdk.EventMask.BUTTON_RELEASE_MASK
+                            | Gdk.EventMask.POINTER_MOTION_MASK)
+        self.win.connect("button-press-event", self.on_click)
+        self.win.connect("button-release-event", self.on_release)
+        self.win.connect("motion-notify-event", self.on_motion)
+        self.win.connect("destroy", Gtk.main_quit)
+        self.add_window_rules()     # before mapping, so the rules apply on the first frame
+        self.win.show_all()
+        self.win.resize(self.mon_w, self.mon_h)
+
+        GLib.timeout_add(1200, self.setup_hyprland)
+        GLib.timeout_add(2600, self.setup_hyprland)     # run again, in case the window was still mapping
+        self.area.add_tick_callback(self.on_frame, None)   # runs at the monitor's refresh rate
+        GLib.timeout_add(1000, self.poll_timer)
+        if os.environ.get("AERIS_PET_DEMO"):
+            GLib.timeout_add(4000, self.demo)
+
+    def demo(self):
+        self.drop_crumbs()
+        return False
+
+    def on_ground(self):
+        return abs(self.hy - self.ground_y) < 1
+
+    # setup -------------------------------------------------------------
+
+    def add_window_rules(self):
+        """Keep both overlay windows free of blur, dimming and opacity changes. They cover
+        the whole screen (the crumbs the whole width), so a blurred backdrop would blur
+        every window behind them. hyprland.lua carries the same rule; this one covers a
+        config without it. Same name each time, so a restart replaces it."""
+        hypr_eval(
+            'hl.window_rule({ name = "aeris-pet-overlay", '
+            f'match = {{ class = "^({APP}|{CRUMB_APP})$" }}, '
+            'float = true, no_focus = true, no_blur = true, no_shadow = true, no_dim = true, '
+            'no_anim = true, '
+            'border_size = 0, rounding = 0, opacity = "1.0 override 1.0 override" })'
+        )
+
+    def setup_hyprland(self):
+        hypr(f'hl.dsp.window.float({{ window = "class:^{APP}$" }})')
+        hypr(f'hl.dsp.window.move({{ x = {self.mon_x}, y = {self.mon_y}, window = "class:^{APP}$" }})')
+        return False
+
+    def set_input_region(self, bbox):
+        gdk_win = self.win.get_window()
+        if gdk_win is None:
+            return
+        x, y, w, h = bbox
+        gdk_win.input_shape_combine_region(
+            cairo.Region(cairo.RectangleInt(int(x), int(y), max(1, int(w)), max(1, int(h)))), 0, 0)
+
+    def read_choice_mtime(self):
+        try:
+            return os.stat(CHOICE_FILE).st_mtime
+        except OSError:
+            return 0.0
+
+    def check_choice(self):
+        """`aeris-pet set` (the bar menu) rewrites the choice file; follow it."""
+        mt = self.read_choice_mtime()
+        if mt == self.choice_mtime:
+            return
+        self.choice_mtime = mt
+        kind = load_choice()
+        if kind != self.kind:
+            self.kind = kind
+            self.touch(time.monotonic())
+            self.area.queue_draw()
+            self.say({"dragon": "dragon again", "raven": "caw. raven now."}.get(kind, "hello"))
+
+    # geometry ----------------------------------------------------------
+
+    def geometry(self):
+        """Spine points (screen px, head first), forward and normal vectors, and the head point."""
+        hx = self.hx
+        hy = self.hy + self.bow
+        th = self.pitch
+        f = (self.dir * math.cos(th), math.sin(th))
+        n = (-f[1], f[0])
+        pts = []
+        for i in range(BODY_N):
+            s = i / (BODY_N - 1)
+            d = i * BODY_SEG
+            w = self.amp * (0.15 + 0.85 * s) * math.sin(2 * math.pi * 0.9 * s - self.phase)
+            pts.append((hx - f[0] * d + n[0] * w, hy - f[1] * d + n[1] * w))
+        return pts, f, n, (hx, hy)
+
+    def belly(self, f):
+        """Unit vector from the spine toward the belly, whichever way the pet faces."""
+        return (-f[1] * self.dir, f[0] * self.dir)
+
+    def head_top(self, head):
+        """Where the speech bubble's tail points."""
+        if self.kind == "raven":
+            return self.hy + GROUND_PAD - 2 - (RAVEN_FEET_Y - 44) * RAVEN_SCALE
+        return head[1] - HEAD_R - 6
+
+    def dragon_bbox(self, pts, head, bubble=None):
+        if self.kind == "raven":
+            half = 110 * RAVEN_SCALE + 8
+            pts = [(self.hx - half, self.hy - 200 * RAVEN_SCALE),
+                   (self.hx + half, self.hy + GROUND_PAD)]
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        pad = HEAD_R + 18
+        x0 = min(xs) - pad
+        y0 = min(ys) - pad
+        x1 = max(xs) + pad
+        y1 = max(ys) + pad
+        if bubble:
+            bx, by, bw, bh = bubble
+            x0, y0 = min(x0, bx), min(y0, by)
+            x1, y1 = max(x1, bx + bw), max(y1, by + bh)
+        return (x0, y0, x1 - x0, y1 - y0)
+
+    def bubble_rect(self, text, anchor_x, top_y):
+        scratch = cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 1, 1))
+        layout = PangoCairo.create_layout(scratch)
+        layout.set_font_description(Pango.FontDescription(FONT))
+        layout.set_width(BUBBLE_WRAP_PX * Pango.SCALE)
+        layout.set_wrap(Pango.WrapMode.WORD_CHAR)
+        layout.set_text(text, -1)
+        _, logical = layout.get_pixel_extents()
+        bw = logical.width + 20
+        bh = logical.height + 14
+        bx = clamp(anchor_x - bw / 2, self.mon_x + 2, self.mon_x + self.mon_w - bw - 2)
+        by = top_y - 10 - bh
+        return bx, by, bw, bh, layout
+
+    # frame loop --------------------------------------------------------
+
+    def on_frame(self, _widget, _clock, _data):
+        t0 = time.perf_counter()
+        now = time.monotonic()
+        dt = clamp(now - self.frame_t, 0.0, 0.05)
+        self.frame_t = now
+        self.update(now, dt)
+        self.update_dirty()
+        if STATS:
+            self.stats_frames += 1
+            self.stats_draw += time.perf_counter() - t0
+            if now - self.stats_t0 >= 5:
+                fps = self.stats_frames / (now - self.stats_t0)
+                cost = 1000 * self.stats_draw / max(1, self.stats_frames)
+                print(f"frames/s {fps:.1f}  update+dirty ms/frame {cost:.2f}", flush=True)
+                self.stats_t0, self.stats_frames, self.stats_draw = now, 0, 0.0
+        return True
+
+    def update(self, now, dt):
+        self.step_mode(now, dt)
+        self.pitch += (self.pitch_t - self.pitch) * min(1.0, dt * 5)
+        self.amp += (self.amp_t - self.amp) * min(1.0, dt * 4)
+        self.speed += (self.speed_t - self.speed) * min(1.0, dt * 4)
+        self.bow += (self.bow_t - self.bow) * min(1.0, dt * 6)
+        self.phase += self.speed * dt
+        moved = self.hx - self.prev_hx
+        self.prev_hx = self.hx
+        walking = self.mode in ("walk", "goto")
+        if walking:
+            self.gait += abs(moved) / STRIDE * 0.9
+        self.stride += ((STRIDE if walking else 0.0) - self.stride) * min(1.0, dt * 6)
+
+        if self.mode in ("rest", "walk", "perch") and now >= self.next_blink:
+            self.blink_until = now + 0.15
+            self.next_blink = now + random.uniform(3, 6)
+        if self.bubble_text is not None and now >= self.bubble_until:
+            self.bubble_text = None
+        if self.bubble_text is None and now >= self.next_bubble:
+            self.say(random.choice(self.lines))
+
+    def update_dirty(self):
+        """Redraw only the area the dragon (and its bubble) occupies now or last frame."""
+        pts, _, _, head = self.geometry()
+        bubble = None
+        if self.bubble_text is not None:
+            bx, by, bw, bh, _ = self.bubble_rect(self.bubble_text, head[0], self.head_top(head))
+            bubble = (bx, by, bw, bh)
+        x, y, w, h = self.dragon_bbox(pts, head, bubble)
+        win_bbox = (x - self.mon_x, y - self.mon_y, w, h)
+        if self.prev_bbox is not None:
+            px, py, pw, ph = self.prev_bbox
+            ux0 = min(px, win_bbox[0])
+            uy0 = min(py, win_bbox[1])
+            ux1 = max(px + pw, win_bbox[0] + win_bbox[2])
+            uy1 = max(py + ph, win_bbox[1] + win_bbox[3])
+            self.area.queue_draw_area(int(ux0), int(uy0), int(ux1 - ux0) + 2, int(uy1 - uy0) + 2)
+        else:
+            self.area.queue_draw()
+        if win_bbox != self.last_input:
+            self.last_input = win_bbox
+            self.set_input_region(win_bbox)
+        self.prev_bbox = win_bbox
+
+    # modes -------------------------------------------------------------
+
+    def step_mode(self, now, dt):
+        m = self.mode
+        if m == "fly":
+            self.step_fly(now)
+        elif m == "toss":
+            self.step_toss(now, dt)
+        elif m == "drag":
+            self.amp_t, self.speed_t, self.pitch_t, self.bow_t = 5.0, 6.0, 0.0, 0.0
+        elif m == "goto":
+            self.step_goto(now, dt)
+        elif m == "peck":
+            self.step_peck(now)
+        elif m == "perch":
+            self.step_perch(dt)
+        elif m == "dance":
+            self.step_dance(now)
+        elif m == "walk":
+            self.step_walk(now, dt)
+        elif m == "sleep":
+            self.amp_t, self.speed_t, self.pitch_t, self.bow_t = 0.8, 0.8, 0.0, 6.0
+            self.hy = self.ground_y - 2
+        else:
+            self.step_rest(now)
+
+    def step_rest(self, now):
+        self.amp_t, self.speed_t, self.pitch_t, self.bow_t = 2.2, 2.0, 0.0, 0.0
+        self.hy = self.ground_y
+        if now >= self.mode_until:
+            if random.random() < 0.5:
+                self.mode, self.mode_until = "walk", now + random.uniform(2, 5)
+                if random.random() < 0.3:
+                    self.dir = -self.dir
+                return
+            self.mode_until = now + random.uniform(5, 12)
+        if self.crumbs and self.on_ground():
+            nearest = min(self.crumbs, key=lambda c: abs(c - self.hx))
+            self.start_goto(nearest, "crumb", nearest)
+        elif now >= self.next_dance:
+            self.start_dance(random.uniform(2.5, 4.0))
+        elif now >= self.next_fly and self.on_ground():
+            to_x = self.max_x if self.hx < (self.min_x + self.max_x) / 2 else self.min_x
+            top = self.mon_y + 40
+            span = max(0, self.ground_y - top)
+            amp = random.uniform(min(120, span), span)
+            self.start_fly(to_x, self.ground_y, "floor", amp=amp)
+        elif now >= self.next_peck and self.on_ground():
+            self.start_goto(random.uniform(self.min_x, self.max_x), "idle")
+            self.next_peck = now + random.uniform(90, 240)
+        elif now >= self.next_perch and self.on_ground():
+            self.try_perch_random(now)
+        elif now - self.last_activity > SLEEP_AFTER:
+            self.mode = "sleep"
+
+    def step_walk(self, now, dt):
+        self.amp_t, self.speed_t, self.pitch_t, self.bow_t = 4.5, 8.0, 0.0, 0.0
+        self.hy = self.ground_y
+        self.hx += self.dir * WALK_SPEED * dt
+        if self.hx <= self.min_x or self.hx >= self.max_x:
+            self.hx = clamp(self.hx, self.min_x, self.max_x)
+            self.dir = -self.dir
+            self.mode, self.mode_until = "rest", now + random.uniform(5, 12)
+        elif now >= self.mode_until:
+            self.mode, self.mode_until = "rest", now + random.uniform(5, 12)
+
+    def start_goto(self, x, kind, crumb=None):
+        self.goto_x = clamp(x, self.min_x, self.max_x)
+        self.goto_kind = kind
+        self.goto_crumb = crumb
+        self.dir = 1 if self.goto_x >= self.hx else -1
+        self.mode = "goto"
+
+    def step_goto(self, now, dt):
+        self.amp_t, self.speed_t, self.pitch_t, self.bow_t = 3.5, 8.0, 0.0, 0.0
+        self.hy = self.ground_y
+        step = GOTO_SPEED * dt * self.dir
+        if abs(self.goto_x - self.hx) <= abs(step):
+            self.hx = self.goto_x
+            self.mode = "peck"
+            self.peck_kind = self.goto_kind
+            self.peck_until = now + 1.2
+        else:
+            self.hx += step
+
+    def step_peck(self, now):
+        self.amp_t, self.speed_t, self.pitch_t, self.bow_t = 1.0, 1.0, 0.0, 10.0
+        self.hy = self.ground_y
+        if now >= self.peck_until:
+            if self.peck_kind == "crumb":
+                self.eat_crumb(self.goto_crumb)
+                if random.random() < 0.4:
+                    self.say(random.choice(FEED_LINES))
+            self.bow_t = 0.0
+            self.mode, self.mode_until = "rest", now + random.uniform(4, 8)
+
+    def start_dance(self, seconds):
+        now = time.monotonic()
+        self.mode = "dance"
+        self.dance_started = now
+        self.dance_until = now + seconds
+        self.next_dance = now + random.uniform(45, 100)
+
+    def step_dance(self, now):
+        t = now - self.dance_started
+        self.amp_t, self.speed_t = 9.0, 10.0
+        self.pitch_t = 0.3 * math.sin(t * 2 * math.pi * 1.0)
+        self.bow_t = 3 + 3 * math.sin(t * 2 * math.pi * 2.0)
+        self.hy = self.ground_y - 5 * abs(math.sin(t * 2 * math.pi * 1.0))
+        if now >= self.dance_until:
+            self.mode, self.mode_until = "rest", now + random.uniform(5, 12)
+
+    def start_fly(self, to_x, to_y, purpose, amp=None):
+        now = time.monotonic()
+        dist = math.hypot(to_x - self.hx, to_y - self.hy)
+        if amp is None:
+            amp = clamp(dist * 0.25, 10, 160)
+        if abs(to_x - self.hx) > 1:
+            self.dir = 1 if to_x > self.hx else -1
+        self.fly = {
+            "t0": now,
+            "dur": clamp(dist / 180.0, 1.5, 9.0),
+            "from_x": self.hx, "from_y": self.hy,
+            "to_x": to_x, "to_y": to_y,
+            "amp": amp, "purpose": purpose,
+        }
+        self.mode = "fly"
+        self.next_fly = now + random.uniform(240, 480)
+
+    def step_fly(self, now):
+        f = self.fly
+        p = min(1.0, (now - f["t0"]) / f["dur"])
+        ease = 0.5 - 0.5 * math.cos(math.pi * p)
+        self.hx = f["from_x"] + (f["to_x"] - f["from_x"]) * ease
+        self.hy = f["from_y"] + (f["to_y"] - f["from_y"]) * ease - f["amp"] * math.sin(math.pi * p)
+        # body follows the direction of travel, so the dragon swims along its arc
+        dxdp = (f["to_x"] - f["from_x"]) * (math.pi / 2) * math.sin(math.pi * p)
+        dydp = ((f["to_y"] - f["from_y"]) * (math.pi / 2) * math.sin(math.pi * p)
+                - f["amp"] * math.pi * math.cos(math.pi * p))
+        if abs(dxdp) + abs(dydp) > 1e-3:
+            self.pitch_t = clamp(math.atan2(dydp, dxdp * self.dir), -0.9, 0.9)
+        self.amp_t, self.speed_t, self.bow_t = 15.0, 13.0, 0.0
+        if p >= 1.0:
+            self.hx, self.hy = f["to_x"], f["to_y"]
+            self.fly = None
+            if f["purpose"] == "perch" and self.perch:
+                self.mode = "perch"
+            else:
+                self.mode, self.mode_until = "rest", now + random.uniform(5, 12)
+
+    def step_perch(self, dt):
+        self.amp_t, self.speed_t, self.pitch_t, self.bow_t = 2.5, 3.0, 0.0, 0.0
+        if self.perch_target:
+            tx, ty = self.perch_target
+            k = min(1.0, dt * 8)
+            self.hx += (tx - self.hx) * k
+            self.hy += (ty - self.hy) * k
+
+    # attention, crumbs and perching -----------------------------------
+
+    def touch(self, now):
+        self.last_activity = now
+        if self.mode == "sleep":
+            self.mode = "rest"
+            self.mode_until = now + random.uniform(4, 8)
+
+    def say(self, text):
+        now = time.monotonic()
+        self.bubble_text = text
+        self.bubble_until = now + BUBBLE_SECONDS
+        self.next_bubble = now + random.uniform(30, 60)
+
+    def sing_or_caw(self, now):
+        roll = random.random()
+        kind = "song" if roll < 0.3 else ("giggle" if roll < 0.55 else "caw")
+        if self.sounds[kind]:
+            play(random.choice(self.sounds[kind]))
+        self.next_sound = now + random.uniform(180, 600)
+
+    def perch_candidates(self):
+        active = hypr_json("activewindow") or {}
+        ws = (active.get("workspace") or {}).get("id")
+        candidates = []
+        for c in self.clients_cache.values():
+            if ws is not None and (c.get("workspace") or {}).get("id") != ws:
+                continue
+            if c.get("fullscreen") or not c.get("mapped", True) or c.get("hidden"):
+                continue
+            x, y = c["at"]
+            w, _ = c["size"]
+            if y < self.mon_y + 40 or y > self.ground_y - 30 or w < 60:
+                continue
+            candidates.append(c)
+        return candidates, active
+
+    def try_perch_random(self, now):
+        self.next_perch = now + random.uniform(300, 600)
+        candidates, _ = self.perch_candidates()
+        if candidates:
+            self.begin_perch(random.choice(candidates), now)
+
+    def fly_to_window(self, now):
+        candidates, active = self.perch_candidates()
+        if not candidates:
+            self.say("no window to land on")
+            return
+        target = next((c for c in candidates if c.get("address") == active.get("address")), None)
+        self.begin_perch(target or random.choice(candidates), now)
+
+    def begin_perch(self, aw, now):
+        ax, ay = aw["at"]
+        aw_w, _ = aw["size"]
+        target_y = ay - (GROUND_PAD - 2)      # paws on the top edge of the window
+        if target_y < self.mon_y:
+            return
+        lo = max(self.min_x, ax + 8)
+        hi = min(self.max_x, ax + aw_w - 8)
+        if hi < lo:
+            return
+        x = random.uniform(lo, hi)
+        self.perch = {"addr": aw["address"], "dx": x - ax, "until": now + random.uniform(30, 90)}
+        self.perch_target = (x, target_y)
+        self.start_fly(x, target_y, "perch", amp=random.uniform(30, 80))
+
+    def begin_descend(self):
+        self.perch = None
+        self.perch_target = None
+        self.start_fly(self.hx, self.ground_y, "floor", amp=20)
+
+    def drop_crumbs(self):
+        now = time.monotonic()
+        self.touch(now)
+        for _ in range(3):
+            self.crumbs.append(random.uniform(self.mon_x + 40, self.mon_x + self.mon_w - 40))
+        self.say(random.choice(FEED_LINES))
+        self.ensure_crumb_window()
+        if self.crumb_area is not None:
+            self.crumb_area.queue_draw()
+
+    def eat_crumb(self, crumb):
+        if crumb is not None and crumb in self.crumbs:
+            self.crumbs.remove(crumb)
+        elif self.crumbs:
+            self.crumbs.remove(min(self.crumbs, key=lambda c: abs(c - self.hx)))
+        if not self.crumbs:
+            self.destroy_crumb_window()
+        elif self.crumb_area is not None:
+            self.crumb_area.queue_draw()
+
+    def ensure_crumb_window(self):
+        if self.crumb_win is not None:
+            return
+        win = Gtk.Window(title=CRUMB_APP)
+        win.set_default_size(self.mon_w, CRUMB_H)
+        win.set_decorated(False)
+        win.set_skip_taskbar_hint(True)
+        win.set_skip_pager_hint(True)
+        win.set_accept_focus(False)
+        win.set_focus_on_map(False)
+        win.set_app_paintable(True)
+        win.set_size_request(self.mon_w, CRUMB_H)
+        win.set_resizable(False)
+        rgba = win.get_screen().get_rgba_visual()
+        if rgba is not None:
+            win.set_visual(rgba)
+        area = Gtk.DrawingArea()
+        area.set_size_request(self.mon_w, CRUMB_H)
+        area.connect("draw", self.on_crumb_draw)
+        win.add(area)
+        win.show_all()
+        win.resize(self.mon_w, CRUMB_H)
+        self.crumb_win = win
+        self.crumb_area = area
+        GLib.timeout_add(800, self.place_crumb_window)
+
+    def place_crumb_window(self):
+        if self.crumb_win is None:
+            return False
+        hypr(f'hl.dsp.window.float({{ window = "class:^{CRUMB_APP}$" }})')
+        hypr(f'hl.dsp.window.move({{ x = {self.mon_x}, y = {self.mon_y + self.mon_h - CRUMB_H}, '
+             f'window = "class:^{CRUMB_APP}$" }})')
+        gdk_win = self.crumb_win.get_window()
+        if gdk_win is not None:
+            gdk_win.input_shape_combine_region(cairo.Region(), 0, 0)
+        return False
+
+    def destroy_crumb_window(self):
+        if self.crumb_win is not None:
+            self.crumb_win.destroy()
+        self.crumb_win = None
+        self.crumb_area = None
+
+    def on_crumb_draw(self, _widget, cr):
+        cr.set_operator(cairo.OPERATOR_CLEAR)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+        cr.set_source_rgb(*COL_CRUMB)
+        for c in self.crumbs:
+            cr.arc(c - self.mon_x, CRUMB_H - 4, 2.5, 0, 2 * math.pi)
+            cr.fill()
+
+    def on_new_window(self, client, now):
+        cx = client["at"][0] + client["size"][0] / 2
+        self.dir = 1 if cx > self.hx else -1
+        self.touch(now)
+        if random.random() < 0.5:
+            self.say(random.choice(NEW_WINDOW_LINES))
+
+    def poll(self, now):
+        clients = hypr_json("clients") or []
+        others = {c["address"]: c for c in clients
+                  if not str(c.get("class", "")).startswith("aeris-")}
+        if self.known is not None:
+            new = [c for a, c in others.items() if a not in self.known]
+            if new:
+                self.on_new_window(new[0], now)
+                if self.mode in ("perch", "fly"):
+                    self.begin_descend()
+        self.known = set(others)
+        self.clients_cache = others
+
+        active = hypr_json("activewindow")
+        if isinstance(active, dict) and active.get("fullscreen") and self.mode in ("perch", "fly"):
+            self.begin_descend()
+        if (isinstance(active, dict) and active.get("address")
+                and not str(active.get("class", "")).startswith("aeris-")
+                and active["address"] != self.last_active):
+            self.last_active = active["address"]
+            self.touch(now)
+            if (self.mode in ("rest", "walk") and not active.get("fullscreen")
+                    and now >= self.next_active_perch
+                    and random.random() < PERCH_CHANCE):
+                aw = others.get(active["address"])
+                if aw and aw["at"][1] < self.ground_y - 30:
+                    self.next_active_perch = now + 300
+                    self.begin_perch(aw, now)
+
+        if self.mode == "perch" and self.perch:
+            c = others.get(self.perch["addr"])
+            if c is None or c.get("fullscreen") or now >= self.perch["until"]:
+                self.begin_descend()
+            else:
+                x, y = c["at"]
+                self.perch_target = (clamp(x + self.perch["dx"], self.min_x, self.max_x),
+                                     y - (GROUND_PAD - 2))
+
+    def poll_timer(self):
+        now = time.monotonic()
+        self.check_choice()
+        self.poll(now)
+        if now >= self.next_attn:
+            self.next_attn = now + ATTN_CHECK_S
+            self.start_attention_check()
+        if self.attn and now >= self.next_patrol and self.mode in ("rest", "walk") and not self.drag:
+            self.patrol(now)
+        if now >= self.next_sound and self.mode != "sleep":
+            self.sing_or_caw(now)
+        return True
+
+    # attention ---------------------------------------------------------
+
+    def start_attention_check(self):
+        threading.Thread(target=self.check_attention_worker, daemon=True).start()
+
+    def check_attention_worker(self):
+        results = {"battery": None, "updates": 0, "tailscale_off": False}
+        try:
+            bats = glob.glob("/sys/class/power_supply/BAT*")
+            if bats:
+                cap = int(open(os.path.join(bats[0], "capacity")).read().strip())
+                status = open(os.path.join(bats[0], "status")).read().strip()
+                if status == "Discharging" and cap <= 15:
+                    results["battery"] = cap
+        except (OSError, ValueError):
+            pass
+        try:
+            out = subprocess.run(["checkupdates"], capture_output=True, text=True, timeout=90).stdout
+            results["updates"] = len([l for l in out.splitlines() if l.strip()])
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        try:
+            active = subprocess.run(["systemctl", "is-active", "-q", "tailscaled"], timeout=10).returncode == 0
+            if not active:
+                results["tailscale_off"] = True
+            else:
+                st = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True, timeout=10).stdout
+                results["tailscale_off"] = '"BackendState": "Running"' not in st
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        GLib.idle_add(self.apply_attention, results)
+
+    def notify(self, title, body):
+        try:
+            subprocess.Popen(["notify-send", "-a", "tinyraven", "-i", "dialog-information", title, body],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            pass
+
+    def apply_attention(self, results):
+        now = time.monotonic()
+        attn = {}
+        if results["battery"] is not None:
+            attn["battery"] = f"battery at {results['battery']}%, plug me in"
+        n = results["updates"]
+        if n > 0:
+            attn["updates"] = f"{n} updates waiting"
+            if n != self.last_updates_n:
+                self.notify("Updates waiting", f"{n} packages can be updated. Run aeris-update.")
+        self.last_updates_n = n
+        if results["tailscale_off"]:
+            attn["tailscale"] = "tailscale is off"
+            if "tailscale" not in self.attn:
+                self.notify("Tailscale is off", "The tailnet is not connected.")
+        was_empty = not self.attn
+        self.attn = attn
+        if attn and was_empty:
+            self.touch(now)
+            self.next_patrol = now + 3
+        return False
+
+    def patrol(self, now):
+        """Fly out across the screen and point at what needs attention."""
+        self.next_patrol = now + ATTN_PATROL_S
+        msg = " · ".join(self.attn.values())
+        to_x = random.uniform(self.min_x, self.max_x)
+        self.start_fly(to_x, self.ground_y, "floor", amp=random.uniform(60, 120))
+        self.say(msg)
+        if self.sounds["caw"]:
+            play(random.choice(self.sounds["caw"]))
+
+    # input -------------------------------------------------------------
+
+    def on_click(self, _widget, event):
+        now = time.monotonic()
+        if event.button == 3:
+            # the menu is in the bar: a popup grab from this unfocusable overlay could
+            # leave the keyboard grabbed
+            try:
+                subprocess.Popen(["sh", "-c", 'PATH="$HOME/.local/bin:$PATH"; aeris-shell -q pet menu'],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError:
+                pass
+            return True
+        if event.button == 2:
+            self.drop_crumbs()
+            return True
+        if event.button == 1 and event.type == Gdk.EventType._2BUTTON_PRESS:
+            if self.pending_click is not None:
+                GLib.source_remove(self.pending_click)
+                self.pending_click = None
+            self.drag = None
+            self.touch(now)
+            self.fly_to_window(now)
+            return True
+        if event.button == 1:
+            self.touch(now)
+            self.perch = None
+            self.perch_target = None
+            self.drag = {"sx": event.x_root, "sy": event.y_root, "rx": self.hx, "ry": self.hy, "moved": False}
+            self.samples = [(now, event.x_root, event.y_root)]
+            self.mode = "drag"
+            self.toss = None
+            return True
+        return False
+
+    def on_motion(self, _widget, event):
+        if not self.drag:
+            return False
+        now = time.monotonic()
+        d = self.drag
+        dx = event.x_root - d["sx"]
+        dy = event.y_root - d["sy"]
+        if abs(dx) + abs(dy) > 4:
+            d["moved"] = True
+        self.hx = clamp(d["rx"] + dx, self.min_x, self.max_x)
+        self.hy = clamp(d["ry"] + dy, self.mon_y + 6, self.ground_y)
+        self.samples.append((now, event.x_root, event.y_root))
+        self.samples = [s for s in self.samples if now - s[0] <= 0.15]
+        return True
+
+    def on_release(self, _widget, event):
+        if event.button != 1 or not self.drag:
+            return False
+        now = time.monotonic()
+        d = self.drag
+        self.drag = None
+        if not d["moved"]:
+            self.mode = "rest"
+            self.pending_click = GLib.timeout_add(260, self.do_click)
+            return True
+        vx = vy = 0.0
+        if len(self.samples) >= 2 and now - self.samples[-1][0] <= 0.12:
+            t0, x0, y0 = self.samples[0]
+            t1, x1, y1 = self.samples[-1]
+            dt = max(t1 - t0, 0.02)
+            vx = clamp((x1 - x0) / dt, -1600, 1600)
+            vy = clamp((y1 - y0) / dt, -1600, 1600)
+        self.toss = {"vx": vx, "vy": vy, "last": now}
+        self.dir = 1 if vx >= 0 else -1
+        self.mode = "toss"
+        if math.hypot(vx, vy) > 600:
+            self.say(random.choice(["wheee!", "whoa, whoa, whoa"]))
+        return True
+
+    def do_click(self):
+        self.pending_click = None
+        now = time.monotonic()
+        self.touch(now)
+        self.start_dance(random.uniform(2.5, 3.5))
+        self.say(random.choice(self.lines))
+        if self.sounds["caw"]:
+            play(random.choice(self.sounds["caw"]))
+        return False
+
+    def step_toss(self, now, dt):
+        tq = self.toss
+        dt = clamp(now - tq["last"], 0.0, 0.1)
+        tq["last"] = now
+        vx, vy = tq["vx"], tq["vy"]
+        vy += 900 * dt
+        vx *= math.exp(-0.6 * dt)
+        self.hx += vx * dt
+        self.hy += vy * dt
+        if self.hx < self.min_x:
+            self.hx, vx = self.min_x, -vx * 0.5
+        elif self.hx > self.max_x:
+            self.hx, vx = self.max_x, -vx * 0.5
+        if self.hy >= self.ground_y:
+            self.hy = self.ground_y
+            vy = -vy * 0.45 if vy > 120 else 0.0
+            vx *= math.exp(-4 * dt)
+        if self.hy <= self.mon_y + 6:
+            self.hy, vy = self.mon_y + 6, abs(vy) * 0.3
+        airborne = not self.on_ground()
+        if abs(vx) > 5:
+            self.dir = 1 if vx > 0 else -1
+        tq["vx"], tq["vy"] = vx, vy
+        self.amp_t = 14.0 if airborne else 3.0
+        self.speed_t = 10.0
+        self.bow_t = 0.0
+        self.pitch_t = clamp(math.atan2(vy, self.dir * max(abs(vx), 60.0)), -0.9, 0.9)
+        if not airborne and vy == 0.0 and abs(vx) < 12:
+            self.toss = None
+            self.mode, self.mode_until = "rest", now + random.uniform(5, 12)
+
+    # drawing -----------------------------------------------------------
+
+    def draw_dragon(self, cr, now):
+        pts, f, _, head = self.geometry()
+        b = self.belly(f)
+        n = (-b[0], -b[1])          # toward the back: fins and horns go this way
+        self.draw_legs(cr, pts, f, b, now, far=True)
+        # silhouette: dark outline under a light body
+        cr.set_source_rgb(*COL_LINE)
+        for i, (x, y) in enumerate(pts):
+            cr.arc(x, y, radius_at(i) + 1.0, 0, 2 * math.pi)
+            cr.fill()
+        cr.set_source_rgb(*COL_BODY)
+        for i, (x, y) in enumerate(pts):
+            cr.arc(x, y, radius_at(i), 0, 2 * math.pi)
+            cr.fill()
+        # dorsal fins: flutter along the back
+        for i in range(3, BODY_N - 4, 3):
+            px, py = pts[i]
+            r = radius_at(i)
+            flut = 0.9 * math.sin(now * 2 * math.pi * 2.0 + i * 0.7)
+            bx, by = px + n[0] * r * 0.4, py + n[1] * r * 0.4
+            tipx = px + n[0] * (r + 3.0 + flut) - f[0] * 2.2
+            tipy = py + n[1] * (r + 3.0 + flut) - f[1] * 2.2
+            cr.move_to(bx - f[0] * 3.2, by - f[1] * 3.2)
+            cr.line_to(tipx, tipy)
+            cr.line_to(bx + f[0] * 3.2, by + f[1] * 3.2)
+            cr.close_path()
+            cr.set_source_rgba(*COL_FIN, 0.85)
+            cr.fill_preserve()
+            cr.set_source_rgb(*COL_LINE)
+            cr.set_line_width(0.6)
+            cr.stroke()
+        self.draw_legs(cr, pts, f, b, now, far=False)
+        self.draw_head(cr, head, f, now)
+
+    def floor_y(self):
+        """Where the paws stand: the screen floor, or the top of the window it perches on."""
+        if self.mode == "perch" and self.perch_target:
+            return self.perch_target[1] + GROUND_PAD - 2
+        return self.ground_y + GROUND_PAD - 2
+
+    def planted(self):
+        if self.mode in ("fly", "toss", "drag"):
+            return False
+        return abs(self.hy + self.bow - (self.floor_y() - GROUND_PAD + 2)) < 12
+
+    def draw_legs(self, cr, pts, f, b, now, far):
+        """Four legs like Haku's: front legs with the elbow bent back, hind legs with a
+        forward thigh and a hock bent back, each ending in a clawed paw."""
+        back = (-f[0], -f[1])
+        planted = self.planted()
+        floor = self.floor_y()
+        side = -1.0 if far else 1.0
+        for front in (True, False):
+            i = LEG_FRONT_AT if front else LEG_REAR_AT
+            px, py = pts[i]
+            r = radius_at(i)
+            hip = (px + b[0] * r * 0.45 + f[0] * (1.2 if far else 0.0),
+                   py + b[1] * r * 0.45 + f[1] * (1.2 if far else 0.0))
+            bones = FRONT_BONES if front else REAR_BONES
+            reach = sum(bones)
+            # trot: diagonal pairs move together
+            ph = self.gait + (0.0 if front == (not far) else math.pi)
+            if planted:
+                stance = (1.5 if front else -1.0) * self.dir
+                tx = hip[0] + self.dir * self.stride * math.sin(ph) + stance
+                lift = 3.5 * max(0.0, math.cos(ph)) * (self.stride / STRIDE)
+                target = (tx, floor - lift)
+                paw_dir = (self.dir, 0.0)
+            elif self.mode == "fly":
+                pad = 1.2 * math.sin(now * 2 * math.pi * 1.3 + (0 if front else 1.7) + side)
+                target = (hip[0] + back[0] * reach * 0.8 + b[0] * (reach * 0.35 + pad),
+                          hip[1] + back[1] * reach * 0.8 + b[1] * (reach * 0.35 + pad))
+                paw_dir = back
+            else:                   # held or thrown: legs dangle and paddle
+                sw = 2.0 * math.sin(now * 2 * math.pi * 2.2 + (0 if front else 1.3) + side)
+                target = (hip[0] + b[0] * reach * 0.85 + back[0] * 2 + f[0] * sw,
+                          hip[1] + b[1] * reach * 0.85 + back[1] * 2 + f[1] * sw)
+                paw_dir = None
+            if front:
+                joint, end = two_bone(hip, target, bones[0], bones[1], back)
+                chain = [hip, joint, end]
+            else:
+                # thigh swings forward and down from the hip, then shank + metatarsal
+                ang = 0.6
+                tdir = (b[0] * math.cos(ang) + f[0] * math.sin(ang),
+                        b[1] * math.cos(ang) + f[1] * math.sin(ang))
+                knee = (hip[0] + tdir[0] * bones[0], hip[1] + tdir[1] * bones[0])
+                hock, end = two_bone(knee, target, bones[1], bones[2], back)
+                chain = [hip, knee, hock, end]
+            if paw_dir is None:
+                ex, ey = end[0] - chain[-2][0], end[1] - chain[-2][1]
+                el = math.hypot(ex, ey) or 1.0
+                paw_dir = (ex / el, ey / el)
+            self.draw_limb(cr, chain, paw_dir, far)
+
+    def draw_limb(self, cr, chain, paw_dir, far):
+        fill = COL_FIN if far else COL_BODY
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        widths = [(4.6, 3.0)] + [(3.4, 1.9)] * (len(chain) - 2)   # thick upper bone, slim lower
+        for (wo, _), a, c in zip(widths, chain, chain[1:]):
+            cr.move_to(*a)
+            cr.line_to(*c)
+            cr.set_source_rgb(*COL_LINE)
+            cr.set_line_width(wo)
+            cr.stroke()
+        for (_, wi), a, c in zip(widths, chain, chain[1:]):
+            cr.move_to(*a)
+            cr.line_to(*c)
+            cr.set_source_rgb(*fill)
+            cr.set_line_width(wi)
+            cr.stroke()
+        # joint knobs at elbow / knee / hock
+        for jx, jy in chain[1:-1]:
+            cr.arc(jx, jy, 1.7, 0, 2 * math.pi)
+            cr.set_source_rgb(*COL_LINE)
+            cr.fill()
+            cr.arc(jx, jy, 1.0, 0, 2 * math.pi)
+            cr.set_source_rgb(*fill)
+            cr.fill()
+        # paw: a pad with three hooked claws fanned forward
+        ex, ey = chain[-1]
+        dx, dy = paw_dir
+        cr.save()
+        cr.translate(ex, ey)
+        cr.rotate(math.atan2(dy, dx))
+        cr.save()
+        cr.scale(2.4, 1.5)
+        cr.arc(0.4, 0, 1.0, 0, 2 * math.pi)
+        cr.restore()
+        cr.set_source_rgb(*fill)
+        cr.fill_preserve()
+        cr.set_source_rgb(*COL_LINE)
+        cr.set_line_width(0.7)
+        cr.stroke()
+        cr.set_line_width(0.75)
+        down = 1.0 if dx * self.dir >= 0 else -1.0
+        for k, ln in ((-0.45, 2.4), (0.0, 3.0), (0.45, 2.6)):
+            sx = 2.0
+            ax, ay = math.cos(k), math.sin(k)
+            cr.move_to(sx, k * 1.2)
+            cr.curve_to(sx + ax * ln * 0.6, k * 1.2 + ay * ln * 0.6,
+                        sx + ax * ln, k * 1.2 + ay * ln,
+                        sx + ax * ln + 0.2, k * 1.2 + ay * ln + 0.9 * down * (1 if self.dir > 0 else -1))
+            cr.stroke()
+        cr.restore()
+
+    def draw_raven(self, cr, now):
+        """The raven: hops on the ground, flaps in the air, mirrored to face its way."""
+        s = RAVEN_SCALE
+        feet = self.hy + GROUND_PAD - 2
+        airborne = self.mode in ("fly", "toss", "drag") or not self.planted()
+        hop = 0.0
+        if self.mode in ("walk", "goto"):
+            hop = 4.0 * abs(math.sin(self.gait * 0.8))
+        elif self.mode == "dance":
+            hop = 5.0 * abs(math.sin(now * 2 * math.pi * 1.5))
+        tilt = 0.0
+        if self.mode == "peck":
+            tilt = 0.45 + 0.15 * math.sin(now * 2 * math.pi * 3)
+        elif airborne:
+            tilt = self.pitch * 0.6
+        if self.mode in ("fly", "toss", "drag", "dance"):
+            flap = 0.55 + 0.65 * math.sin(now * 2 * math.pi * (7.0 if self.mode != "dance" else 3.0))
+        else:
+            flap = 0.06 * (1 + math.sin(now * 2 * math.pi * 0.4))
+        legs = 0.35 if airborne else 1.0       # tucked in flight
+        cr.save()
+        cr.translate(self.hx, feet - hop)
+        cr.scale(self.dir * s, s)
+        cr.rotate(tilt)
+        cr.translate(-100, -RAVEN_FEET_Y)
+        lw = 1.0 / s
+        # legs and toes
+        cr.set_source_rgb(*COL_LINE)
+        cr.set_line_width(1.6 * lw)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        top = 158
+        foot = top + (RAVEN_FEET_Y - top) * legs
+        for lx in RAVEN_HIPS:
+            fx = lx - (12 if airborne else 0)
+            cr.move_to(lx, top)
+            cr.line_to(fx, foot)
+            for tx, ty in ((14, 0), (8, -3), (-7, 1)):
+                cr.move_to(fx, foot)
+                cr.line_to(fx + tx, foot + ty)
+            cr.stroke()
+        # body
+        trace(cr, RAVEN_BODY)
+        cr.set_source_rgb(*COL_BODY)
+        cr.fill_preserve()
+        cr.set_source_rgb(*COL_LINE)
+        cr.set_line_width(1.1 * lw)
+        cr.stroke()
+        # wing
+        cr.save()
+        cr.translate(*RAVEN_HINGE)
+        cr.rotate(flap)
+        trace(cr, RAVEN_WING)
+        cr.set_source_rgb(*COL_FIN)
+        cr.fill_preserve()
+        cr.set_source_rgb(*COL_LINE)
+        cr.set_line_width(0.9 * lw)
+        cr.stroke()
+        cr.restore()
+        # eye
+        ex, ey = RAVEN_EYE
+        cr.set_source_rgb(*COL_EYE)
+        if not (now < self.blink_until) and self.mode != "sleep":
+            cr.arc(ex, ey, 5.5, 0, 2 * math.pi)
+            cr.fill()
+        else:
+            cr.move_to(ex - 6, ey)
+            cr.line_to(ex + 6, ey)
+            cr.set_line_width(1.2 * lw)
+            cr.stroke()
+        cr.restore()
+
+    def draw_head(self, cr, head, f, now):
+        hx, hy = head
+        eye_open = not (now < self.blink_until) and self.mode != "sleep"
+        k = HEAD_R / 7.5
+        # muzzle outline, tip at the front: long and tapered like a dragon's, not a bill
+        snout = [(-3.5, -6.6), (3.5, -5.0), (11.0, -2.8), (17.6, -0.8), (18.8, 1.0),
+                 (17.0, 2.4), (11.5, 3.2), (5.0, 5.2), (-3.5, 6.4)]
+        wig = 1.2 * math.sin(now * 2 * math.pi * 1.5)
+        cr.save()
+        cr.translate(hx, hy)
+        cr.scale(self.dir, 1)
+        cr.rotate(math.atan2(f[1], f[0] * self.dir))
+        # horns: two swept back from the crown
+        cr.set_source_rgb(*COL_LINE)
+        cr.set_line_width(1.2)
+        cr.move_to(-2.0 * k, -6.0 * k)
+        cr.curve_to(-5.0 * k, -10.0 * k, -9.0 * k, -11.0 * k, -13.0 * k, -14.0 * k)
+        cr.stroke()
+        cr.move_to(1.5 * k, -5.4 * k)
+        cr.curve_to(-1.0 * k, -9.0 * k, -4.0 * k, -10.0 * k, -7.5 * k, -12.0 * k)
+        cr.stroke()
+        # whiskers from the lip, trailing back along the body
+        cr.set_source_rgba(0.55, 0.55, 0.55, 1.0)
+        cr.set_line_width(0.7)
+        cr.move_to(16.0 * k, 2.2 * k)
+        cr.curve_to(10.0 * k, 4.0 * k + wig, 4.0 * k, 6.0 * k + wig * 0.8, -6.0 * k, 9.0 * k + wig * 1.4)
+        cr.stroke()
+        # round back of the skull, outlined
+        cr.arc(-2.5 * k, 0, HEAD_R * 0.98 + 1.1, 0, 2 * math.pi)
+        cr.set_source_rgb(*COL_LINE)
+        cr.fill()
+        # muzzle: outline stroke, then the body colour over it
+        cr.move_to(snout[0][0] * k, snout[0][1] * k)
+        for x, y in snout[1:]:
+            cr.line_to(x * k, y * k)
+        cr.close_path()
+        cr.set_source_rgb(*COL_LINE)
+        cr.set_line_width(2.2)
+        cr.stroke_preserve()
+        cr.set_source_rgb(*COL_BODY)
+        cr.fill()
+        cr.arc(-2.5 * k, 0, HEAD_R * 0.98, 0, 2 * math.pi)
+        cr.fill()
+        # nostril
+        cr.arc(15.6 * k, -1.2 * k, 0.55, 0, 2 * math.pi)
+        cr.set_source_rgb(*COL_LINE)
+        cr.fill()
+        # eye, set back on the skull
+        if eye_open:
+            cr.arc(4.6 * k, -2.8 * k, 1.6, 0, 2 * math.pi)
+            cr.set_source_rgb(*COL_EYE)
+            cr.fill()
+        else:
+            cr.move_to(3.2 * k, -2.8 * k)
+            cr.line_to(6.0 * k, -2.8 * k)
+            cr.set_source_rgb(*COL_EYE)
+            cr.set_line_width(0.9)
+            cr.stroke()
+        cr.restore()
+
+    def draw_bubble(self, cr, text, head):
+        hx, hy = head
+        top = self.head_top(head)
+        bx, by, bw, bh, layout = self.bubble_rect(text, hx, top)
+        radius = 6
+        cr.new_path()
+        cr.arc(bx + bw - radius, by + radius, radius, -math.pi / 2, 0)
+        cr.arc(bx + bw - radius, by + bh - radius, radius, 0, math.pi / 2)
+        cr.arc(bx + radius, by + bh - radius, radius, math.pi / 2, math.pi)
+        cr.arc(bx + radius, by + radius, radius, math.pi, 3 * math.pi / 2)
+        cr.close_path()
+        cr.set_source_rgba(*COL_BUBBLE, 0.96)
+        cr.fill_preserve()
+        cr.set_source_rgb(*COL_EDGE)
+        cr.set_line_width(1)
+        cr.stroke()
+        tx = clamp(hx, bx + 10, bx + bw - 10)
+        cr.move_to(tx - 4, by + bh)
+        cr.line_to(tx + 4, by + bh)
+        cr.line_to(hx, top + 4)
+        cr.close_path()
+        cr.set_source_rgba(*COL_BUBBLE, 0.96)
+        cr.fill()
+        cr.set_source_rgb(*COL_TEXT)
+        cr.move_to(bx + 10, by + 7)
+        PangoCairo.show_layout(cr, layout)
+
+    def on_draw(self, _widget, cr):
+        cr.set_operator(cairo.OPERATOR_CLEAR)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+        now = time.monotonic()
+        cr.save()
+        cr.translate(-self.mon_x, -self.mon_y)
+        if self.kind == "raven":
+            self.draw_raven(cr, now)
+        else:
+            self.draw_dragon(cr, now)
+        if self.bubble_text is not None:
+            self.draw_bubble(cr, self.bubble_text, self.geometry()[3])
+        cr.restore()
+
+
+def running_pid():
+    try:
+        with open(PID_FILE) as f:
+            pid = int(f.read().strip())
+        os.kill(pid, 0)
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            if b"aeris-pet" not in f.read():
+                return None
+        return pid
+    except (OSError, ValueError):
+        return None
+
+
+def bar_refresh():
+    subprocess.run(["sh", "-c", 'PATH="$HOME/.local/bin:$PATH"; aeris-shell -q bar refresh'],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def start_detached():
+    subprocess.Popen([os.path.abspath(sys.argv[0])], start_new_session=True,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def run():
+    lock = open(PID_FILE + ".lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return 0                    # already running
+    with open(PID_FILE, "w") as f:
+        f.write(f"{os.getpid()}\n")
+    GLib.set_prgname(APP)
+    GLib.set_application_name(APP)
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, lambda *_: (Gtk.main_quit(), False)[1])
+    Pet()
+    bar_refresh()
+    Gtk.main()
+    try:
+        os.remove(PID_FILE)
+    except OSError:
+        pass
+    bar_refresh()
+    return 0
+
+
+def main():
+    args = sys.argv[1:]
+    cmd = args[0] if args else "run"
+    kinds = [k for k, _ in PETS]
+    if cmd == "run":
+        return run()
+    if cmd == "status":
+        pid = running_pid()
+        print(json.dumps({"text": BAR_GLYPH, "class": "on" if pid else "off",
+                          "pet": load_choice(), "running": bool(pid),
+                          "tooltip": f"{load_choice()} pet" + ("" if pid else " (hidden)")}, ensure_ascii=False))
+        return 0
+    if cmd == "set" and len(args) == 2 and args[1] in kinds:
+        save_choice(args[1])
+        if not running_pid():
+            start_detached()
+        bar_refresh()
+        return 0
+    if cmd == "start":
+        if not running_pid():
+            start_detached()
+        return 0
+    if cmd == "quit":
+        pid = running_pid()
+        if pid:
+            os.kill(pid, signal.SIGTERM)
+        return 0
+    if cmd == "toggle":
+        pid = running_pid()
+        if pid:
+            os.kill(pid, signal.SIGTERM)
+        else:
+            start_detached()
+        return 0
+    print(f"usage: aeris-pet [run|status|start|quit|toggle|set {'|'.join(kinds)}]", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

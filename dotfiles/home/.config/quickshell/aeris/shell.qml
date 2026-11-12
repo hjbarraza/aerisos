@@ -1,5 +1,6 @@
 // AerisOS shell: one Quickshell process for the top bar and the pill dock.
 //   aeris-shell bar toggle|refresh     aeris-shell dock reveal|conceal|flip
+//   aeris-shell pet menu   (target lives in Bar/Bar.qml, next to the popup)
 // Layout: Commons/ (Theme, Status, Shell singletons), Ui/ (shared components),
 // Bar/ (the bar and its widgets), Dock/ (the pill dock with its hover autohide).
 //@ pragma IconTheme Mono

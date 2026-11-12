@@ -1,0 +1,92 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+import Quickshell.Hyprland
+import qs.Commons
+import qs.Ui
+
+// Pet menu under the paw icon: pick the pet (dragon, raven), show or hide it. Also opened
+// by right-clicking the pet itself (`aeris-shell pet menu`). Reads `aeris-pet status` on open.
+PopupWindow {
+    id: petPopup
+    property Item anchorItem: null
+    property string pet: ""
+    property bool running: false
+    readonly property var pets: [["dragon", "Dragon"], ["raven", "Raven"]]
+
+    anchor.rect.x: 0
+    anchor.rect.y: Theme.barHeight
+    implicitWidth: 168
+    implicitHeight: petCol.implicitHeight + 20
+    visible: false
+    color: "transparent"
+
+    function open() {
+        anchor.rect.x = anchorItem.mapToItem(null, 0, 0).x + anchorItem.width - implicitWidth
+        statusProc.running = true
+        visible = true
+    }
+    function toggle() { if (visible) visible = false; else open() }
+    function act(c) {
+        visible = false
+        Shell.sh(c)
+        refreshTimer.restart()
+    }
+
+    Timer { id: refreshTimer; interval: 900; onTriggered: Shell.refreshTick++ }
+
+    Process {
+        id: statusProc
+        command: ["sh", "-c", "~/.local/bin/aeris-pet status"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const j = JSON.parse(text)
+                    petPopup.pet = j.pet ?? ""
+                    petPopup.running = j.running === true
+                } catch (e) { petPopup.running = false }
+            }
+        }
+    }
+    HyprlandFocusGrab { windows: [petPopup]; active: petPopup.visible; onCleared: petPopup.visible = false }
+
+    Rectangle { anchors.fill: parent; color: Theme.bg; border.color: Theme.line; border.width: 1 }
+    Column {
+        id: petCol
+        x: 12; y: 10
+        width: petPopup.implicitWidth - 24
+        spacing: 4
+        Caption { text: "PET" }
+        Item { width: 1; height: 2 }
+        Repeater {
+            model: petPopup.pets
+            RowLayout {
+                id: petRow
+                required property var modelData
+                readonly property bool current: petPopup.pet === modelData[0]
+                width: petCol.width
+                spacing: 6
+                Text {
+                    text: petRow.current ? "●" : "○"
+                    color: petRow.current && petPopup.running ? Theme.fg : Theme.dim
+                    font.pixelSize: 8
+                }
+                Text {
+                    text: petRow.modelData[1]
+                    color: Theme.fg
+                    font { family: Theme.sans; pixelSize: Theme.size }
+                    Layout.fillWidth: true
+                }
+                TapHandler { onTapped: petPopup.act("aeris-pet set " + petRow.modelData[0]) }
+            }
+        }
+        Item { width: 1; height: 3 }
+        Rectangle { width: parent.width; height: 1; color: Theme.line }
+        Item { width: 1; height: 2 }
+        Caption {
+            text: petPopup.running ? "QUIT" : "SHOW"
+            TapHandler { onTapped: petPopup.act(petPopup.running ? "aeris-pet quit" : "aeris-pet start") }
+        }
+    }
+}

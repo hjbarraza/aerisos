@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
@@ -53,10 +54,14 @@ Scope {
                 Alerts {}
             }
 
-            RowLayout {   // ---- right: tailscale, network, audio, battery, drawer
+            RowLayout {   // ---- right: pet, tailscale, network, audio, battery, drawer
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 0
+                Pet {
+                    id: petIcon
+                    onClick: () => petPopup.toggle()
+                }
                 Tailscale {
                     id: tsIcon
                     onClick: () => tsPopup.toggle()
@@ -74,5 +79,17 @@ Scope {
         id: tsPopup
         anchor.window: bar
         anchorItem: tsIcon
+    }
+
+    PetPopup {
+        id: petPopup
+        anchor.window: bar
+        anchorItem: petIcon
+    }
+
+    // `aeris-shell pet menu`: the pet's right click opens this menu
+    IpcHandler {
+        target: "pet"
+        function menu(): void { if (Shell.barShown) petPopup.open() }
     }
 }

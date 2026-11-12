@@ -1,5 +1,5 @@
 #!/bin/bash
-# aeris:summary=Talk to the running shell over IPC (bar, dock)
+# aeris:summary=Talk to the running shell over IPC (bar, dock, pet)
 # aeris:group=desktop
 # aeris:args=[-q] TARGET METHOD [ARGS]
 # The one way commands reach the Quickshell process: aeris-shell bar refresh|toggle,
@@ -11,7 +11,7 @@ set -euo pipefail
 quiet=0
 if [[ ${1:-} == -q ]]; then quiet=1; shift; fi
 if (( $# < 2 )); then
-  echo "usage: aeris-shell [-q] <target> <method> [args]   (targets: bar, dock)" >&2
+  echo "usage: aeris-shell [-q] <target> <method> [args]   (targets: bar, dock, pet)" >&2
   exit 2
 fi
 
