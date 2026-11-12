@@ -12,6 +12,7 @@ btop
 btrfs-progs
 cliphist
 cmake
+cmocka
 dkms
 dolphin
 dunst
@@ -26,6 +27,7 @@ flatpak
 fwupd
 fzf
 gamemode
+gcc-ada
 ghostty
 git
 github-cli
@@ -74,10 +76,11 @@ meson
 mkinitcpio
 mpv
 nano
+nasm
 nautilus
 neovim
-network-manager-applet
 networkmanager
+network-manager-applet
 nodejs
 noto-fonts
 noto-fonts-emoji
@@ -100,11 +103,14 @@ pipewire-pulse
 playerctl
 plymouth
 power-profiles-daemon
+python-cairo
 python-openrazer
+qemu-system-x86
 qt5-speech
 qt5-svg
 qt5-wayland
 qt6-imageformats
+qt6-quick3d
 qt6-wayland
 quickshell
 rust
@@ -137,8 +143,8 @@ vulkan-radeon
 w3m
 wget
 wiremix
-wl-clipboard
 wireplumber
+wl-clipboard
 woff2-font-awesome
 wofi
 wpa_supplicant

@@ -70,6 +70,9 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   (`aeris-shell -q` quiet). Commands that change bar state push `aeris-shell -q bar refresh`.
 - Dock autohide is pointer-driven inside the shell: a 1 px strip on the bottom edge reveals,
   leaving the pill plus a halo hides. The old `dock-autohide` cursor-polling script is gone.
+- Quickshell's PATH (inherited from Hyprland) lacks `~/.local/bin`; `Shell.sh()` prepends it
+  so click commands can push `aeris-shell -q bar refresh` (without it toggles show stale
+  state until the 60 s fallback). Edits to `Commons/` singletons may not hot-reload: restart.
 - Theme overrides: `~/.config/aeris/shell.json` (`{"version":1,"colors":{...},"fonts":{...}}`),
   watched live. Status data: `Commons/Status.qml` watches `/var/lib/aeris/status.json`.
 - Bar refresh model: StatusModules re-run on IPC refresh, on click, and every 60 s as a

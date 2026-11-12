@@ -1,6 +1,8 @@
 bibata-cursor-theme-bin
 brave-bin
 envycontrol
+gpu-unlock-dkms
+gpu-unlock-firmware
 hype
 hype-debug
 monologue
