@@ -1,10 +1,12 @@
 #!/bin/bash
 # aeris:summary=3D animated wallpaper (globe, particles, terrain, sky, decisions, constellation)
 # aeris:group=desktop
-# aeris:args=[start|stop|status|list|next|set NAME|off]
+# aeris:args=[start|stop|status|list|next|set NAME|off|geo-update]
 # The wallpaper is its own Quickshell process (~/.config/quickshell/aeris-wallpaper) on the
 # Background layer; a crash or GPU trouble there never takes the bar down. The chosen scene
 # lives in ~/.local/state/aeris-wallpaper/scene. `status` prints JSON for the bar module.
+# The globe draws live connections from aeris-netmap, which places addresses with the offline
+# DB-IP City Lite database (CC BY 4.0); `geo-update` downloads this month's copy.
 
 set -euo pipefail
 
@@ -64,13 +66,27 @@ case $cmd in
     fi
     refresh_bar
     ;;
+  geo-update)
+    dir="$HOME/.local/share/aeris/geo"
+    month=$(date +%Y-%m)
+    tmp=$(mktemp -d)
+    mkdir -p "$dir"
+    if curl -fsSL -o "$tmp/db.mmdb.gz" "https://download.db-ip.com/free/dbip-city-lite-$month.mmdb.gz"; then
+      gunzip "$tmp/db.mmdb.gz"
+      mv "$tmp/db.mmdb" "$dir/dbip-city-lite.mmdb"
+      echo "location database updated ($month)"
+    else
+      echo "download failed (DB-IP publishes early in the month; try again later)" >&2
+    fi
+    rm -rf "$tmp"
+    ;;
   status)
     s=$(current)
     if running && [[ $s != "off" ]]; then klass="on"; else klass="off"; fi
     printf '{"text":"%s","class":"%s","scene":"%s","tooltip":"wallpaper: %s"}\n' "$glyph" "$klass" "$s" "$s"
     ;;
   *)
-    echo "usage: aeris-wallpaper [start|stop|status|list|next|set NAME|off]" >&2
+    echo "usage: aeris-wallpaper [start|stop|status|list|next|set NAME|off|geo-update]" >&2
     exit 2
     ;;
 esac

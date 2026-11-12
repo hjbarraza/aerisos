@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+# aeris:summary=Live map of network connections (JSON lines for the globe wallpaper)
+# aeris:group=net
+# aeris:args=[--once] [--interval SECONDS]
+"""aeris-netmap: every connection this machine has, placed on the map.
+
+Every INTERVAL seconds (default 1) it reads the socket table with `ss` (no root needed),
+works out for each remote address whether it is incoming (our side is a listening port) or
+outgoing, how many bytes moved since the last sample (TCP), and where the address is, from
+the offline DB-IP City Lite database in ~/.local/share/aeris/geo (no lookups leave the
+machine). Tailscale peers are named from `tailscale status` and placed at their direct
+endpoint when there is one. LAN and loopback stay at home.
+
+Output: one JSON object per line on stdout,
+  {"t": unix, "home": [lat, lon], "flows": [{"ip", "lat", "lon", "place", "cc", "dir":
+   "in"|"out", "proto", "n", "rx", "tx", "name", "kind": "net"|"tailnet"|"lan"}]}
+rx/tx are bytes per second. The globe wallpaper (aeris-wallpaper, Globe scene) runs this
+while it is on screen.
+
+Location data: DB-IP.com City Lite, CC BY 4.0 (https://db-ip.com).
+"""
+import ipaddress
+import json
+import os
+import re
+import struct
+import subprocess
+import sys
+import time
+
+GEO_DB = os.path.expanduser("~/.local/share/aeris/geo/dbip-city-lite.mmdb")
+HOME = (39.47, -0.38)            # Valencia, as the orbit map and the globe's home marker
+TAILNET4 = ipaddress.ip_network("100.64.0.0/10")
+TAILNET6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
+
+
+# ---------------------------------------------------------------- MaxMind DB reader
+class MMDB:
+    """Minimal reader for the MaxMind DB format (what DB-IP Lite ships as .mmdb)."""
+
+    def __init__(self, path):
+        with open(path, "rb") as f:
+            self.buf = f.read()
+        marker = self.buf.rfind(b"\xab\xcd\xefMaxMind.com")
+        if marker < 0:
+            raise ValueError("not a MaxMind DB")
+        self.meta_start = marker + 14
+        self.data_start = 0           # set after reading metadata (decode needs a base)
+        meta, _ = self._decode(self.meta_start, base=self.meta_start)
+        self.nodes = meta["node_count"]
+        self.rec = meta["record_size"]
+        self.ipv = meta["ip_version"]
+        self.node_bytes = self.rec * 2 // 8
+        self.tree_size = self.nodes * self.node_bytes
+        self.data_start = self.tree_size + 16
+        self._v4_start = None
+
+    def _read_node(self, n, bit):
+        off = n * self.node_bytes
+        b = self.buf
+        if self.rec == 24:
+            o = off + bit * 3
+            return (b[o] << 16) | (b[o + 1] << 8) | b[o + 2]
+        if self.rec == 28:
+            if bit == 0:
+                return ((b[off + 3] & 0xF0) << 20) | (b[off] << 16) | (b[off + 1] << 8) | b[off + 2]
+            return ((b[off + 3] & 0x0F) << 24) | (b[off + 4] << 16) | (b[off + 5] << 8) | b[off + 6]
+        o = off + bit * 4
+        return struct.unpack(">I", b[o:o + 4])[0]
+
+    def lookup(self, ip):
+        addr = ipaddress.ip_address(ip)
+        bits = 128 if self.ipv == 6 else 32
+        packed = addr.packed
+        node = 0
+        if addr.version == 4 and self.ipv == 6:
+            if self._v4_start is None:   # IPv4 lives under ::/96 in an IPv6 tree
+                n = 0
+                for _ in range(96):
+                    if n >= self.nodes:
+                        break
+                    n = self._read_node(n, 0)
+                self._v4_start = n
+            node = self._v4_start
+            bits = 32
+        for i in range(bits):
+            if node >= self.nodes:
+                break
+            bit = (packed[i >> 3] >> (7 - (i & 7))) & 1
+            node = self._read_node(node, bit)
+        if node == self.nodes or node < self.nodes:
+            return None
+        off = node - self.nodes - 16 + self.data_start
+        val, _ = self._decode(off, base=self.data_start)
+        return val
+
+    def _decode(self, off, base):
+        b = self.buf
+        ctrl = b[off]
+        off += 1
+        typ = ctrl >> 5
+        if typ == 1:                  # pointer
+            ss = (ctrl >> 3) & 3
+            vv = ctrl & 7
+            if ss == 0:
+                p = (vv << 8) | b[off]; off += 1
+            elif ss == 1:
+                p = ((vv << 16) | (b[off] << 8) | b[off + 1]) + 2048; off += 2
+            elif ss == 2:
+                p = ((vv << 24) | (b[off] << 16) | (b[off + 1] << 8) | b[off + 2]) + 526336; off += 3
+            else:
+                p = struct.unpack(">I", b[off:off + 4])[0]; off += 4
+            val, _ = self._decode(base + p, base)
+            return val, off
+        if typ == 0:                  # extended type
+            typ = 7 + b[off]
+            off += 1
+        size = ctrl & 0x1F
+        if size >= 29:
+            if size == 29:
+                size = 29 + b[off]; off += 1
+            elif size == 30:
+                size = 285 + ((b[off] << 8) | b[off + 1]); off += 2
+            else:
+                size = 65821 + ((b[off] << 16) | (b[off + 1] << 8) | b[off + 2]); off += 3
+        if typ == 2:                  # utf-8 string
+            return b[off:off + size].decode("utf-8", "replace"), off + size
+        if typ == 3:                  # double
+            return struct.unpack(">d", b[off:off + 8])[0], off + 8
+        if typ == 4:                  # bytes
+            return b[off:off + size], off + size
+        if typ in (5, 6, 9, 10):      # uint16/32/64/128
+            return int.from_bytes(b[off:off + size], "big"), off + size
+        if typ == 7:                  # map
+            d = {}
+            for _ in range(size):
+                k, off = self._decode(off, base)
+                v, off = self._decode(off, base)
+                d[k] = v
+            return d, off
+        if typ == 8:                  # int32
+            return int.from_bytes(b[off:off + size], "big", signed=True), off + size
+        if typ == 11:                 # array
+            a = []
+            for _ in range(size):
+                v, off = self._decode(off, base)
+                a.append(v)
+            return a, off
+        if typ == 14:                 # boolean (value in size)
+            return bool(size), off
+        if typ == 15:                 # float
+            return struct.unpack(">f", b[off:off + 4])[0], off + 4
+        return None, off
+
+
+# ---------------------------------------------------------------- sockets
+ADDR = re.compile(r"^(.*):(\d+|\*)$")
+
+
+def split_addr(a):
+    m = ADDR.match(a)
+    if not m:
+        return a, 0
+    host = m.group(1).strip("[]")
+    host = host.split("%")[0]
+    port = int(m.group(2)) if m.group(2) != "*" else 0
+    if host.startswith("::ffff:"):
+        host = host[7:]
+    return host, port
+
+
+def run(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def listening_ports():
+    ports = set()
+    for line in run(["ss", "-tulnH"]).splitlines():
+        f = line.split()
+        if len(f) >= 5:
+            ports.add((f[0], split_addr(f[4])[1]))
+    return ports
+
+
+def sockets():
+    """[(proto, local_ip, local_port, peer_ip, peer_port, bytes_rx, bytes_tx, proc)]"""
+    out, cur = [], None
+    for line in run(["ss", "-tunHip", "state", "established"]).splitlines():
+        if line[:1] in (" ", "\t"):
+            if cur is not None:
+                rx = re.search(r"bytes_received:(\d+)", line)
+                tx = re.search(r"bytes_acked:(\d+)", line) or re.search(r"bytes_sent:(\d+)", line)
+                cur[5] = int(rx.group(1)) if rx else 0
+                cur[6] = int(tx.group(1)) if tx else 0
+            continue
+        f = line.split()
+        if len(f) < 5:              # netid recv-q send-q local peer [users:(...)]
+            continue
+        lip, lport = split_addr(f[3])
+        pip, pport = split_addr(f[4])
+        proc = ""
+        m = re.search(r'users:\(\("([^"]+)"', line)
+        if m:
+            proc = m.group(1)
+        cur = [f[0], lip, lport, pip, pport, 0, 0, proc]
+        out.append(cur)
+    return out
+
+
+def tailnet_peers():
+    """{tailscale ip: (name, endpoint ip or None)}"""
+    try:
+        j = json.loads(run(["tailscale", "status", "--json"]) or "{}")
+    except ValueError:
+        return {}
+    peers = {}
+    for p in (j.get("Peer") or {}).values():
+        name = (p.get("HostName") or "?")
+        if name == "localhost":
+            name = (p.get("DNSName") or "?").split(".")[0]
+        ep = (p.get("CurAddr") or "").rsplit(":", 1)[0].strip("[]") or None
+        for ip in p.get("TailscaleIPs") or []:
+            peers[ip] = (name, ep)
+    return peers
+
+
+# ---------------------------------------------------------------- main loop
+def classify(ip):
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return "lan"
+    if a in TAILNET4 or a in TAILNET6:
+        return "tailnet"
+    if a.is_private or a.is_loopback or a.is_link_local or a.is_multicast or a.is_unspecified:
+        return "lan"
+    return "net"
+
+
+def main():
+    once = "--once" in sys.argv
+    interval = 1.0
+    if "--interval" in sys.argv:
+        interval = float(sys.argv[sys.argv.index("--interval") + 1])
+    try:
+        db = MMDB(GEO_DB)
+    except (OSError, ValueError) as e:
+        print(f"aeris-netmap: no location database ({e}); run: aeris-wallpaper geo-update", file=sys.stderr)
+        db = None
+    geo_cache = {}
+    prev = {}
+    peers, peers_at = {}, 0.0
+    last_t = time.time()
+
+    def locate(ip):
+        if ip in geo_cache:
+            return geo_cache[ip]
+        loc = None
+        if db is not None:
+            try:
+                r = db.lookup(ip) or {}
+                la, lo = (r.get("location") or {}).get("latitude"), (r.get("location") or {}).get("longitude")
+                if la is not None and lo is not None:
+                    city = ((r.get("city") or {}).get("names") or {}).get("en", "")
+                    cc = (r.get("country") or {}).get("iso_code", "")
+                    loc = (round(la, 3), round(lo, 3), city, cc)
+            except (ValueError, IndexError, struct.error):
+                loc = None
+        geo_cache[ip] = loc
+        return loc
+
+    while True:
+        now = time.time()
+        dt = max(0.5, now - last_t)
+        last_t = now
+        if now - peers_at > 30:
+            peers, peers_at = tailnet_peers(), now
+        listen = listening_ports()
+        flows = {}
+        seen = {}
+        for proto, lip, lport, pip, pport, brx, btx, proc in sockets():
+            key = (proto, lip, lport, pip, pport)
+            seen[key] = (brx, btx)
+            p_rx, p_tx = prev.get(key, (brx, btx))
+            drx, dtx = max(0, brx - p_rx), max(0, btx - p_tx)
+            incoming = (proto, lport) in listen
+            kind = classify(pip)
+            try:
+                if ipaddress.ip_address(pip).is_loopback:
+                    continue            # programs talking to each other on this machine
+            except ValueError:
+                pass
+            fl = flows.setdefault(pip, {"ip": pip, "kind": kind, "proto": proto, "n": 0, "rx": 0.0, "tx": 0.0,
+                                        "in": 0, "out": 0, "procs": set()})
+            fl["n"] += 1
+            fl["rx"] += drx / dt
+            fl["tx"] += dtx / dt
+            fl["in" if incoming else "out"] += 1
+            if proc:
+                fl["procs"].add(proc)
+        prev = seen
+        out = []
+        for fl in flows.values():
+            lat, lon, place, cc = HOME[0], HOME[1], "", ""
+            name = ""
+            if fl["kind"] == "tailnet":
+                name, ep = peers.get(fl["ip"], ("", None))
+                loc = locate(ep) if ep and classify(ep) == "net" else None
+                if loc:
+                    lat, lon, place, cc = loc
+            elif fl["kind"] == "net":
+                loc = locate(fl["ip"])
+                if loc:
+                    lat, lon, place, cc = loc
+            out.append({"ip": fl["ip"], "lat": lat, "lon": lon, "place": place, "cc": cc,
+                        "dir": "in" if fl["in"] > fl["out"] else "out", "proto": fl["proto"], "n": fl["n"],
+                        "rx": round(fl["rx"]), "tx": round(fl["tx"]), "name": name or ",".join(sorted(fl["procs"]))[:40],
+                        "kind": fl["kind"]})
+        out.sort(key=lambda f: -(f["rx"] + f["tx"]))
+        print(json.dumps({"t": round(now), "home": list(HOME), "flows": out}, separators=(",", ":")), flush=True)
+        if once:
+            return 0
+        time.sleep(interval)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (KeyboardInterrupt, BrokenPipeError):
+        sys.exit(0)
