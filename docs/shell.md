@@ -22,8 +22,8 @@ aeris/
     qmldir
   Bar/
     Bar.qml          the PanelWindow and the three groups; order here is order on screen
-    <Widget>.qml     one file per widget: Mark, Workspaces, Toggles, Clock, Voxtype, Alerts,
-                     Tailscale, TailscalePopup, Network, Volume, Battery, Drawer
+    <Widget>.qml     one file per widget: Mark, Workspaces, Toggles, Clock, ClockPopup, Voxtype,
+                     Alerts, Pet, PetPopup, Tailscale, TailscalePopup, Network, Volume, Battery, Drawer
   Dock/
     Dock.qml         the pill and its hover autohide
 ```

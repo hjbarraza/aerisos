@@ -1,0 +1,16 @@
+#!/bin/bash
+# aeris:summary=Pick the system timezone from a searchable list
+# aeris:group=desktop
+# Pick the system timezone from a searchable list (from the bar's clock popup). For travel.
+# Changing it asks for your password in the usual dialog. Esc leaves it as it is.
+
+set -euo pipefail
+
+now=$(timedatectl show -p Timezone --value)
+tz=$(timedatectl list-timezones | fzf --height=100% --reverse --prompt="Timezone > " \
+  --header="Now: $now   ·   type to search, Enter to set, Esc to cancel" \
+  --color=bw) || exit 0
+if timedatectl set-timezone "$tz"; then
+  notify-send "Timezone" "Now $tz  ·  $(date '+%H:%M')"
+  aeris-shell -q bar refresh
+fi

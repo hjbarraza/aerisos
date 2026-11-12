@@ -39,6 +39,7 @@ Scope {
                 id: clock
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
+                onClick: () => clockPopup.toggle()
             }
             RowLayout {   // ---- hangs left of the clock: toggles
                 anchors.right: clock.left
@@ -85,6 +86,12 @@ Scope {
         id: petPopup
         anchor.window: bar
         anchorItem: petIcon
+    }
+
+    ClockPopup {
+        id: clockPopup
+        anchor.window: bar
+        anchorItem: clock
     }
 
     // `aeris-shell pet menu`: the pet's right click opens this menu
