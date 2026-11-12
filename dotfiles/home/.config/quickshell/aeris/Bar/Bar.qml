@@ -55,10 +55,14 @@ Scope {
                 Alerts {}
             }
 
-            RowLayout {   // ---- right: pet, tailscale, network, audio, battery, drawer
+            RowLayout {   // ---- right: wallpaper, pet, tailscale, network, audio, battery, drawer
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 0
+                Wallpaper {
+                    id: wpIcon
+                    onClick: () => wpPopup.toggle()
+                }
                 Pet {
                     id: petIcon
                     onClick: () => petPopup.toggle()
@@ -86,6 +90,12 @@ Scope {
         id: petPopup
         anchor.window: bar
         anchorItem: petIcon
+    }
+
+    WallpaperPopup {
+        id: wpPopup
+        anchor.window: bar
+        anchorItem: wpIcon
     }
 
     ClockPopup {

@@ -1,0 +1,76 @@
+#!/bin/bash
+# aeris:summary=3D animated wallpaper (globe, particles, terrain, sky, decisions, constellation)
+# aeris:group=desktop
+# aeris:args=[start|stop|status|list|next|set NAME|off]
+# The wallpaper is its own Quickshell process (~/.config/quickshell/aeris-wallpaper) on the
+# Background layer; a crash or GPU trouble there never takes the bar down. The chosen scene
+# lives in ~/.local/state/aeris-wallpaper/scene. `status` prints JSON for the bar module.
+
+set -euo pipefail
+
+conf="$HOME/.config/quickshell/aeris-wallpaper/shell.qml"
+state="$HOME/.local/state/aeris-wallpaper/scene"
+scenes=(globe particles terrain sky decisions constellation)
+glyph=$'\U000F0E09'   # nf-md-wallpaper
+
+current() {
+  local s=""
+  [[ -r $state ]] && s=$(<"$state")
+  if [[ -z $s ]]; then s="decisions"; fi
+  echo "$s"
+}
+running() { pgrep -f "qs -p $conf" >/dev/null; }
+refresh_bar() { "$HOME/.local/bin/aeris-shell" -q bar refresh 2>/dev/null || true; }
+start() {
+  if ! running; then
+    setsid qs -p "$conf" >/dev/null 2>&1 </dev/null &
+  fi
+}
+save() { mkdir -p "$(dirname "$state")"; echo "$1" >"$state"; }
+
+cmd=${1:-status}
+case $cmd in
+  start)
+    if [[ $(current) != "off" ]]; then start; fi
+    ;;
+  stop)
+    pkill -f "qs -p $conf" || true
+    ;;
+  list)
+    printf '%s\n' "${scenes[@]}"
+    ;;
+  set|off|next)
+    if [[ $cmd == "off" ]]; then
+      name="off"
+    elif [[ $cmd == "next" ]]; then
+      cur=$(current); name=${scenes[0]}
+      for i in "${!scenes[@]}"; do
+        if [[ ${scenes[$i]} == "$cur" ]]; then name=${scenes[$(( (i + 1) % ${#scenes[@]} ))]}; fi
+      done
+    else
+      name=${2:-}
+      if [[ ! " ${scenes[*]} off " == *" $name "* ]]; then
+        echo "usage: aeris-wallpaper set {${scenes[*]// /|}|off}" >&2
+        exit 2
+      fi
+    fi
+    save "$name"
+    if [[ $name == "off" ]]; then
+      pkill -f "qs -p $conf" || true       # nothing to draw: free the GPU entirely
+    elif running; then
+      qs ipc -p "$conf" call wallpaper set "$name" >/dev/null
+    else
+      start
+    fi
+    refresh_bar
+    ;;
+  status)
+    s=$(current)
+    if running && [[ $s != "off" ]]; then klass="on"; else klass="off"; fi
+    printf '{"text":"%s","class":"%s","scene":"%s","tooltip":"wallpaper: %s"}\n' "$glyph" "$klass" "$s" "$s"
+    ;;
+  *)
+    echo "usage: aeris-wallpaper [start|stop|status|list|next|set NAME|off]" >&2
+    exit 2
+    ;;
+esac

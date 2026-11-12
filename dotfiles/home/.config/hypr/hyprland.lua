@@ -82,6 +82,7 @@ local menu = "hyprlauncher"
 hl.on("hyprland.start", function ()
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
     hl.exec_cmd("env QT_QPA_PLATFORMTHEME=gtk3 qs -p ~/.config/quickshell/aeris/shell.qml")   -- the shell: top bar + pill dock, one process
+    hl.exec_cmd("~/.local/bin/aeris-wallpaper start")   -- 3D wallpaper (own process, Background layer; scene from the bar menu)
     hl.exec_cmd("~/.local/bin/stay-awake on")   -- no sleep/suspend by default (coffee cup in the bar)
     hl.exec_cmd("wl-paste --type text --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
