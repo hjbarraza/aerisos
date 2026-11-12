@@ -6,7 +6,8 @@
 
 Polls /var/lib/aeris/status.json, diffs it against what was already announced and
 says new events through aeris-speak (Kokoro bf_emma) plus a dunst notification:
-  A) new unacknowledged watchlist findings
+  A) new unacknowledged watchlist findings — dunst notification only, NOT spoken
+     (principal's setting, 2026-10-31: watchlist and satellites are visual-only)
   B) new entries in the alerts list (GPS jamming and airspace alerts: bar pill only)
   C) emergency squawks
 ISS / Tiangong passes and satellites overhead are not spoken: the bar's airspace pill shows them.
@@ -52,8 +53,8 @@ def log(msg):
     print(msg, file=sys.stderr, flush=True)
 
 
-def announce(title, text, say=None):
-    """Notify with `text`, speak `say` (default: the same text)."""
+def announce(title, text, say=None, speak=True):
+    """Notify with `text`, speak `say` (default: the same text). speak=False = visual only."""
     log(f"announce: {say or text}")
     if DRY:
         return
@@ -62,6 +63,8 @@ def announce(title, text, say=None):
                        timeout=10, check=False)
     except (OSError, subprocess.SubprocessError) as e:
         log(f"dunstify failed: {e}")
+    if not speak:
+        return
     try:
         subprocess.run([SPEAK, say or text], timeout=120, check=False)
     except (OSError, subprocess.SubprocessError) as e:
@@ -109,8 +112,8 @@ def check_watch(s, state):
                 fresh.append(f)
         if fresh:
             topics.append((name, fresh))
-    # One announcement per update, not one per finding: spoken is only the count and the topics,
-    # the notification carries the headlines
+    # One announcement per update, not one per finding: visual notification carries the
+    # headlines; the voice is disabled (principal's setting 2026-10-31) — dunst only.
     if topics:
         n = sum(len(f) for _, f in topics)
         names = [t for t, _ in topics]
@@ -118,7 +121,7 @@ def check_watch(s, state):
         say += ": " + ", ".join(names[:3]) + (" and more." if len(names) > 3 else ".")
         lines = [f"{t}: {clean_title(finding_title(f[0]))}" + (f" (+{len(f) - 1})" if len(f) > 1 else "")
                  for t, f in topics[:6]]
-        announce("Watchlist", "\n".join(lines), say)
+        announce("Watchlist", "\n".join(lines), say, speak=False)
     # keep only still-unacknowledged keys, so acked-then-reappearing items speak again
     state["watch"] = sorted(current)
 
