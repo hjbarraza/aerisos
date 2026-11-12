@@ -58,6 +58,7 @@ Item {
         property real fadeFar: 75
         property real pointSize: 1
         property real nearBoost: 1.0
+        property real floorLevel: 0
         shadingMode: CustomMaterial.Unshaded
         sourceBlend: CustomMaterial.One
         destinationBlend: CustomMaterial.OneMinusSrcColor

@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+# aeris:summary=Live process tree with CPU use (JSON lines for the Decisions wallpaper)
+# aeris:group=system
+# aeris:args=[--once] [--interval SECONDS]
+"""aeris-proctree: every process on the machine, its parent and its CPU use.
+
+Every INTERVAL seconds (default 1) it reads /proc (no root needed: stat is world-readable)
+and prints one JSON line:
+  {"t": unix, "ncpu": N, "procs": [[id, parent, name, cpu, kind], ...]}
+cpu is the percentage of one core used since the last sample (a process's own row counts
+only its main thread; its other threads are separate rows). kind: 0 process, 1 kernel
+thread (children of kthreadd, pid 2), 2 thread of a user process (parent = its process).
+The Decisions scene of aeris-wallpaper runs this while it is on screen.
+"""
+import json
+import os
+import sys
+import time
+
+HZ = os.sysconf("SC_CLK_TCK")
+
+
+def read_stat(path):
+    """(ppid, name, cpu_ticks) from a /proc stat file, or None if it vanished."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read().decode("utf-8", "replace")
+    except OSError:
+        return None                     # exited while we looked
+    # comm is in parentheses and may itself contain spaces or parentheses
+    l, r = raw.find("("), raw.rfind(")")
+    f = raw[r + 2:].split()
+    return int(f[1]), raw[l + 1:r], int(f[11]) + int(f[12])   # ppid, comm, utime + stime
+
+
+def read_procs():
+    """{id: (parent, name, cpu_ticks, kind)}; threads of user processes included."""
+    out = {}
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        st = read_stat(f"/proc/{d}/stat")
+        if st is None:
+            continue
+        pid = int(d)
+        kthread = pid == 2 or st[0] == 2
+        try:                            # the process row counts its main thread only
+            main = read_stat(f"/proc/{d}/task/{d}/stat") or st
+        except OSError:
+            main = st
+        out[pid] = (st[0], st[1], main[2], 1 if kthread else 0)
+        if kthread:
+            continue
+        try:
+            tids = os.listdir(f"/proc/{d}/task")
+        except OSError:
+            continue
+        for t in tids:
+            if t == d:
+                continue
+            ts = read_stat(f"/proc/{d}/task/{t}/stat")
+            if ts is not None:
+                out[int(t)] = (pid, ts[1], ts[2], 2)
+    return out
+
+
+def main():
+    once = "--once" in sys.argv
+    interval = 1.0
+    if "--interval" in sys.argv:
+        interval = float(sys.argv[sys.argv.index("--interval") + 1])
+    ncpu = os.cpu_count() or 1
+    prev = read_procs()
+    prev_t = time.monotonic()
+    if not once:
+        time.sleep(interval)
+    while True:
+        cur = read_procs()
+        now = time.monotonic()
+        dt = max(0.2, now - prev_t)
+        rows = []
+        for pid, (ppid, name, ticks, kind) in cur.items():
+            p = prev.get(pid)
+            cpu = 0.0
+            if p is not None:
+                cpu = max(0.0, (ticks - p[2]) / HZ / dt * 100)
+            rows.append([pid, ppid, name, round(cpu, 1), kind])
+        print(json.dumps({"t": round(time.time()), "ncpu": ncpu, "procs": rows}, separators=(",", ":")), flush=True)
+        if once:
+            return 0
+        prev, prev_t = cur, now
+        time.sleep(interval)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (KeyboardInterrupt, BrokenPipeError):
+        sys.exit(0)
