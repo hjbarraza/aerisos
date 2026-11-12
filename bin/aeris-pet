@@ -92,6 +92,8 @@ RAVEN_SCALE = 0.2                 # the 200x200 raven drawing shown 40 px tall
 PID_FILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-pet.pid")
 BAR_GLYPH = "\U000F03E9"          # nf-md-paw
 
+DAMAGE_PAD = 4                    # extra px repainted around the pet each frame
+
 CRUMB_H = 12
 SLEEP_AFTER = 600               # seconds of no activity before it sleeps
 PERCH_CHANCE = 0.6
@@ -614,12 +616,16 @@ class Pet:
         x, y, w, h = self.dragon_bbox(pts, head, bubble)
         win_bbox = (x - self.mon_x, y - self.mon_y, w, h)
         if self.prev_bbox is not None:
+            # Repaint the union of last and this frame's area, widened by DAMAGE_PAD and
+            # snapped outward to whole pixels: strokes (the bubble border) reach half a pixel
+            # past the box, and fractional output scaling rounds damage edges, both of which
+            # left stale lines behind where the pet had been.
             px, py, pw, ph = self.prev_bbox
-            ux0 = min(px, win_bbox[0])
-            uy0 = min(py, win_bbox[1])
-            ux1 = max(px + pw, win_bbox[0] + win_bbox[2])
-            uy1 = max(py + ph, win_bbox[1] + win_bbox[3])
-            self.area.queue_draw_area(int(ux0), int(uy0), int(ux1 - ux0) + 2, int(uy1 - uy0) + 2)
+            ux0 = math.floor(min(px, win_bbox[0])) - DAMAGE_PAD
+            uy0 = math.floor(min(py, win_bbox[1])) - DAMAGE_PAD
+            ux1 = math.ceil(max(px + pw, win_bbox[0] + win_bbox[2])) + DAMAGE_PAD
+            uy1 = math.ceil(max(py + ph, win_bbox[1] + win_bbox[3])) + DAMAGE_PAD
+            self.area.queue_draw_area(ux0, uy0, ux1 - ux0, uy1 - uy0)
         else:
             self.area.queue_draw()
         if win_bbox != self.last_input:
