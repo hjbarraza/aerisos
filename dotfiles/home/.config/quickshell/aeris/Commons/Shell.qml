@@ -7,7 +7,9 @@ Singleton {
     property bool barShown: true
     property int refreshTick: 0   // bumped by `aeris-shell bar refresh`; StatusModules re-run
 
-    function sh(c) { Quickshell.execDetached(["sh", "-c", c]) }
+    // ~/.local/bin is not on the PATH Hyprland hands Quickshell; without it the commands'
+    // own `aeris-shell -q bar refresh` silently fails and toggles show stale state.
+    function sh(c) { Quickshell.execDetached(["sh", "-c", 'PATH="$HOME/.local/bin:$PATH"; ' + c]) }
 
     function isoWeek(d) {
         const t = new Date(d.getTime())

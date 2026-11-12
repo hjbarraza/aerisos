@@ -65,6 +65,10 @@ In order of preference, the first that fits:
 4. **A push from the command that changed the state.** Toggle commands end with
    `aeris-shell -q bar refresh`; every `StatusModule` re-runs on that. If you add a command that
    changes something the bar shows, push from the command rather than shortening a timer.
+   Click handlers run through `Shell.sh()`, which prepends `~/.local/bin` to `PATH`: the PATH
+   Hyprland hands Quickshell lacks it, so without that the push fails silently (`-q`) and the
+   module shows the pre-click state until the 60 s fallback. Edits to `Commons/` singletons
+   may not hot-reload; relaunch the shell to be sure.
 5. **A timer, last.** Only for state with no change signal. 60 s or longer, and gated with
    `active: drawer.open` (or the panel's visibility) when nobody sees the result while closed.
    `Drawer.qml` does this for bluetooth, backlight and power profile. Write the reason next to it.
