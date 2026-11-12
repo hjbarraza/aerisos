@@ -1,5 +1,15 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "unsloth-studio": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8888/mcp/",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:UNSLOTH_KEY}"
+      }
+    }
+  },
   "default_agent": "AERIS",
   "model": "ollama/gemma4-e4b-32k",
   "small_model": "openrouter/z-ai/glm-5.3-flash",
