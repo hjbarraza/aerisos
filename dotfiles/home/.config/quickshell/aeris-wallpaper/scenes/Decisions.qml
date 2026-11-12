@@ -16,7 +16,8 @@ import "lib.js" as L
 Item {
     id: scene
     property real clock: 0
-    readonly property int maxDepth: 8
+    readonly property int maxDepth: 7
+    readonly property int fps: 15       // turns slowly; half the frames, half the cost
     readonly property real turnSeconds: 140
 
     // the galaxy (static skeleton)
@@ -72,7 +73,7 @@ Item {
         sk = ns; radius = rad
         const pos = [], col = []
         for (let i = 1; i < ns.length; i++) {
-            const c = curve(i), k = 0.04 + 0.1 * ns[i].depth / scene.maxDepth
+            const c = curve(i), k = 0.055 + 0.13 * ns[i].depth / scene.maxDepth
             let prev = bez(c, 0)
             for (let s = 1; s <= 4; s++) { const q = bez(c, s / 4); pos.push(L.v3(prev), L.v3(q)); col.push(L.ink(k), L.ink(k)); prev = q }
         }

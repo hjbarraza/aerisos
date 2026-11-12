@@ -1,7 +1,8 @@
 // AERIS 3D wallpaper — quickshell 0.3.x + Qt Quick 3D. One full-screen Background layer per screen.
 // Scene name in ~/.local/state/aeris-wallpaper/scene (watched): globe, particles, terrain, sky,
 // decisions, constellation, or off. Change it with `aeris-wallpaper set NAME` or the bar menu.
-// Frames: 30/s on AC, 15/s on battery, paused while the focused window is fullscreen.
+// Frames: the scene's own rate (property fps, default 30) on AC, half on battery, paused while
+// the focused window is fullscreen.
 // IPC: qs ipc -p <this file> call wallpaper set NAME | next
 import QtQuick
 import Quickshell
@@ -17,6 +18,7 @@ ShellRoot {
     property string scene: "decisions"
     property bool fullscreen: false
     property real t: 0
+    property int sceneFps: 30       // set from the loaded scene's `fps`, if it has one
     readonly property bool onBattery: UPower.onBattery
     readonly property bool running: scene !== "off" && !fullscreen
 
@@ -33,7 +35,7 @@ ShellRoot {
 
     // One clock for every scene: they read root.t (seconds) and animate from it.
     Timer {
-        interval: root.onBattery ? 66 : 33
+        interval: Math.round(1000 / root.sceneFps) * (root.onBattery ? 2 : 1)
         running: root.running
         repeat: true
         property real last: 0
@@ -85,7 +87,10 @@ ShellRoot {
                 anchors.fill: parent
                 active: root.scene !== "off"
                 source: active ? "scenes/" + root.scene.charAt(0).toUpperCase() + root.scene.slice(1) + ".qml" : ""
-                onLoaded: item.clock = Qt.binding(() => root.t)
+                onLoaded: {
+                    item.clock = Qt.binding(() => root.t)
+                    root.sceneFps = item.fps !== undefined ? item.fps : 30
+                }
             }
         }
     }
