@@ -152,13 +152,13 @@ PanelWindow {
             walkTo(best, "crumb"); return
         }
         if (idle.isIdle && !alert) { setMode("sleep"); return }
-        // Mostly it chills: long sits and the odd nap; walks are the minority.
+        // Half walks, half chilling: sits (with fidgets, see the slow timer) and the odd nap.
         const r = Math.random()
         if (alert) {
             if (r < 0.7) walkTo(pickSpot()); else setMode("sit", rand(1, 3))
-        } else if (r < 0.3) walkTo(pickSpot())
-        else if (r < 0.8) setMode("sit", rand(10, 45))
-        else if (r < 0.9) setMode("nap", rand(60, 180))
+        } else if (r < 0.5) walkTo(pickSpot())
+        else if (r < 0.85) setMode("sit", rand(4, 18))
+        else if (r < 0.92) setMode("nap", rand(40, 120))
         else if (kind === "raven") setMode("peck", 1.2)
         else setMode("sit", rand(5, 15))
     }
@@ -259,6 +259,11 @@ PanelWindow {
             lane.t += 0.4
             lane.tally(0.4)
             lane.blink = lane.mode === "sit" && Math.random() < 0.08
+            if (lane.mode === "sit") {   // fidgets: look the other way, or a quick peck
+                const f = Math.random()
+                if (f < 0.05) lane.dir = -lane.dir
+                else if (f < 0.07 && lane.kind === "raven") { lane.setMode("peck", 0.6); return }
+            }
             if (lane.spotOf(lane.px, lane.spots()) < 0) { lane.target = lane.px; lane.route() }
             else if ((lane.mode === "sit" || lane.mode === "nap") && lane.now() >= lane.modeEnd) lane.decide()
             canvas.requestPaint()
