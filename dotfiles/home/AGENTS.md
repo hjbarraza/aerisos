@@ -96,8 +96,35 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   `/inbox` (OpenCode) and `/watch-inbox` (Claude Code): the watchlist as a numbered inbox
   via `~/.local/bin/aeris-inbox`, "open N" for detail, ack per topic.
 - Defence-map ontologies: `~/maps`, query with `aeris-onto`.
+- Desktop pet: `~/.local/bin/aeris-pet` (GTK3 full-screen transparent overlay, class `aeris-pet`;
+  crumbs strip `aeris-crumbs`; one instance, pid in `$XDG_RUNTIME_DIR/aeris-pet.pid`). Pets: dragon
+  (jointed legs) or raven. Menu = paw icon in the bar (`Bar/Pet.qml` + `PetPopup.qml`; the pet's
+  right click calls `aeris-shell pet menu`); CLI `aeris-pet set dragon|raven|start|quit|status`,
+  choice in `~/.local/state/aeris-pet/pet`. Since 2026-11-12 the pet can live in the bar
+  instead (`aeris-pet where bar|desktop`, paw menu "In bar"/"On desktop", state in
+  `~/.local/state/aeris-pet/where`, hidden flag `bar-hidden`): `Bar/PetLane.qml` draws a small
+  dragon/raven pacing a 120 px strip in place of the paw, no overlay process; it sleeps on
+  IdleMonitor (5 min), stays awake with a "!" while AERIS alerts are up; left click hop + greeting
+  (`~/.config/tinyraven/greetings.txt`), middle click crumb, right click menu. The `aeris-pet-overlay` rule in hyprland.lua is
+  required: no_blur (else every window behind it blurs) and no_focus (else a click hands it the
+  keyboard). Never give the overlay GTK popup menus: their grab can hold the keyboard.
 
-## This machine (since 2026-10-22: hostname AerisT2, was hdls)
+## Razer laptop (hostname rzr since 2026-10-25, was vm)
+- Razer Blade 17 (2022, RZ09-0423). SDDM and hyprlock require password + FIDO key
+  (`pam_u2f`, mappings in `/etc/u2f_mappings`). The Titan key is U2F-only and shows up as
+  `096e:085b` "FS ePass FIDO". The default pam_u2f origin is `pam://<hostname>`, so pin
+  `origin=/appid=pam://aeris` in the PAM lines to survive renames.
+- GPU: RTX 3070 Ti Laptop (`10de:24e0`, 8 GB, PCI `0000:01:00.0`) + Intel Iris Xe.
+  Since 2026-10-29 tensor-core unlock via gpu-unlock (Zagitta, clone `~/src/gpu-unlock`,
+  DKMS pkgs `gpu-unlock-dkms/-firmware`): `gpu_unlock.targets=0000:01:00.0` in
+  `/etc/kernel/cmdline` (UKI), runtime PM off in `/etc/modprobe.d/nvidia-nopm.conf`.
+  Dense matmul before/after unlock: BF16/FP16 34 → 50–54 TFLOPS, TF32 17 → 26 (`~/ml/bench.py`,
+  `~/ml/bench-before.txt`, `bench-after.txt`; venv `~/ml`). Verify after boot:
+  `journalctl -k -b | grep gpu_unlock` ends in `unlocked`. Toggle with `~/.local/bin/gpu-unlock
+  status|on|off|undo` (on/off/undo rebuild the UKI, apply after reboot; `off` lets the GPU sleep
+  for battery; `undo` also removes the packages).
+
+## MacBook (since 2026-10-22: hostname AerisT2, was hdls)
 - MacBookPro16,1 (Intel T2, Radeon Pro 5300M drives all displays; internal keyboard has
   no Print key or Right Ctrl — dictation is Right Option/Alt, screenshots on SUPER+SHIFT
   letters; see README shortcuts table).

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # aeris:summary=Desktop pet (dragon or raven) on a transparent overlay
 # aeris:group=desktop
-# aeris:args=[run|start|quit|toggle|status|set dragon|raven]
+# aeris:args=[run|start|quit|toggle|status|set dragon|raven|where desktop|bar]
 """aeris-pet: a small dragon companion for the desktop, outside any terminal.
 
 It swims through the air like Haku: its body undulates as it moves, and its
@@ -23,7 +23,12 @@ choice is kept in ~/.local/state/aeris-pet/pet and picked up by the running pet.
   aeris-pet                 run the pet (one instance; a second start does nothing)
   aeris-pet set dragon|raven  choose the pet, starting it if it is not running
   aeris-pet quit            hide the pet
-  aeris-pet status          bar module JSON: {"text", "class", "pet"}
+  aeris-pet where bar|desktop  live in the top bar (drawn by Quickshell, Bar/PetLane.qml)
+                            or on the desktop overlay (this program)
+  aeris-pet status          bar module JSON: {"text", "class", "pet", "running", "where"}
+
+In bar mode this program does not run: the shell draws a small pet in the bar and
+start/quit/toggle show or hide it there (hidden = ~/.local/state/aeris-pet/bar-hidden).
 
 The pet's windows never take keyboard focus (no_focus rule, no popup grabs), so it
 cannot swallow the keyboard.
@@ -89,6 +94,8 @@ STRIDE = 5.5                      # half a step, px
 PETS = (("dragon", "Dragon"), ("raven", "Raven"))
 CHOICE_FILE = os.path.expanduser("~/.local/state/aeris-pet/pet")
 RAVEN_SCALE = 0.2                 # the 200x200 raven drawing shown 40 px tall
+WHERE_FILE = os.path.expanduser("~/.local/state/aeris-pet/where")
+BAR_HIDDEN_FILE = os.path.expanduser("~/.local/state/aeris-pet/bar-hidden")
 PID_FILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-pet.pid")
 BAR_GLYPH = "\U000F03E9"          # nf-md-paw
 
@@ -152,6 +159,35 @@ def save_choice(kind):
             f.write(kind + "\n")
     except OSError:
         pass
+
+
+def load_where():
+    try:
+        with open(WHERE_FILE, encoding="utf-8") as f:
+            return "bar" if f.read().strip() == "bar" else "desktop"
+    except OSError:
+        return "desktop"
+
+
+def save_where(where):
+    os.makedirs(os.path.dirname(WHERE_FILE), exist_ok=True)
+    with open(WHERE_FILE, "w", encoding="utf-8") as f:
+        f.write(where + "\n")
+
+
+def bar_shown():
+    return not os.path.exists(BAR_HIDDEN_FILE)
+
+
+def set_bar_shown(shown):
+    if shown:
+        try:
+            os.remove(BAR_HIDDEN_FILE)
+        except OSError:
+            pass
+    else:
+        os.makedirs(os.path.dirname(BAR_HIDDEN_FILE), exist_ok=True)
+        open(BAR_HIDDEN_FILE, "w").close()
 
 
 def svg_path(d):
@@ -1527,6 +1563,8 @@ def start_detached():
 
 
 def run():
+    if load_where() == "bar":
+        return 0                    # the bar draws the pet; no overlay
     lock = open(PID_FILE + ".lock", "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1549,6 +1587,24 @@ def run():
     return 0
 
 
+def stop_overlay():
+    pid = running_pid()
+    if pid:
+        os.kill(pid, signal.SIGTERM)
+
+
+def show(on):
+    """Show or hide the pet wherever it lives."""
+    if load_where() == "bar":
+        set_bar_shown(on)
+        bar_refresh()
+    elif on:
+        if not running_pid():
+            start_detached()
+    else:
+        stop_overlay()
+
+
 def main():
     args = sys.argv[1:]
     cmd = args[0] if args else "run"
@@ -1556,34 +1612,40 @@ def main():
     if cmd == "run":
         return run()
     if cmd == "status":
-        pid = running_pid()
-        print(json.dumps({"text": BAR_GLYPH, "class": "on" if pid else "off",
-                          "pet": load_choice(), "running": bool(pid),
-                          "tooltip": f"{load_choice()} pet" + ("" if pid else " (hidden)")}, ensure_ascii=False))
+        where = load_where()
+        running = bar_shown() if where == "bar" else bool(running_pid())
+        print(json.dumps({"text": BAR_GLYPH, "class": "on" if running else "off",
+                          "pet": load_choice(), "running": running, "where": where,
+                          "tooltip": f"{load_choice()} pet" + ("" if running else " (hidden)")},
+                         ensure_ascii=False))
         return 0
     if cmd == "set" and len(args) == 2 and args[1] in kinds:
         save_choice(args[1])
-        if not running_pid():
+        show(True)
+        bar_refresh()
+        return 0
+    if cmd == "where" and len(args) == 2 and args[1] in ("bar", "desktop"):
+        was_running = bar_shown() if load_where() == "bar" else bool(running_pid())
+        save_where(args[1])
+        if args[1] == "bar":
+            stop_overlay()
+            set_bar_shown(was_running)
+        elif was_running and not running_pid():
             start_detached()
         bar_refresh()
         return 0
     if cmd == "start":
-        if not running_pid():
-            start_detached()
+        show(True)
         return 0
     if cmd == "quit":
-        pid = running_pid()
-        if pid:
-            os.kill(pid, signal.SIGTERM)
+        show(False)
         return 0
     if cmd == "toggle":
-        pid = running_pid()
-        if pid:
-            os.kill(pid, signal.SIGTERM)
-        else:
-            start_detached()
+        running = bar_shown() if load_where() == "bar" else bool(running_pid())
+        show(not running)
         return 0
-    print(f"usage: aeris-pet [run|status|start|quit|toggle|set {'|'.join(kinds)}]", file=sys.stderr)
+    print(f"usage: aeris-pet [run|status|start|quit|toggle|set {'|'.join(kinds)}|where bar|desktop]",
+          file=sys.stderr)
     return 2
 
 
