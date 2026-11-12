@@ -58,6 +58,9 @@ PanelWindow {
     readonly property real dwellCap: 90
     property real chirpAt: now() + rand(40, 120) * 1000   // next chirp, ms
     property real chirpUntil: 0                           // the note mark shows until then
+    property real attnUntil: 0                            // "!" and big hops after a notification
+    property real lastNotify: 0
+    readonly property bool asleep: mode === "sleep" || mode === "nap"
     readonly property string soundDir: Quickshell.env("HOME") + "/.local/share/aeris-pet/sounds/"
     property var crumbs: []
     readonly property bool alert: Status.airHot.length > 0 || Status.labels.length > 0
@@ -149,16 +152,33 @@ PanelWindow {
             walkTo(best, "crumb"); return
         }
         if (idle.isIdle && !alert) { setMode("sleep"); return }
+        // Mostly it chills: long sits and the odd nap; walks are the minority.
         const r = Math.random()
-        if (r < (alert ? 0.75 : 0.5)) walkTo(pickSpot())
-        else if (r < 0.9 || kind !== "raven") setMode("sit", alert ? rand(1, 3) : rand(4, 12))
-        else setMode("peck", 1.2)
+        if (alert) {
+            if (r < 0.7) walkTo(pickSpot()); else setMode("sit", rand(1, 3))
+        } else if (r < 0.3) walkTo(pickSpot())
+        else if (r < 0.8) setMode("sit", rand(10, 45))
+        else if (r < 0.9) setMode("nap", rand(60, 180))
+        else if (kind === "raven") setMode("peck", 1.2)
+        else setMode("sit", rand(5, 15))
+    }
+    // A desktop notification arrived (dbus-monitor below): wake, hop about with a "!"
+    // and a chirp, and show the notification's title in the bubble.
+    function notified(app, summary) {
+        if (now() - lastNotify < 4000 || mode === "jump") return
+        lastNotify = now()
+        attnUntil = now() + 2200
+        hopStart = now()
+        setMode("hop", 2.2)
+        chirp()
+        const line = summary || app
+        if (line) say(line.length > 60 ? line.slice(0, 59) + "…" : line)
     }
     function tally(dt) {
         if (px < width / 2) dwellL += dt; else dwellR += dt
         dwellL = Math.min(dwellL, dwellR + dwellCap)
         dwellR = Math.min(dwellR, dwellL + dwellCap)
-        if (mode !== "sleep" && mode !== "jump" && now() >= chirpAt) chirp()
+        if (!asleep && mode !== "jump" && now() >= chirpAt) chirp()
     }
     // A walk target: first a side (the neglected one, or a coin toss when about even),
     // then a gap on that side weighted by its width, then a point in it.
@@ -240,7 +260,7 @@ PanelWindow {
             lane.tally(0.4)
             lane.blink = lane.mode === "sit" && Math.random() < 0.08
             if (lane.spotOf(lane.px, lane.spots()) < 0) { lane.target = lane.px; lane.route() }
-            else if (lane.mode === "sit" && lane.now() >= lane.modeEnd) lane.decide()
+            else if ((lane.mode === "sit" || lane.mode === "nap") && lane.now() >= lane.modeEnd) lane.decide()
             canvas.requestPaint()
         }
     }
@@ -249,7 +269,28 @@ PanelWindow {
         timeout: 300
         onIsIdleChanged: if (!isIdle && lane.mode === "sleep") { lane.say("i was not asleep"); lane.decide() }
     }
-    onAlertChanged: if (alert && mode === "sleep") decide()
+    onAlertChanged: if (alert && asleep) decide()
+
+    // Desktop notifications, as an event stream: every Notify call on the session bus.
+    // Strings after the Notify line are app_name, app_icon, summary, body.
+    Process {
+        id: notifyWatch
+        running: lane.visible
+        command: ["dbus-monitor", "--session",
+                  "type='method_call',interface='org.freedesktop.Notifications',member='Notify'"]
+        property var strs: null
+        stdout: SplitParser {
+            onRead: line => {
+                const p = notifyWatch
+                if (line.indexOf("member=Notify") >= 0) { p.strs = []; return }
+                if (p.strs === null) return
+                const m = /^\s+string "(.*)"$/.exec(line)
+                if (!m) return
+                p.strs.push(m[1])
+                if (p.strs.length === 3) { lane.notified(p.strs[0], p.strs[2]); p.strs = null }
+            }
+        }
+    }
     onKindChanged: canvas.requestPaint()
     Timer {   // place it once the bar has laid out its icons
         interval: 600
@@ -371,7 +412,7 @@ PanelWindow {
             ctx.fillStyle = Theme.dim
             ctx.font = "bold 8px '" + Theme.sans + "'"
             const hx = 20 + lane.dir * 4
-            if (lane.mode === "sleep") {
+            if (lane.asleep) {
                 const k = (lane.t * 0.6) % 1
                 ctx.globalAlpha = 1 - k
                 ctx.fillText("z", hx + lane.dir * (2 + 3 * k), 12 - 6 * k)
@@ -382,14 +423,14 @@ PanelWindow {
                 ctx.globalAlpha = 1 - k
                 ctx.fillText("♪", hx + lane.dir * (1 + 2 * k), 11 - 4 * k)
                 ctx.globalAlpha = 1
-            } else if (lane.alert && lane.mode === "sit") {
+            } else if (lane.now() < lane.attnUntil || (lane.alert && lane.mode === "sit")) {
                 ctx.fillStyle = Theme.fg
                 ctx.fillText("!", hx, 10)
             }
         }
 
         function eye(ctx, x, y) {
-            if (lane.mode === "sleep" || lane.blink) {
+            if (lane.asleep || lane.blink) {
                 ctx.strokeStyle = Theme.bg
                 ctx.lineWidth = 0.8
                 ctx.beginPath(); ctx.moveTo(x - 0.9, y); ctx.lineTo(x + 0.9, y); ctx.stroke()
@@ -401,7 +442,7 @@ PanelWindow {
 
         // Raven, feet at (0, 0), facing +x, about 16 px wide and 13 px tall.
         function drawRaven(ctx, airborne) {
-            const sleeping = lane.mode === "sleep"
+            const sleeping = lane.asleep
             const peck = lane.mode === "peck" ? 0.5 + 0.2 * Math.sin(lane.t * 18) : 0
             const flap = lane.mode === "hop" ? 0.7 * Math.sin(lane.t * 30) - 0.3 : 0
             ctx.save()
@@ -444,7 +485,7 @@ PanelWindow {
         // four stubby legs that step while it walks, horns and a back fin.
         function drawDragon(ctx) {
             const walking = lane.mode === "walk"
-            const sleeping = lane.mode === "sleep"
+            const sleeping = lane.asleep
             const wave = sleeping ? 0.3 : (walking || lane.mode === "hop" ? 1.4 : 0.6)
             const ph = lane.t * (walking ? 8 : 2)
             const pts = []

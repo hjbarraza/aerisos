@@ -106,8 +106,14 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   transparent Top layer (namespace `aeris-pet`, input mask = the pet only), roams the full bar
   width, standing only in the gaps between icon groups (`obstacles()` in `Bar.qml`) and diving
   under a group, below the bar edge, to cross it; the paw hides; no overlay process; it sleeps on
-  IdleMonitor (5 min), stays awake with a "!" while AERIS alerts are up; left click hop + greeting
-  (`~/.config/tinyraven/greetings.txt`), middle click crumb, right click menu. The `aeris-pet-overlay` rule in hyprland.lua is
+  IdleMonitor (5 min), mostly chills (long sits, naps), splits time evenly left/right, chirps
+  every 3–10 min (pw-play, overlay sounds), hops with a "!" and the title in a bubble on every
+  desktop notification (dbus-monitor on Notify), stays awake with a "!" while AERIS alerts are up; left click hop + greeting
+  (`~/.config/tinyraven/greetings.txt`), middle click crumb, right click menu.
+  Waybar machines (tinyraven, the Chromebook) run it standalone: `qs -p ~/.config/quickshell/aeris/pet.qml`
+  (autostart in its hyprland.lua), no-go zones for Waybar's groups in `~/.config/aeris/pet.json`
+  (`left`/`center` half-width/`right` px), bar height in `~/.config/aeris/shell.json`; Waybar's paw
+  menu has In bar / On desktop. The `aeris-pet-overlay` rule in hyprland.lua is
   required: no_blur (else every window behind it blurs) and no_focus (else a click hands it the
   keyboard). Never give the overlay GTK popup menus: their grab can hold the keyboard.
 

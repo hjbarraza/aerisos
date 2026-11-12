@@ -1552,8 +1552,11 @@ def running_pid():
 
 def bar_refresh():
     # the AERIS bar (Quickshell), or Waybar on the Chromebook edition (pet module on signal 11)
+    # plus its standalone bar pet (quickshell/aeris/pet.qml)
     subprocess.run(["sh", "-c", 'PATH="$HOME/.local/bin:$PATH"; aeris-shell -q bar refresh; '
-                    'pkill -RTMIN+11 -x waybar'],
+                    'pkill -RTMIN+11 -x waybar; '
+                    'pgrep -f "qs -p .*aeris/pet.qml" >/dev/null && '
+                    'qs ipc -p "$HOME/.config/quickshell/aeris/pet.qml" call pet refresh; true'],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
