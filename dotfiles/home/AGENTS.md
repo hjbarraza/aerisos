@@ -102,8 +102,10 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   right click calls `aeris-shell pet menu`); CLI `aeris-pet set dragon|raven|start|quit|status`,
   choice in `~/.local/state/aeris-pet/pet`. Since 2026-11-12 the pet can live in the bar
   instead (`aeris-pet where bar|desktop`, paw menu "In bar"/"On desktop", state in
-  `~/.local/state/aeris-pet/where`, hidden flag `bar-hidden`): `Bar/PetLane.qml` draws a small
-  dragon/raven pacing a 120 px strip in place of the paw, no overlay process; it sleeps on
+  `~/.local/state/aeris-pet/where`, hidden flag `bar-hidden`): `Bar/PetLane.qml`, its own
+  transparent Top layer (namespace `aeris-pet`, input mask = the pet only), roams the full bar
+  width, standing only in the gaps between icon groups (`obstacles()` in `Bar.qml`) and diving
+  under a group, below the bar edge, to cross it; the paw hides; no overlay process; it sleeps on
   IdleMonitor (5 min), stays awake with a "!" while AERIS alerts are up; left click hop + greeting
   (`~/.config/tinyraven/greetings.txt`), middle click crumb, right click menu. The `aeris-pet-overlay` rule in hyprland.lua is
   required: no_blur (else every window behind it blurs) and no_focus (else a click hands it the

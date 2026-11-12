@@ -25,8 +25,11 @@ PopupWindow {
     visible: false
     color: "transparent"
 
-    function open() {
-        anchor.rect.x = anchorItem.mapToItem(null, 0, 0).x + anchorItem.width - implicitWidth
+    // atX: open under that bar x (the roaming pet) instead of under the paw
+    function open(atX) {
+        anchor.rect.x = atX !== undefined
+            ? Math.max(4, atX - implicitWidth / 2)
+            : anchorItem.mapToItem(null, 0, 0).x + anchorItem.width - implicitWidth
         statusProc.running = true
         visible = true
     }

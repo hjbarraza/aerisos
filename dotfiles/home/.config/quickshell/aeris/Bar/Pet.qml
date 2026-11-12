@@ -3,10 +3,10 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// The pet's spot in the bar. Desktop mode: the paw icon (dim while the overlay pet is
-// hidden). Bar mode (`aeris-pet where bar`): the pet itself, PetLane, in place of the paw;
-// hidden in bar mode shows the dim paw again so the menu stays reachable.
-// Left click on the paw, right click on the pet: onClick (the PetPopup menu).
+// The paw icon and the pet's state from `aeris-pet status`. Desktop mode: the paw (dim while
+// the overlay pet is hidden). Bar mode (`aeris-pet where bar`): the paw steps aside (width 0)
+// and Bar.qml shows PetLane, the pet roaming the bar; hidden in bar mode shows the dim paw
+// again so the menu stays reachable. Left click on the paw: onClick (the PetPopup menu).
 // `aeris-pet` pushes a bar refresh whenever the choice, place or visibility changes.
 Item {
     id: pet
@@ -16,7 +16,7 @@ Item {
     property bool running: false
     readonly property bool inBar: where === "bar" && running
 
-    implicitWidth: inBar ? lane.implicitWidth : paw.implicitWidth
+    implicitWidth: inBar ? 0 : paw.implicitWidth
     implicitHeight: Theme.barHeight
 
     function refresh() { proc.running = true }
@@ -55,12 +55,5 @@ Item {
             anchors.fill: parent
             onClicked: { if (pet.onClick) pet.onClick(); Qt.callLater(pet.refresh) }
         }
-    }
-    PetLane {
-        id: lane
-        visible: pet.inBar
-        anchors.fill: parent
-        kind: pet.kind
-        onRightClick: () => { if (pet.onClick) pet.onClick() }
     }
 }

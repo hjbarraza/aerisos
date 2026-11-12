@@ -23,11 +23,13 @@ Scope {
         // center of the screen with the toggles to its left and dictation + alerts to its
         // right, so it never drifts when a side group grows (the drawer opening, say).
         Item {
+            id: content
             anchors.fill: parent
             anchors.leftMargin: 12
             anchors.rightMargin: 16
 
             RowLayout {   // ---- left: Æ mark + workspaces
+                id: leftGroup
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 0
@@ -42,12 +44,14 @@ Scope {
                 onClick: () => clockPopup.toggle()
             }
             RowLayout {   // ---- hangs left of the clock: toggles
+                id: togglesGroup
                 anchors.right: clock.left
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 0
                 Toggles {}
             }
             RowLayout {   // ---- hangs right of the clock: dictation, AERIS alerts
+                id: alertsGroup
                 anchors.left: clock.right
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 0
@@ -56,6 +60,7 @@ Scope {
             }
 
             RowLayout {   // ---- right: wallpaper, pet, tailscale, network, audio, battery, drawer
+                id: rightGroup
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 0
@@ -78,6 +83,28 @@ Scope {
                 Drawer { barWindow: bar }
             }
         }
+    }
+
+    // Where the icons are, in bar x: what the roaming pet (PetLane) must keep clear of.
+    function obstacles() {
+        const out = []
+        const add = it => {
+            if (!it.visible || it.width <= 0) return
+            const p = it.mapToItem(null, 0, 0)
+            out.push([p.x, p.x + it.width])
+        }
+        for (const g of [leftGroup, togglesGroup, alertsGroup, rightGroup])
+            for (const c of g.children) add(c)
+        add(clock)
+        return out
+    }
+
+    // The pet in bar mode, on its own layer over the bar (`aeris-pet where bar`)
+    PetLane {
+        visible: Shell.barShown && petIcon.inBar
+        kind: petIcon.kind
+        obstacles: () => root.obstacles()
+        onRightClick: x => petPopup.open(x)
     }
 
     TailscalePopup {
