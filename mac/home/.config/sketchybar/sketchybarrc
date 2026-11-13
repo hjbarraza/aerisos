@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # AERIS bar, macOS port of rzr's quickshell bar (~/.config/quickshell/aeris/Bar).
-# Layout: Æ + spaces left · clock centre · tailscale, network, volume, battery right.
+# Layout: Æ + spaces left · tailscale, network, volume, battery, clock right.
 # Colours and fonts from Commons/Theme.qml. One file: item scripts are inline.
 
 BG=0xff0a0a0a FG=0xffe6e6e6 DIM=0xff7a7a7a WHITE=0xffffffff
@@ -39,12 +39,12 @@ sketchybar --add event layout_change \
                  click_script='"$HOME/.local/bin/layout" next' \
            --subscribe layout space_change display_change front_app_switched layout_change
 
-# ---- centre: clock, uppercase mono (like Clock.qml)
-sketchybar --add item clock center \
+# ---- right (added right-to-left): clock, battery, volume, network, tailscale.
+# Clock sits far right, not centre: the MacBook notch hides centre items.
+sketchybar --add item clock right \
            --set clock update_freq=30 icon.drawing=off \
                  script='sketchybar --set $NAME label="$(date "+%a %d %b  %H:%M" | tr a-z A-Z)"'
 
-# ---- right (added right-to-left): battery, volume, network, tailscale
 sketchybar --add item battery right \
            --set battery update_freq=120 label.drawing=off \
                  script='p=$(pmset -g batt | grep -o "[0-9]*%" | tr -d %); [ -z "$p" ] && exit 0
