@@ -1,0 +1,41 @@
+# AERIS hotkeys, ported from rzr's hyprland.lua (Mac mode: wm = ctrl + alt).
+
+# Focus window (Hyprland: wm + arrows)
+ctrl + alt - left  : yabai -m window --focus west
+ctrl + alt - right : yabai -m window --focus east
+ctrl + alt - up    : yabai -m window --focus north
+ctrl + alt - down  : yabai -m window --focus south
+
+# Move window (Hyprland: wm + shift + arrows)
+ctrl + alt + shift - left  : yabai -m window --swap west
+ctrl + alt + shift - right : yabai -m window --swap east
+ctrl + alt + shift - up    : yabai -m window --swap north
+ctrl + alt + shift - down  : yabai -m window --swap south
+
+# Resize (Hyprland: super + ctrl + arrows, 60px steps)
+cmd + ctrl - left  : yabai -m window --resize left:-60:0  || yabai -m window --resize right:-60:0
+cmd + ctrl - right : yabai -m window --resize right:60:0  || yabai -m window --resize left:60:0
+cmd + ctrl - up    : yabai -m window --resize top:0:-60   || yabai -m window --resize bottom:0:-60
+cmd + ctrl - down  : yabai -m window --resize bottom:0:60 || yabai -m window --resize top:0:60
+
+# Flip split rows / columns (Hyprland: wm + J)
+ctrl + alt - j : yabai -m window --toggle split
+
+# Maximize (Hyprland Mac mode: ctrl + alt + Return)
+ctrl + alt - return : [ "$(yabai -m query --windows --window | jq '."is-floating"')" = true ] \
+    && yabai -m window --grid 1:1:0:0:1:1 \
+    || yabai -m window --toggle zoom-fullscreen
+
+# Float / unfloat (Hyprland: super + alt + F)
+cmd + alt - f : yabai -m window --toggle float --grid 6:6:1:1:4:4
+
+# Hide / show top bar (Hyprland: super + shift + space)
+cmd + shift - space : [ "$(sketchybar --query bar | jq -r .hidden)" = off ] \
+    && { sketchybar --bar hidden=on;  yabai -m config external_bar all:0:0; } \
+    || { sketchybar --bar hidden=off; yabai -m config external_bar all:26:0; }
+
+# Shortcut cheat sheet (Keysheet)
+cmd - k : open -a ~/Applications/Keysheet.app
+
+# Move window to other display
+ctrl + alt - m : yabai -m window --display next || yabai -m window --display first

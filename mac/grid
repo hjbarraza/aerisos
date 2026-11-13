@@ -1,0 +1,75 @@
+#!/bin/bash
+# aeris:summary=Tile the current yabai space on the Swiss grid (3 | 6 | 3 columns), or turn it off
+# aeris:group=desktop
+# aeris:args=[off|--auto]
+# macOS port of rzr's `grid` (Hyprland lua:swiss). Twelve columns inside yabai's padding
+# (8 px, below the 26 px sketchybar), 8 px gutters: 1 window full, 2 halves, 3 or more in
+# side | middle | side columns of 3 | 6 | 3, windows shared out evenly (the extra one to the
+# middle, two extra to the sides) and stacked in equal rows. The space switches to yabai's
+# float layout and each window is placed exactly; yabai signals (yabairc) run `grid --auto`
+# when windows open or close so a gridded space keeps its grid. `grid off` goes back to bsp.
+# Gridded spaces are listed in ~/.local/state/aeris/grid-spaces (one space index per line).
+
+set -euo pipefail
+
+export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH
+state=$HOME/.local/state/aeris/grid-spaces
+mkdir -p "$(dirname "$state")"
+touch "$state"
+space=$(yabai -m query --spaces --space | jq -r .index)
+# Same apps yabairc leaves unmanaged: they float above the grid
+skip='^(System Settings|Calculator|Archive Utility|App Store|Activity Monitor|Tailscale|Raycast)$'
+
+tile() {
+  yabai -m space --layout float
+  local display
+  display=$(yabai -m query --displays --display | jq -c .frame)
+  yabai -m query --windows --space | jq -r --argjson d "$display" --arg skip "$skip" '
+    def round: . + 0.5 | floor;
+    [ .[] | select(.["is-minimized"] | not) | select(.["is-hidden"] | not)
+          | select(.subrole == "AXStandardWindow") | select(.["can-resize"])
+          | select(.app | test($skip) | not) ]
+    | sort_by(.frame.x, .frame.y) as $w
+    | ($w | length) as $n
+    | if $n == 0 then empty else
+      (if $n == 1 then [[12, 1]] elif $n == 2 then [[6, 1], [6, 1]]
+       else (($n / 3) | floor) as $b | ($n % 3) as $r
+         | [[3, $b + (if $r == 2 then 1 else 0 end)],
+            [6, $b + (if $r == 1 then 1 else 0 end)],
+            [3, $b + (if $r == 2 then 1 else 0 end)]] end) as $cols
+      | { x: ($d.x + 8), y: ($d.y + 26 + 8), w: ($d.w - 16), h: ($d.h - 26 - 16), g: 8 } as $a
+      | [ foreach range(0; $cols | length) as $c ({start: 0, i: 0, span: 0, count: 0};
+            .start += .span | .span = $cols[$c][0] | .count = $cols[$c][1] | .i += (if $c == 0 then 0 else $cols[$c - 1][1] end);
+            .) ]
+      | .[] as $col
+      | range(0; $col.count) as $row
+      | ($a.x + $col.start * ($a.w + $a.g) / 12 | round) as $x0
+      | ($a.x + ($col.start + $col.span) * ($a.w + $a.g) / 12 - $a.g | round) as $x1
+      | ($a.y + $row * ($a.h + $a.g) / $col.count | round) as $y0
+      | ($a.y + ($row + 1) * ($a.h + $a.g) / $col.count - $a.g | round) as $y1
+      | select($col.i + $row < $n)
+      | "\($w[$col.i + $row].id) \($x0) \($y0) \($x1 - $x0) \($y1 - $y0)"
+      end' |
+  while read -r id x y w h; do
+    yabai -m window "$id" --move "abs:$x:$y" 2>/dev/null || true
+    yabai -m window "$id" --resize "abs:$w:$h" 2>/dev/null || true
+  done
+}
+
+case ${1:-} in
+  off)
+    grep -vx -- "$space" "$state" > "$state.tmp" || true
+    mv "$state.tmp" "$state"
+    yabai -m space --layout bsp
+    ;;
+  --auto)
+    # From a yabai signal: re-tile only a space that `grid` turned on
+    if grep -qx -- "$space" "$state"; then
+      tile
+    fi
+    ;;
+  *)
+    grep -qx -- "$space" "$state" || echo "$space" >> "$state"
+    tile
+    ;;
+esac
