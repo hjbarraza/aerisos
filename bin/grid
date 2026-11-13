@@ -1,0 +1,25 @@
+#!/bin/bash
+# aeris:summary=Tile the current workspace on the Swiss grid (3 | 6 | 3 columns), or turn it off
+# aeris:group=desktop
+# aeris:args=[off]
+# Switches the active workspace to the "lua:swiss" layout defined in hyprland.lua: 1 window
+# full width, 2 halves, 3 or more in side | middle | side columns of 3 | 6 | 3 with the
+# windows stacked evenly. It keeps tiling that way as windows open and close. `grid off`
+# goes back to dwindle. The choice is kept in ~/.local/state/aeris/grid-workspaces so a
+# config reload keeps it.
+
+set -euo pipefail
+
+state=${XDG_STATE_HOME:-$HOME/.local/state}/aeris/grid-workspaces
+ws=$(hyprctl activeworkspace -j | python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')
+mkdir -p "$(dirname "$state")"
+touch "$state"
+others=$(grep -vx -- "$ws" "$state" || true)
+
+if [[ ${1:-} == "off" ]]; then
+  hyprctl -q eval "hl.workspace_rule({ workspace = \"$ws\", layout = \"dwindle\" })"
+  printf '%s\n' "$others" | sed '/^$/d' > "$state"
+else
+  hyprctl -q eval "hl.workspace_rule({ workspace = \"$ws\", layout = \"lua:swiss\" })"
+  printf '%s\n%s\n' "$others" "$ws" | sed '/^$/d' > "$state"
+fi

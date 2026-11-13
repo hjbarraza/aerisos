@@ -14,6 +14,8 @@ export EDITOR=nvim
 alias ls='eza --icons=auto --group-directories-first'
 alias ll='eza -l --icons=auto --group-directories-first --git'
 alias la='eza -la --icons=auto --group-directories-first --git'
+# Dictated commands arrive capitalised and with a full stop (voxtype): "Grid." runs grid
+alias Grid=grid Grid.=grid grid.=grid
 alias tree='eza --tree --icons=auto'
 alias cat='bat --paging=never --style=plain'
 alias lg='lazygit'

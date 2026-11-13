@@ -482,6 +482,51 @@ hl.bind("CTRL + Print",             hl.dsp.exec_cmd("~/.local/bin/screenshot ann
 hl.bind("ALT + Print",              hl.dsp.exec_cmd("~/.local/bin/screenrecord area"), { description = "Screen recording: area (press again to stop)" })
 hl.bind("ALT + SHIFT + Print",      hl.dsp.exec_cmd("~/.local/bin/screenrecord screen"), { description = "Screen recording: whole screen (press again to stop)" })
 
+-- Swiss grid layout ("lua:swiss"), turned on per workspace by the `grid` command
+-- (~/.local/bin/grid, off with `grid off`). Twelve columns: 1 window fills them, 2 split 6 | 6,
+-- 3 or more sit in side | middle | side columns of 3 | 6 | 3, the windows shared out evenly
+-- (the extra one goes to the middle, two extra to the sides) and stacked in equal rows.
+-- place() adds the gaps, so cells are cut edge to edge: the middle is exactly twice a side.
+local function swiss_columns(n)
+    if n == 1 then return { { span = 12, count = 1 } } end
+    if n == 2 then return { { span = 6, count = 1 }, { span = 6, count = 1 } } end
+    local base, rem = n // 3, n % 3
+    local side = base + (rem == 2 and 1 or 0)
+    local middle = base + (rem == 1 and 1 or 0)
+    return { { span = 3, count = side }, { span = 6, count = middle }, { span = 3, count = side } }
+end
+
+hl.layout.register("swiss", {
+    recalculate = function(ctx)
+        local n = #ctx.targets
+        if n == 0 then return end
+        local a = ctx.area
+        local function round(v) return math.floor(v + 0.5) end
+        local i, c = 1, 0
+        for _, column in ipairs(swiss_columns(n)) do
+            local x0, x1 = round(a.x + a.w * c / 12), round(a.x + a.w * (c + column.span) / 12)
+            for r = 0, column.count - 1 do
+                local y0 = round(a.y + a.h * r / column.count)
+                local y1 = round(a.y + a.h * (r + 1) / column.count)
+                ctx.targets[i]:place({ x = x0, y = y0, w = x1 - x0, h = y1 - y0 })
+                i = i + 1
+            end
+            c = c + column.span
+        end
+    end,
+})
+
+-- Workspaces `grid` turned on stay on across config reloads (one workspace id per line)
+do
+    local f = io.open(os.getenv("HOME") .. "/.local/state/aeris/grid-workspaces")
+    if f then
+        for ws in f:lines() do
+            if ws ~= "" then hl.workspace_rule({ workspace = ws, layout = "lua:swiss" }) end
+        end
+        f:close()
+    end
+end
+
 -- Push-to-talk dictation (voxtype): hold Right Option/Alt (or Right Ctrl on keyboards that
 -- have one), speak, release to type the text. non_consuming keeps the key working as a
 -- normal modifier in apps. Release fires with the modifier still in the modmask, so each

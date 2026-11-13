@@ -130,6 +130,10 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   (the bubble). The old Ollama drop-down terminal is now `aeris-ask-term` (Win+`).
 - `open` (folder, file, link or app by name), `aeris-ssh` ("SSH to…" in the launcher: Tailscale
   machines, ssh in Ghostty; `~/.ssh/config` shares one login per host for 30 min).
+- Swiss grid tiling: `grid` (`grid off`) switches the active workspace to the Lua layout `lua:swiss`
+  registered in hyprland.lua (12 columns; 1 full, 2 as 6|6, 3+ as 3|6|3 with stacks, extra window to the
+  middle, two extra to the sides). Gridded workspaces persist across reloads in
+  `~/.local/state/aeris/grid-workspaces`. Custom Lua layouts must be referenced as `lua:<name>`.
 - Bar extras: scratch note (`Bar/Note.qml` + `NotePopup.qml`, text in `~/.local/state/aeris/scratch.md`),
   mouse battery (`Bar/Mouse.qml`, UPower, hidden without a wireless mouse).
 - Gaming overlay: MangoHud (`~/.config/MangoHud/MangoHud.conf`, monochrome; per game
