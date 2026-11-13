@@ -1,16 +1,16 @@
 # AERIS hotkeys, ported from rzr's hyprland.lua (Mac mode: wm = ctrl + alt).
 
 # Focus window (Hyprland: wm + arrows)
-ctrl + alt - left  : yabai -m window --focus west
-ctrl + alt - right : yabai -m window --focus east
-ctrl + alt - up    : yabai -m window --focus north
-ctrl + alt - down  : yabai -m window --focus south
+ctrl + alt - left  : yabai -m window --focus west || $HOME/.local/bin/grid focus west
+ctrl + alt - right : yabai -m window --focus east || $HOME/.local/bin/grid focus east
+ctrl + alt - up    : yabai -m window --focus north || $HOME/.local/bin/grid focus north
+ctrl + alt - down  : yabai -m window --focus south || $HOME/.local/bin/grid focus south
 
 # Move window (Hyprland: wm + shift + arrows)
-ctrl + alt + shift - left  : yabai -m window --swap west
-ctrl + alt + shift - right : yabai -m window --swap east
-ctrl + alt + shift - up    : yabai -m window --swap north
-ctrl + alt + shift - down  : yabai -m window --swap south
+ctrl + alt + shift - left  : yabai -m window --swap west || $HOME/.local/bin/grid swap west
+ctrl + alt + shift - right : yabai -m window --swap east || $HOME/.local/bin/grid swap east
+ctrl + alt + shift - up    : yabai -m window --swap north || $HOME/.local/bin/grid swap north
+ctrl + alt + shift - down  : yabai -m window --swap south || $HOME/.local/bin/grid swap south
 
 # Resize (Hyprland: super + ctrl + arrows, 60px steps)
 cmd + ctrl - left  : yabai -m window --resize left:-60:0  || yabai -m window --resize right:-60:0

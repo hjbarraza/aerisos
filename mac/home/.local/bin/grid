@@ -1,7 +1,7 @@
 #!/bin/bash
 # aeris:summary=Tile the current yabai space on the Swiss grid (3 | 6 | 3 columns), or turn it off
 # aeris:group=desktop
-# aeris:args=[off|--auto]
+# aeris:args=[off|--auto|swap <dir>|focus <dir>]
 # macOS port of rzr's `grid` (Hyprland lua:swiss). Twelve columns inside yabai's padding
 # (8 px, below the 26 px sketchybar), 8 px gutters: 1 window full, 2 halves, 3 or more in
 # side | middle | side columns of 3 | 6 | 3, windows shared out evenly (the extra one to the
@@ -56,7 +56,41 @@ tile() {
   done
 }
 
+# The window nearest the focused one in a direction (west|east|north|south), by centre point.
+# yabai's own --swap/--focus need tiled windows, and a gridded space is a float layout.
+neighbor() {
+  yabai -m query --windows --space | jq -r --arg d "$1" --arg skip "$skip" \
+      --argjson me "$(yabai -m query --windows --window)" '
+    def c: {x: (.frame.x + .frame.w / 2), y: (.frame.y + .frame.h / 2)};
+    ($me | c) as $m
+    | [ .[] | select(.id != $me.id) | select(.["is-visible"]) | select(.subrole == "AXStandardWindow")
+            | select(.app | test($skip) | not)
+            | (c) as $p | {id, dx: ($p.x - $m.x), dy: ($p.y - $m.y)}
+            | select(if $d == "east" then .dx > 0 elif $d == "west" then .dx < 0
+                     elif $d == "south" then .dy > 0 else .dy < 0 end)
+            | .score = (if $d == "east" or $d == "west" then (.dx | fabs) + 2 * (.dy | fabs)
+                        else (.dy | fabs) + 2 * (.dx | fabs) end) ]
+    | min_by(.score) | .id // empty'
+}
+
 case ${1:-} in
+  swap|focus)
+    # Only on a gridded space; elsewhere yabai's own command already did the job (or failed honestly)
+    grep -qx -- "$space" "$state" || exit 1
+    other=$(neighbor "${2:?direction}")
+    [[ -n $other ]] || exit 1
+    if [[ $1 == "focus" ]]; then
+      yabai -m window --focus "$other"
+    else
+      # Trade frames: the grid orders windows by position, so the next re-tile keeps the swap
+      me=$(yabai -m query --windows --window | jq -r '"\(.id) \(.frame.x|floor) \(.frame.y|floor) \(.frame.w|floor) \(.frame.h|floor)"')
+      them=$(yabai -m query --windows --window "$other" | jq -r '"\(.id) \(.frame.x|floor) \(.frame.y|floor) \(.frame.w|floor) \(.frame.h|floor)"')
+      read -r id1 x1 y1 w1 h1 <<< "$me"
+      read -r id2 x2 y2 w2 h2 <<< "$them"
+      yabai -m window "$id1" --move "abs:$x2:$y2"; yabai -m window "$id1" --resize "abs:$w2:$h2"
+      yabai -m window "$id2" --move "abs:$x1:$y1"; yabai -m window "$id2" --resize "abs:$w1:$h1"
+    fi
+    ;;
   off)
     grep -vx -- "$space" "$state" > "$state.tmp" || true
     mv "$state.tmp" "$state"
