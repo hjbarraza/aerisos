@@ -432,7 +432,7 @@ hl.bind(mainMod .. " + SHIFT + I", webapp("https://claude.ai"), { description = 
 hl.bind(mainMod .. " + SHIFT + G", webapp("https://gemini.google.com"), { description = "Gemini" })
 hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("~/.local/bin/aeris-ask"), { description = "Ask the pet a quick question" })
 hl.bind("mouse:276",   hl.dsp.exec_cmd("~/.local/bin/aeris-ask"), { description = "Mouse forward button: ask the pet" })
-hl.bind("mouse:275",   hl.dsp.exec_cmd("voxtype record toggle"), { description = "Mouse back button: dictate (click to start, click to stop)" })
+hl.bind("mouse:275",   hl.dsp.exec_cmd("voxtype record toggle --auto-submit"), { description = "Mouse back button: dictate and send (click to start, click to stop: types and presses Enter)" })
 hl.bind(mainMod .. " + SHIFT + slash", webapp("https://www.google.com"), { description = "Google" })
 -- Apps (Omarchy-style SUPER+SHIFT+letter)
 hl.bind(mainMod .. " + SHIFT + B", hl.dsp.exec_cmd("brave"), { description = "Browser (Brave)" })
