@@ -8,21 +8,23 @@
 // cards columns 10-12 (1176-1504). Baselines: every text row sits on the 18 px line grid
 // 9 + 18n, from the top row at 99 to the bottom row at 819.
 //
-//   top row 99        SYS/00 · date and time over the panel
+//   top row 99        date and time over the panel
 //   wordmark 243      ÆRIS OS; the login's field rules sit on its baseline
-//   tagline 297       and the login status beside it
+//   tagline 297       and the login status beside it (empty until there is something to say)
 //   rule 324          broken by the gutter between the two columns
-//   heads 369 ...     WATCHLIST and WORLD as tables (date | topic or outlet | telegram, the
-//                     date only where it changes, unread marked in the margin), the cards
-//                     beside them (keys on column 10, values on column 11; the login rows
-//                     the same way); a head's rows follow it directly, one blank row and a
-//                     hairline between groups, and the last feed row and the last card row
-//                     share a baseline (765)
-//   bottom row 819    build · power, under a hairline
+//   heads 369 ...     WATCHLIST (grouped by topic, the topic on its group's first row) and
+//                     WORLD as two-column tables (topic or outlet on column 1, telegram on
+//                     column 3); beside them the cards from status.json `side` (aeris-status
+//                     side_rows): an icon on column 10, its value 24 further; quiet values
+//                     are left out, a stale card shows a warning glyph instead of a fetch
+//                     time, one blank row between groups
+//   bottom row 819    sleep · restart · power as icons
 //
 // IDENTITY, WEATHER, NETWORK and SECURITY are left out on purpose: the login screen is
 // what people see when the laptop is left unattended. Alerts from status.json read inverted.
-// Type: wordmark Söhne 144; everything else Söhne Mono, values 12 white, keys and labels 11 grey.
+// Type: wordmark Söhne 144; everything else Söhne Mono, values 12 white, keys and labels 11
+// grey; telegrams in sentence case, labels and readouts in capitals. Icons: Nerd Font glyphs
+// (NotoSansM Nerd Font Mono, Material Design and Codicons), the code points aeris-status uses.
 
 import QtQuick 2.15
 import QtQuick.Window 2.15
@@ -42,6 +44,10 @@ Rectangle {
     readonly property string sans: config.Font || "Söhne"
     readonly property string mono: config.MonoFont || "Söhne Mono"
     readonly property string jp: config.JapaneseFont || "Source Han Sans JP"
+    readonly property string icons: config.IconFont || "NotoSansM Nerd Font Mono"
+    readonly property var glyph: ({ user: "\u{f0013}", key: "\u{f0dd6}", enter: "\u{f0054}",
+                                    sleep: "\u{f0904}", restart: "\u{f0709}", power: "\u{f0425}",
+                                    stale: "\u{ea6c}" })
 
     // ---- grid ----
     function col(n) { return 96 + 120 * (n - 1) }          // left edge of column n
@@ -50,7 +56,7 @@ Rectangle {
     readonly property real gridRight: 1504
     readonly property real feedRight: 1144                 // end of column 9
     readonly property real panel: 1176                     // column 10
-    readonly property real valueAt: 1296                   // column 11: values, typed user and password
+    readonly property real valueAt: 1200                   // values beside their icon on column 10
     readonly property real line: 18
     readonly property real topRow: 99
     readonly property real bottomRow: 819
@@ -58,13 +64,13 @@ Rectangle {
     readonly property real tagBy: 297                      // tagline / login status
     readonly property real ruleY: 324
     readonly property real sectionTop: 369                 // WATCHLIST head and first card head
-    readonly property int watchRows: 16
-    readonly property real worldHead: sectionTop + (watchRows + 2) * line   // 693
-    readonly property int newsRows: 4                      // last row on 765
-    readonly property var feedCols: [col(1), col(2), col(4)]   // date | topic | telegram
+    readonly property int watchRows: 8                     // as aeris-status WATCH_ROWS
+    readonly property real worldHead: sectionTop + (watchRows + 2) * line   // 549
+    readonly property int newsRows: 7                      // last row on 675, beside the last card row
+    readonly property var feedCols: [col(1), col(3)]       // topic or outlet | telegram
 
     property int sessionIndex: sessionModel.lastIndex >= 0 ? sessionModel.lastIndex : 0
-    property string status: "AWAITING AUTHENTICATION"
+    property string status: ""
     property bool busy: false
 
     // ---- live info (written by aeris-status.timer, re-read every 15 s) ----
@@ -74,12 +80,6 @@ Rectangle {
         const v = d[section] && d[section][key]
         return v ? String(v) : "—"
     }
-    // A card cell: key, value, and the status.json alert that inverts it
-    function c(k, v, alert) {
-        return { k: k, v: v, alert: !!alert && (d.alerts || []).indexOf(alert) >= 0 }
-    }
-    function first(v) { return v.split(" ")[0] }
-    function rest(v) { return v.split(" ").slice(1).join(" ") || "—" }
     function loadStatus() {
         const xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function() {
@@ -92,57 +92,28 @@ Rectangle {
     }
     Timer { interval: 15000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.loadStatus() }
 
-    // The right-column cards, trimmed to their essential fields, as on the lock screen
-    readonly property var cards: [
-        { en: "LOCATION", fresh: g("net", "fresh"), pairs: [
-            c("LAT", g("net", "coords").split("  ")[0] || "—"),
-            c("LON", g("net", "coords").split("  ")[1] || "—"),
-            c("UTC", g("local", "utc")) ] },
-        { en: "AIRSPACE", fresh: g("air", "fresh"), pairs: [
-            c("TRAFFIC", g("air", "traffic")),
-            c("NEAREST", g("air", "nearest")),
-            c("GNSS", first(g("air", "gnss")), "air.gnss"),
-            c("SQUAWK", g("air", "emergency"), "air.emergency") ] },
-        { en: "ORBIT", fresh: g("space", "fresh"), pairs: [
-            c("ISS", g("space", "iss"), "space.iss"),
-            c("CSS", g("space", "css"), "space.css"),
-            c("KP", first(g("space", "kp"))),
-            c("NOAA", g("space", "scales") + " · " + rest(g("space", "kp")), "space.scales"),
-            c("SATS", g("space", "sats")),
-            c("LAUNCH", g("space", "launch")),
-            c("T-0", g("space", "launch_t0")) ] },
-        { en: "INTERNET", fresh: g("world", "fresh_outages"), pairs: [
-            c("OUTAGES", g("world", "outages"), "world.outages"),
-            c("PING", g("local", "ping")) ] }
-    ]
-    // Card heads: a head, its rows directly under it, one blank row between cards
-    readonly property var cardTops: {
-        const tops = []
-        let cy = sectionTop
-        for (const card of cards) {
-            tops.push(cy)
-            cy += (card.pairs.length + 2) * line
-        }
-        return tops
-    }
+    // The right column under the login, laid out by aeris-status (side_rows) as heads,
+    // icon rows and blank rows, one per line from the first head down
+    readonly property var side: d.side || []
 
-    // Watchlist: status.json watch.rows ("* 12 NOV · TOPIC · TELEGRAM", the lines the lock
-    // screen splits the same way) as table cells; the date shows only where it changes,
-    // * (unread) becomes a square in the margin
+    // Watchlist: status.json watch.rows ("* 12 NOV · TOPIC · telegram", grouped by topic,
+    // the lines the lock screen splits the same way) as table cells: the topic only on its
+    // group's first row, unread telegrams in white
     readonly property var watch: {
         const rows = ((d.watch && d.watch.rows) || []).slice(0, watchRows)
         let last = ""
         return rows.map(r => {
             const parts = r.slice(2).split(" · ")
             if (parts.length < 3)
-                return { fresh: false, a: "", b: "", c: r.slice(2) }
-            const day = parts[0]
-            const cell = { fresh: r[0] === "*", a: day === last ? "" : day, b: parts[1], c: parts.slice(2).join(" · ") }
-            last = day
+                return { fresh: true, a: "", c: r.slice(2) }
+            const cell = { fresh: r[0] === "*", a: parts[1] === last ? "" : parts[1], c: parts.slice(2).join(" · ") }
+            last = parts[1]
             return cell
         })
     }
-    readonly property string watchFresh: d.watch && d.watch.fresh ? String(d.watch.fresh) : "—"
+    readonly property string watchMore: d.watch && d.watch.more ? "+" + d.watch.more : ""
+    readonly property bool watchStale: !!(d.watch && d.watch.stale)
+    function stale(fresh) { return !fresh || /STALE|NO DATA/.test(fresh) }
 
     // World: the telegrams (world.telegrams) beside their item's time and outlet,
     // whole stories only, as many as fit
@@ -157,8 +128,7 @@ Rectangle {
             const src = String((items[i] && items[i].source) || "").split(" · ")
             for (let j = 0; j < lines.length; j++)
                 rows.push({ fresh: false,
-                            a: j ? "" : (src[1] || ""),
-                            b: j ? "" : src[0].replace(/\.(com|media|org|net|co\.uk)$/i, ""),
+                            a: j ? "" : src[0].replace(/\.(com|media|org|net|co\.uk)$/i, ""),
                             c: lines[j].replace(/^[·\s]+/, "") })
         }
         return rows
@@ -202,18 +172,34 @@ Rectangle {
         }
     }
 
-    // Section head: // and the name in white, its fetch time right-aligned on the baseline
+    // An icon glyph, centred on a text row's baseline like a capital
+    component Icon: Text {
+        property real bx: 0
+        property real by: 0
+        property bool alignRight: false
+        font.family: root.icons
+        font.pixelSize: 18 * root.s
+        color: root.grey
+        textFormat: Text.PlainText
+        x: alignRight ? bx * root.s - width : bx * root.s
+        y: by * root.s - baselineOffset + 2 * root.s
+    }
+
+    // Section head: // and the name in white; on the right a note (how many more) and a
+    // warning glyph when its data failed to refresh
     component Head: Item {
         property real bx: 0
         property real by: 0
         property real rightX: 0
         property string en: ""
-        property string fresh: ""
+        property string note: ""
+        property bool stale: false
         Label { bx: parent.bx; by: parent.by; text: "//  " + parent.en; color: root.white }
-        Label { bx: parent.rightX; by: parent.by; alignRight: true; text: parent.fresh }
+        Icon { id: warn; visible: parent.stale; bx: parent.rightX; by: parent.by; alignRight: true; text: root.glyph.stale; color: root.white }
+        Label { bx: parent.rightX - (parent.stale ? 22 : 0); by: parent.by; alignRight: true; text: parent.note }
     }
 
-    // A feed table: date | topic or outlet | telegram, one row per line under the head
+    // A feed table: topic or outlet | telegram, one row per line under the head
     component Feed: Item {
         property real by: 0
         property var rows: []
@@ -221,41 +207,24 @@ Rectangle {
             model: parent.rows
             delegate: Item {
                 readonly property real ly: parent.by + (index + 1) * root.line
-                Rectangle {   // unread: a small square hanging in the margin
-                    visible: modelData.fresh
-                    x: (root.gridLeft - 14) * root.s; y: (ly - 7) * root.s
-                    width: 5 * root.s; height: 5 * root.s
-                    color: root.white
-                }
-                Label { bx: root.feedCols[0]; by: ly; text: modelData.a; color: modelData.fresh ? root.white : root.grey }
-                Label { bx: root.feedCols[1]; by: ly; text: modelData.b }
+                Label { bx: root.feedCols[0]; by: ly; text: modelData.a }
                 Value {
-                    bx: root.feedCols[2]; by: ly
-                    width: Math.min(implicitWidth, (root.feedRight - root.feedCols[2]) * root.s)
+                    bx: root.feedCols[1]; by: ly
+                    width: Math.min(implicitWidth, (root.feedRight - root.feedCols[1]) * root.s)
                     text: modelData.c
-                    color: modelData.fresh || !modelData.a && !modelData.b && index === 0 ? root.white : root.read
+                    color: modelData.fresh ? root.white : root.read
                 }
             }
         }
     }
 
-    // Hairline between groups
-    component Rule: Rectangle {
-        property real x0: 0
-        property real x1: 0
-        property real y0: 0
-        x: x0 * root.s; y: y0 * root.s
-        width: (x1 - x0) * root.s; height: Math.max(1, root.s)
-        color: root.hairline
-    }
-
-    // A login row, laid out like a card row: key on column 10, the typed value on column 11
+    // A login row, laid out like a card row: icon on column 10, the typed value beside it
     // over an underline 7 below its baseline
     component Field: Item {
         property alias input: field
-        property string caption: ""
+        property string icon: ""
         property real by: 0
-        Label { bx: root.panel; by: parent.by; text: parent.caption }
+        Icon { bx: root.panel; by: parent.by; text: parent.icon; color: field.activeFocus ? root.white : root.grey }
         TextInput {
             id: field
             x: root.valueAt * root.s
@@ -285,7 +254,6 @@ Rectangle {
         opacity: 0
 
         // ---- top row ----
-        Label { bx: root.gridLeft; by: root.topRow; text: config.SystemLabel || "SYS/00" }
         Label {
             id: dateLabel
             bx: root.panel; by: root.topRow
@@ -337,39 +305,31 @@ Rectangle {
             opacity: 0
             width: parent.width; height: parent.height
 
-            Head { bx: root.gridLeft; by: root.sectionTop; rightX: root.feedRight; en: "WATCHLIST"; fresh: root.watchFresh }
+            Head { bx: root.gridLeft; by: root.sectionTop; rightX: root.feedRight; en: "WATCHLIST"; note: root.watchMore; stale: root.watchStale }
             Feed { by: root.sectionTop; rows: root.watch }
-            Rule { x0: root.gridLeft; x1: root.feedRight; y0: root.worldHead - 21 }
-            Head { bx: root.gridLeft; by: root.worldHead; rightX: root.feedRight; en: "WORLD"; fresh: g("world", "fresh_news") + " · " + g("world", "via") }
+            Head { bx: root.gridLeft; by: root.worldHead; rightX: root.feedRight; en: "WORLD"; stale: root.stale(g("world", "fresh_news")) }
             Feed { by: root.worldHead; rows: root.news }
 
             Repeater {
-                model: root.cards
+                model: root.side
                 delegate: Item {
-                    id: card
-                    readonly property real cy: root.cardTops[index]
-                    Head { bx: root.panel; by: card.cy; rightX: root.gridRight; en: modelData.en; fresh: modelData.fresh }
-                    Rule { visible: index > 0; x0: root.panel; x1: root.gridRight; y0: card.cy - 21 }
-                    Repeater {
-                        model: modelData.pairs
-                        delegate: Item {
-                            readonly property real ly: card.cy + (index + 1) * root.line
-                            readonly property var cell: modelData
-                            Label { bx: root.panel; by: parent.ly; text: cell.k }
-                            Value {
-                                bx: root.valueAt; by: parent.ly
-                                width: Math.min(implicitWidth, (root.gridRight - root.valueAt) * root.s)
-                                color: cell.alert ? "#000000" : root.white
-                                text: cell.v
-                                // Alerts read inverted: black on white
-                                Rectangle {
-                                    z: -1
-                                    visible: cell.alert
-                                    anchors.fill: parent
-                                    anchors.leftMargin: -4 * root.s; anchors.rightMargin: -4 * root.s
-                                    color: root.white
-                                }
-                            }
+                    readonly property real ly: root.sectionTop + index * root.line
+                    readonly property var r: modelData
+                    Head { visible: !!r.h; bx: root.panel; by: parent.ly; rightX: root.gridRight; en: r.h || ""; stale: !!r.stale }
+                    Icon { visible: !!r.i; bx: root.panel; by: parent.ly; text: r.i || ""; color: r.a ? root.white : root.grey }
+                    Value {
+                        visible: !!r.i
+                        bx: root.valueAt; by: parent.ly
+                        width: Math.min(implicitWidth, (root.gridRight - root.valueAt) * root.s)
+                        color: r.a ? "#000000" : root.white
+                        text: r.v || ""
+                        // Alerts read inverted: black on white
+                        Rectangle {
+                            z: -1
+                            visible: !!r.a
+                            anchors.fill: parent
+                            anchors.leftMargin: -4 * root.s; anchors.rightMargin: -4 * root.s
+                            color: root.white
                         }
                     }
                 }
@@ -387,7 +347,7 @@ Rectangle {
             Field {
                 id: userField
                 by: root.markBy - 2 * root.line
-                caption: "USER"
+                icon: root.glyph.user
                 input.text: userModel.lastUser
                 input.KeyNavigation.tab: passField.input
                 input.onAccepted: passField.input.forceActiveFocus()
@@ -395,7 +355,7 @@ Rectangle {
             Field {
                 id: passField
                 by: root.markBy
-                caption: "PASSWORD"
+                icon: root.glyph.key
                 input.echoMode: TextInput.Password
                 input.passwordCharacter: "•"
                 input.KeyNavigation.backtab: userField.input
@@ -404,39 +364,34 @@ Rectangle {
             Label {
                 id: statusLabel
                 bx: root.panel; by: root.tagBy
-                text: root.status + (keyboard.capsLock ? " · CAPS LOCK" : "")
+                text: [root.status, keyboard.capsLock ? "CAPS LOCK" : ""].filter(x => x).join(" · ")
                 color: root.status === "ACCESS DENIED" ? root.white : root.grey
             }
             Action {
                 bx: root.gridRight; by: root.tagBy; alignRight: true
-                text: "ENTER →"
+                font.family: root.icons; font.pixelSize: 18 * root.s; font.letterSpacing: 0
+                text: root.glyph.enter
                 onActivated: root.login()
             }
         }
 
-        // ---- bottom row: build, power (the session is always the last one used) ----
+        // ---- bottom row: sleep, restart, power as icons (the session is always the last one used) ----
         Item {
             id: controls
             opacity: 0
             width: parent.width; height: parent.height
 
-            Rule { x0: root.gridLeft; x1: root.feedRight; y0: root.bottomRow - 21 }
-            Rule { x0: root.panel; x1: root.gridRight; y0: root.bottomRow - 21 }
-            Label { bx: root.gridLeft; by: root.bottomRow; text: config.BuildLabel || "BUILD 2026.10" }
-            Action {
-                bx: root.panel; by: root.bottomRow; text: "SLEEP"
-                visible: sddm.canSuspend
-                onActivated: sddm.suspend()
-            }
-            Action {
-                bx: root.valueAt; by: root.bottomRow; text: "RESTART"
-                visible: sddm.canReboot
-                onActivated: sddm.reboot()
-            }
-            Action {
-                bx: root.gridRight; by: root.bottomRow; alignRight: true; text: "SHUT DOWN"
-                visible: sddm.canPowerOff
-                onActivated: sddm.powerOff()
+            Repeater {
+                model: [[root.glyph.sleep, sddm.canSuspend, () => sddm.suspend()],
+                        [root.glyph.restart, sddm.canReboot, () => sddm.reboot()],
+                        [root.glyph.power, sddm.canPowerOff, () => sddm.powerOff()]]
+                delegate: Action {
+                    bx: root.gridRight - (2 - index) * 30; by: root.bottomRow; alignRight: true
+                    font.family: root.icons; font.pixelSize: 18 * root.s; font.letterSpacing: 0
+                    text: modelData[0]
+                    visible: modelData[1]
+                    onActivated: modelData[2]()
+                }
             }
         }
     }

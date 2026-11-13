@@ -432,7 +432,7 @@ NEWS_ITEMS = 12  # more than either screen shows; each keeps as many whole stori
 def clean_title(title):
     # GDELT spaces out punctuation: "India - backed", "Balochistan : ISPR"
     title = re.sub(r"(\w) - (\w)", r"\1-\2", title)
-    return re.sub(r" ([:,.;!?]|'s)", r"\1", title).upper()
+    return re.sub(r" ([:,.;!?]|'s)", r"\1", title)
 
 
 def wrap(title, width=NEWS_WIDTH, most=3):
@@ -453,7 +453,7 @@ def wrap(title, width=NEWS_WIDTH, most=3):
 
 
 def words(title):
-    return {w for w in re.findall(r"[A-Z]{4,}", title)}
+    return {w for w in re.findall(r"[A-Z]{4,}", title.upper())}
 
 
 # ---------- telegram compression: terse one-line headlines via the local Ollama ----------
@@ -472,11 +472,12 @@ TG_MODELS = ("qwen3.5:9b", "qwen3.5-9b-16k:latest", "gemma4:12b", "qwen3.5:4b") 
 OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
 OR_MODEL = "z-ai/glm-5.3-flash"  # same as AERIS-CLOUD in opencode.json
 TG_PROMPT = ("Compress this news headline telegram-style: keep names, numbers and places, "
-             "drop articles and filler words. At most {}, ALL CAPS. "
+             "drop articles and filler words. At most {}, in sentence case (capitals only for the "
+             "first word, names and acronyms). "
              "Answer with the compressed line only.\n\nHEADLINE: ")
 # Watchlist rows already carry the topic's name, so its telegram must not repeat it
 TG_ABOUT = ("The line is shown next to the label '{}', so never repeat that name: leave it "
-            "implicit, or where grammar needs a subject use THEY or THEIR. ")
+            "implicit, or where grammar needs a subject use they or their. ")
 
 _tg_memo = None
 _tg_down = False
@@ -550,7 +551,7 @@ def _tg_ask(title, about=None):
         prompt = (TG_ABOUT.format(about) if about else "") + TG_PROMPT.format(limit) + title
         reply = _tg_generate(prompt, 40, 20)
         line = reply.strip().splitlines()[0] if reply.strip() else ""
-        line = re.sub(r"\s+", " ", re.sub(r"[\"“”]", "", line)).strip(" .").upper()
+        line = re.sub(r"\s+", " ", re.sub(r"[\"“”]", "", line)).strip(" .")
         if 0 < len(line) <= 2 * NEWS_WIDTH:
             return line
     raise ValueError("unusable reply")
@@ -582,8 +583,9 @@ def telegraph(title, about=None):
             _tg_memo = {}
     key = (f"@{about.strip().lower()}|" if about else "") + title.strip().lower()
     key = key[:160]
-    if not title.strip() or key in _tg_memo:
-        return _tg_memo.get(key, "")
+    cached = _tg_memo.get(key)
+    if not title.strip() or cached == "" or cached and not (cached.isupper() and len(cached) > 20):
+        return cached or ""
     if _tg_down:
         return ""
     try:
@@ -672,7 +674,7 @@ def feed_headlines():
             continue
         seen_words.append(w)
         per_source[label] = per_source.get(label, 0) + 1
-        items.append({"title": title, "lines": wrap(title),
+        items.append({"title": title, "lines": wrap(title.upper()),
                       "source": f'{label} · {when.astimezone().strftime("%H:%M")}'})
         if len(items) == NEWS_ITEMS:
             break
@@ -811,9 +813,10 @@ def security():
 # SECURITY (the lock screen shows where the laptop is left unattended). Keys are the ones
 # lock/make-hyprlock lays out.
 
-NEWS_ROWS = 4    # lock screen news lines, below the watchlist (18 apart)
-WATCH_ROWS = 16  # lock screen watchlist lines between the wordmark and WORLD
-FEED_WIDTH = 78  # telegram column of the feed tables (columns 4-9, 688 design px of 12 px mono)
+NEWS_ROWS = 7    # world rows on both screens, below the watchlist (18 apart)
+WATCH_ROWS = 8   # watchlist rows on both screens
+SIDE_ROWS = 20   # right-column slots under the login (heads, rows, blanks)
+FEED_WIDTH = 90  # telegram column of the feed tables (columns 3-9, 808 design px of 12 px mono)
 WATCH_DAYS = 7   # the lock screen shows this much watchlist history, acknowledged or not
 
 
@@ -829,73 +832,85 @@ def _sig_words(title, topic=""):
 
 
 def _strip_topic(line, name):
-    """Drop a leading topic name the model still repeated: "X: ..." vanishes, "X'S ..."
-    becomes "ITS ..."."""
-    pat = re.escape(name.upper()).replace(r"\-", r"[-\s]")
-    swapped = re.sub(rf"^(THE\s+)?{pat}(['’]S)\s+", "ITS ", line)
-    if swapped != line:
-        return swapped
-    return re.sub(rf"^(THE\s+)?{pat}\s*[:·,—–-]*\s+", "", line) or line
+    """Drop a leading topic name the model still repeated: "X: ..." vanishes, "X's ..."
+    becomes "Its ..."."""
+    pat = re.escape(name).replace(r"\-", r"[-\s]")
+    swapped = re.sub(rf"^(the\s+)?{pat}(['’]s)\s+", "Its ", line, flags=re.I)
+    if swapped == line:
+        swapped = re.sub(rf"^(the\s+)?{pat}\s*[:·,—–-]*\s+", "", line, flags=re.I) or line
+    return swapped[:1].upper() + swapped[1:]
 
 
 def watch_feed(st):
-    """The week's findings across every topic, newest first, one cut row per finding;
-    * marks unacknowledged findings, as in watch.html. Shared by the lock screen
-    (lock.tsv watch.*) and the login screen (status.json watch.rows). Near-duplicate
-    stories (different outlets, same words) collapse into the newest one, and the
-    telegram leaves out the topic's name since the row already carries it."""
+    """The week's findings grouped by topic: topics in order of their newest finding, the
+    rows shared out evenly (round robin, newest stories first), WATCH_ROWS in all.
+    One row per finding, "* 12 NOV · TOPIC · telegram", * for unacknowledged, as in
+    watch.html. Shared by the lock screen (lock.tsv watch.*) and the login screen
+    (status.json watch.rows). Near-duplicate stories (different outlets, same words)
+    collapse into the newest one, and the telegram leaves out the topic's name since the
+    row already carries it. Returns (rows, stories left out)."""
     wl = (st.get("watch") or {}).get("items") or []
     finds = sorted(((_watch_when(f), i["name"], f) for i in wl for f in i.get("recent") or []),
                    key=lambda x: x[0], reverse=True)
-    wrows, seen = [], []   # seen: (word set, row index) per kept finding
+    stories, seen = [], []   # stories: [when, name, title, new]; seen: (word set, index)
     for when, name, f in finds:
-        if len(wrows) >= WATCH_ROWS:
-            break
         title = re.sub(r"\s+-\s+[^-]{2,40}$", "", f.get("title", ""))  # drop the trailing outlet
         title = re.sub(r"^\[[a-z]{2}(-[A-Za-z]{2})?\]\s*", "", title)  # and the [de-DE] language tag
         sig = _sig_words(title, name)
-        dupe = next((idx for s, idx in seen
-                     if sig and s and len(sig & s) >= 3 and len(sig & s) >= 0.6 * min(len(sig), len(s))),
+        dupe = next((idx for w, idx in seen
+                     if sig and w and len(sig & w) >= 3 and len(sig & w) >= 0.6 * min(len(sig), len(w))),
                     None)
         if dupe is not None:
-            if f.get("new") and wrows[dupe].startswith("·"):  # an unseen copy keeps the star
-                wrows[dupe] = "*" + wrows[dupe][1:]
+            stories[dupe][3] |= bool(f.get("new"))   # an unseen copy keeps the star
             continue
-        tg = _strip_topic(telegraph(title, about=name) or title.upper(), name)
-        mark = "*" if f.get("new") else "·"
+        seen.append((sig, len(stories)))
+        stories.append([when, name, title, bool(f.get("new"))])
+    groups = {}
+    for story in stories:                      # newest first, so topics come in order too
+        groups.setdefault(story[1], []).append(story)
+    # Round robin: every topic's newest story, then every topic's second, ... until the
+    # rows are full; shown grouped, topics in order of their newest story
+    picked = {name: 0 for name in groups}
+    for rank in range(len(stories)):
+        for name, g in groups.items():
+            if rank < len(g) and sum(picked.values()) < WATCH_ROWS:
+                picked[name] += 1
+    shown = [x for name, g in groups.items() for x in g[:picked[name]]]
+    wrows = []
+    for when, name, title, new in shown:
+        tg = _strip_topic(telegraph(title, about=name) or title, name)
         day = time.strftime("%d %b", time.localtime(when)).upper()
-        seen.append((sig, len(wrows)))
-        wrows.append(f"{mark} {day} · {name.upper()} · {cut(tg, FEED_WIDTH)}")
-    return wrows or [f"ALL QUIET · {len(wl)} TOPICS · {WATCH_DAYS}D"]
+        wrows.append(f"{'*' if new else '·'} {day} · {name.upper()} · {cut(tg, FEED_WIDTH)}")
+    return (wrows or [f"· All quiet: {len(wl)} topics, {WATCH_DAYS} days"]), len(stories) - len(shown)
 
 
 def watch_cells(rows):
-    """Watch rows ("* 12 NOV · TOPIC · TELEGRAM") as lock-screen table cells (mark, date,
-    topic, telegram): the date only where it changes, * as a square mark. The login screen
-    splits status.json watch.rows the same way."""
+    """Watch rows ("* 12 NOV · TOPIC · telegram") as table cells (topic, telegram, unread):
+    the topic only on its group's first row. The login screen splits status.json
+    watch.rows the same way."""
     cells, last = [], ""
     for r in rows:
         parts = r[2:].split(" · ")
         if len(parts) < 3:
-            cells.append(("", "", "", r[2:]))
+            cells.append(("", r[2:], False))
             continue
-        day = parts[0]
-        cells.append(("■" if r[0] == "*" else "", "" if day == last else day, parts[1], " · ".join(parts[2:])))
-        last = day
+        topic = parts[1]
+        cells.append(("" if topic == last else topic, " · ".join(parts[2:]), r[0] == "*"))
+        last = topic
     return cells
 
 
 def news_cells(telegrams, items, most):
-    """World telegrams as table cells (time, outlet, line) beside their item's source,
-    whole stories only, up to `most` rows; continuation lines leave time and outlet empty."""
+    """World telegrams as table cells (outlet, line) beside their item's source, whole
+    stories only, up to `most` rows; continuation lines leave the outlet empty."""
     rows = []
     for i, lines in enumerate(telegrams):
         if len(rows) + len(lines) > most:
             break
-        outlet, _, when = ((items[i] if i < len(items) else {}).get("source") or "").partition(" · ")
+        outlet, _, _ = ((items[i] if i < len(items) else {}).get("source") or "").partition(" · ")
         outlet = re.sub(r"\.(com|media|org|net|co\.uk)$", "", outlet, flags=re.I)
         for j, line in enumerate(lines):
-            rows.append(("" if j else when, "" if j else outlet, line.lstrip("· ").strip()))
+            rows.append(("" if j else outlet, line.lstrip("· ").strip()))
     return rows
 
 
@@ -906,13 +921,77 @@ def telegram_feed(st, most=8):
     stories, used = [], 0
     for item in (st.get("world") or {}).get("items") or []:
         tg = telegraph(item.get("title", ""))
-        lines = wrap(tg or item.get("title", "").upper(), FEED_WIDTH, 2)
+        lines = wrap(tg or item.get("title", ""), FEED_WIDTH, 2)
         lines = ["· " + lines[0]] + ["  " + l for l in lines[1:]]
         if used + len(lines) > most:
             break
         stories.append(lines)
         used += len(lines)
     return stories
+
+
+# Right-column icons: Material Design and Codicon glyphs from the Nerd Fonts set
+# (NotoSansM Nerd Font Mono), the same code points on the login and lock screens
+STALE_ICON = "\uea6c"   # cod-warning, beside a head whose data failed to refresh
+ICON = {"place": "\ueb1a", "time": "\U000f0150", "traffic": "\U000f001d", "nearest": "\U000f01a3",
+        "gnss": "\U000f01a4", "squawk": "\U000f002a", "station": "\U000f1383", "sun": "\U000f05a8",
+        "sats": "\U000f0471", "launch": "\U000f14df", "outages": "\ueb01", "ping": "\ueb31"}
+
+
+def _stale(fresh):
+    return not fresh or fresh == NA or "STALE" in fresh or "NO DATA" in fresh
+
+
+def side_rows(st):
+    """The right column under the login as one list both screens lay out top-down on the
+    18 px grid: {"h": card, "stale"} heads, {"i": icon, "v": value, "a": alert} rows and {}
+    blanks between cards. Quiet values (GNSS OK, no squawk) are left out; a card's fetch
+    time is reduced to a stale flag."""
+    def g(section, key):
+        v = (st.get(section) or {}).get(key)
+        return str(v) if v not in (None, "") else NA
+
+    flagged = set(st.get("alerts") or [])
+    rows = []
+
+    def card(name, fresh, items):
+        rows.append({"h": name, "stale": _stale(fresh)})
+        rows.extend({"i": ICON[i], "v": v, "a": a in flagged} for i, v, a in items if v)
+        rows.append({})
+
+    utc = g("local", "utc")
+    card("LOCATION", g("net", "fresh"), [
+        ("place", g("net", "coords").replace("  ", " · "), ""),
+        ("time", f"UTC {utc}" if utc != NA else "", "")])
+    gnss, squawk = g("air", "gnss"), g("air", "emergency")
+    card("AIRSPACE", g("air", "fresh"), [
+        ("traffic", g("air", "traffic"), ""),
+        ("nearest", g("air", "nearest"), ""),
+        ("gnss", "" if gnss.startswith("OK") or gnss == NA else f"GNSS {gnss}", "air.gnss"),
+        ("squawk", "" if squawk in ("NONE", NA) else f"SQUAWK {squawk}", "air.emergency")])
+    kp = g("space", "kp").split(" ")
+    t0 = g("space", "launch_t0")
+    t0 = t0.removeprefix(time.strftime("%d %b ").upper())   # today's launches by time alone
+    card("ORBIT", g("space", "fresh"), [
+        ("station", f'ISS {g("space", "iss")}', "space.iss"),
+        ("station", f'CSS {g("space", "css")}', "space.css"),
+        ("sun", " · ".join(x for x in (f"KP {kp[0]}", g("space", "scales"), " ".join(kp[1:])) if x and x != NA),
+         "space.scales"),
+        ("sats", g("space", "sats"), ""),
+        ("launch", f'{g("space", "launch")} · {t0}', "")])
+    card("INTERNET", g("world", "fresh_outages"), [
+        ("outages", g("world", "outages"), "world.outages"),
+        ("ping", g("local", "ping"), "")])
+    return rows[:-1][:SIDE_ROWS]
+
+
+def watch_stale(st):
+    """The watchlist counts as stale when no topic was checked in the last three hours."""
+    checked = max((i.get("checked") or "" for i in (st.get("watch") or {}).get("items") or []), default="")
+    try:
+        return time.time() - time.mktime(time.strptime(checked, "%Y-%m-%d %H:%M")) > 3 * 3600
+    except ValueError:
+        return True
 
 
 def lock_view(st):
@@ -959,25 +1038,33 @@ def lock_view(st):
         code, name = top[i] if i < len(top) else ("", "")
         v[f"internet.{i + 1}k"], v[f"internet.{i + 1}v"] = code, name
     # Watchlist feed: the rows main() already published into status.json watch.rows
-    wl = (st.get("watch") or {}).get("items") or []
-    wrows = (st.get("watch") or {}).get("rows") or watch_feed(st)
+    watch = st.get("watch") or {}
+    wrows = watch.get("rows") or watch_feed(st)[0]
     cells = watch_cells(wrows)
     for i in range(WATCH_ROWS):
-        mark, day, topic, text = cells[i] if i < len(cells) else ("", "", "", "")
-        v[f"watch.{i + 1}m"], v[f"watch.{i + 1}d"] = mark, day
+        topic, text, unread = cells[i] if i < len(cells) else ("", "", False)
         v[f"watch.{i + 1}t"], v[f"watch.{i + 1}h"] = topic, text
-        # Pango colours for the date and telegram: white while unread, as on the login screen
-        v[f"watch.{i + 1}dc"], v[f"watch.{i + 1}hc"] = ("ffffff", "ffffff") if mark else ("7a7a7a", "c8c8c8")
-    checked = max((it.get("checked") or "" for it in wl), default="")
-    v["fresh.watch"] = checked[-5:] if checked else NA
+        v[f"watch.{i + 1}hc"] = "ffffff" if unread else "c8c8c8"   # white while unread
+    more = watch.get("more", 0)
+    v["watch.more"] = f"+{more}" if more else ""
+    v["watch.stale"] = STALE_ICON if watch_stale(st) else ""
     # News rows: the telegrams main() published into status.json world.telegrams,
     # whole stories only, as many as fit the lock screen's row count
     world = st.get("world") or {}
     rows = news_cells(world.get("telegrams") or telegram_feed(st), world.get("items") or [], NEWS_ROWS)
-    rows = rows or [("", "", NA)]
+    rows = rows or [("", NA)]
     for i in range(NEWS_ROWS):
-        when, outlet, text = rows[i] if i < len(rows) else ("", "", "")
-        v[f"news.{i + 1}d"], v[f"news.{i + 1}t"], v[f"news.{i + 1}h"] = when, outlet, text
+        outlet, text = rows[i] if i < len(rows) else ("", "")
+        v[f"news.{i + 1}t"], v[f"news.{i + 1}h"] = outlet, text
+    v["news.stale"] = STALE_ICON if _stale(g("world", "fresh_news")) else ""
+    # The right column, slot by slot: head + stale flag, or icon + value (alerts inverted)
+    side = st.get("side") or side_rows(st)
+    for i in range(SIDE_ROWS):
+        r = side[i] if i < len(side) else {}
+        v[f"side.{i + 1}h"] = f"//  {r['h']}" if "h" in r else ""
+        v[f"side.{i + 1}s"] = STALE_ICON if r.get("stale") else ""
+        v[f"side.{i + 1}i"] = r.get("i", "")
+        v[f"side.{i + 1}v"] = r.get("v", "")
     # The Iran digest: one pre-wrapped line per row, exactly as the login screen renders it
     return v
 
@@ -1009,6 +1096,8 @@ def write_lock_view(st):
     v = lock_view(st)
     add_iran_keys(v, st)
     flagged = {LOCK_ALERTS[a] for a in st.get("alerts", []) if a in LOCK_ALERTS}
+    side = st.get("side") or side_rows(st)
+    flagged |= {f"side.{i + 1}v" for i, r in enumerate(side[:SIDE_ROWS]) if r.get("a")}
     lines = []
     for key, text in v.items():
         # Pango markup in the labels: escape, and keep each value on one line
@@ -1067,11 +1156,13 @@ def main():
     # Shared feed rows: the same formatted lines the lock screen shows, published into
     # status.json so the login screen renders an identical watchlist and world feed
     if isinstance(status.get("watch"), dict):
-        status["watch"]["rows"] = watch_feed(status)
+        status["watch"]["rows"], status["watch"]["more"] = watch_feed(status)
+        status["watch"]["stale"] = watch_stale(status)
         checked = max((i.get("checked") or "" for i in status["watch"].get("items") or []), default="")
         status["watch"]["fresh"] = checked[-5:] if checked else NA
     if isinstance(status.get("world"), dict) and not status["world"].get("error"):
         status["world"]["telegrams"] = telegram_feed(status)
+    status["side"] = side_rows(status)
     os.makedirs(OUT_DIR, exist_ok=True)
     tmp = OUT + ".tmp"
     with open(tmp, "w") as f:
