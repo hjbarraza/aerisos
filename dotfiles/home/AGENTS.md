@@ -119,7 +119,8 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
 - MX Master 3 (Solaar, from tinyraven 2026-11-13): `solaar --window=hide` starts from hyprland.lua;
   `~/.config/solaar/config.yaml` diverts the gesture button (key 195) and the wheel-mode button (196),
   `rules.yaml` maps gestures to `~/.local/bin/mouse-gesture` (tap screenshot area, up launcher, down
-  close window, left/right back/forward) and the wheel-mode button to a new Ghostty.
+  close window, left/right back/forward) and the wheel-mode button to a new Ghostty. The back button (not diverted, `mouse:275` in hyprland.lua) toggles
+  voxtype dictation (`voxtype record toggle`); the forward button opens the pet ask.
 - Pet ask (from tinyraven, synced 2026-11-13): `aeris-ask` (Super+/ or the mouse forward button)
   opens `ask.qml` under the pet; answers by free OpenRouter models (`OPENROUTER_API_KEY` in
   `~/.env`), commands judged by the Jev model; slash commands (/help /timer /remind /hush /status
