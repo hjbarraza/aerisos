@@ -82,7 +82,8 @@ local menu = "hyprlauncher"
 hl.on("hyprland.start", function ()
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
     hl.exec_cmd("env QT_QPA_PLATFORMTHEME=gtk3 qs -p ~/.config/quickshell/aeris/shell.qml")   -- the shell: top bar + pill dock, one process
-    hl.exec_cmd("~/.local/bin/aeris-wallpaper start")   -- 3D wallpaper (own process, Background layer; scene from the bar menu)
+    hl.exec_cmd("qs -p ~/.config/quickshell/aeris/backdrop.qml")   -- charcoal desktop behind the windows (misc.background_color does not repaint)
+    -- hl.exec_cmd("~/.local/bin/aeris-wallpaper start")   -- off: flat charcoal background like tinyraven. 3D wallpaper (own process, Background layer; scene from the bar menu)
     hl.exec_cmd("~/.local/bin/stay-awake on")   -- no sleep/suspend by default (coffee cup in the bar)
     hl.exec_cmd("wl-paste --type text --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
@@ -149,14 +150,14 @@ end
 -- Refer to https://wiki.hypr.land/Configuring/Basics/Variables/
 hl.config({
     general = {
-        gaps_in  = 6,
-        gaps_out = 10,
+        gaps_in  = 4,   -- 4 + 4 = an 8px gutter between windows (same as tinyraven)
+        gaps_out = 8,   -- 8px from the screen edge
 
-        border_size = 1,
+        border_size = 0,   -- no borders (same as tinyraven)
 
         col = {
-            active_border   = "rgba(4a4a4aff)",   -- static gray; glow comes from decoration.shadow
-            inactive_border = "rgba(111111ff)",   -- neutral near-black
+            active_border   = "rgba(1c1c1cff)",   -- barely-there near-black; glow comes from decoration.shadow
+            inactive_border = "rgba(161616ff)",   -- just above the background
         },
 
         -- Set to true to enable resizing windows by clicking and dragging on borders and gaps
@@ -173,23 +174,14 @@ hl.config({
         rounding_power = 2,
 
         -- Change transparency of focused and unfocused windows
+        -- every window opaque; inactive ones dimmed, not see-through (same as tinyraven)
         active_opacity   = 1.0,
-        inactive_opacity = .9,
+        inactive_opacity = 1.0,
+        dim_inactive     = true,
+        dim_strength     = 0.25,
 
-        shadow = {
-            enabled      = true,
-            range          = 5,
-            render_power   = 2,
-            color          = 0x14c8c8c8,   -- soft gray-white glow on the focused window
-            color_inactive = 0x00000000,   -- no glow on unfocused windows
-        },
-
-        blur = {
-            enabled   = true,
-            size      = 3,
-            passes    = 1,
-            vibrancy  = 0.1696,
-        },
+        shadow = { enabled = false },   -- no glow: it read as a border
+        blur   = { enabled = false },
     },
 
     animations = {
@@ -283,7 +275,7 @@ hl.config({
         force_default_wallpaper = 0,
         disable_hyprland_logo   = true,
         disable_splash_rendering = true,  -- no random splash text on the wallpaper
-        background_color        = 0x000000, -- plain black wallpaper
+        background_color        = 0x0a0a0a, -- flat charcoal wallpaper (same as tinyraven)
         key_press_enables_dpms  = true,     -- a key press re-lights a screen turned off by screen-off/hypridle
     },
 })
