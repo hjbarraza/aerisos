@@ -105,5 +105,7 @@ case ${1:-} in
   *)
     grep -qx -- "$space" "$state" || echo "$space" >> "$state"
     tile
+    osascript -e 'if application "Magnet" is running then tell application "Magnet" to quit'
+    sketchybar --trigger layout_change
     ;;
 esac

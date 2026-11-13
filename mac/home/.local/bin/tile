@@ -1,0 +1,11 @@
+#!/bin/bash
+# aeris:summary=Tile the current yabai space automatically (bsp): resizing one window resizes its neighbours
+# aeris:group=desktop
+# Turns the space's grid off (if on) and hands layout back to yabai. Quits Magnet, which `floating` opens. See also `grid`, `floating`.
+
+set -euo pipefail
+
+export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH
+"$HOME/.local/bin/grid" off
+osascript -e 'if application "Magnet" is running then tell application "Magnet" to quit'
+sketchybar --trigger layout_change

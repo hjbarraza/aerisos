@@ -1,0 +1,13 @@
+#!/bin/bash
+# aeris:summary=Plain macOS on the current yabai space: windows stay where you put them
+# aeris:group=desktop
+# Opens Magnet for snapping windows by hand; `tile` and `grid` quit it.
+# Named `floating` because `float` is a zsh reserved word. See also `grid`, `tile`.
+
+set -euo pipefail
+
+export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH
+"$HOME/.local/bin/grid" off
+yabai -m space --layout float
+open -g -a Magnet
+sketchybar --trigger layout_change
