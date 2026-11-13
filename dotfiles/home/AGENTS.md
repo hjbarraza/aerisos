@@ -134,6 +134,8 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   registered in hyprland.lua (12 columns; 1 full, 2 as 6|6, 3+ as 3|6|3 with stacks, extra window to the
   middle, two extra to the sides). Gridded workspaces persist across reloads in
   `~/.local/state/aeris/grid-workspaces`. Custom Lua layouts must be referenced as `lua:<name>`.
+  Same `grid` on tinyraven (Hyprland) and on the MacBook Air `mba` (yabai port in `~/aerisos/mac/grid`:
+  float layout + exact placement, re-tiled by yabai window signals, state in `~/.local/state/aeris/grid-spaces`).
 - Bar extras: scratch note (`Bar/Note.qml` + `NotePopup.qml`, text in `~/.local/state/aeris/scratch.md`),
   mouse battery (`Bar/Mouse.qml`, UPower, hidden without a wireless mouse).
 - Gaming overlay: MangoHud (`~/.config/MangoHud/MangoHud.conf`, monochrome; per game
