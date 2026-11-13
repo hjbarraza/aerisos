@@ -477,7 +477,7 @@ hl.bind(cmdMod .. " + SHIFT + 3",  hl.dsp.exec_cmd("~/.local/bin/screenshot scre
 hl.bind(cmdMod .. " + SHIFT + 4",  hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
 hl.bind(cmdMod .. " + SHIFT + 5",  hl.dsp.exec_cmd("~/.local/bin/screenrecord area"), { description = "Screen recording: area (press again to stop)" })
 hl.bind(cmdMod .. " + SHIFT + 6",  hl.dsp.exec_cmd("~/.local/bin/screenrecord screen"), { description = "Screen recording: whole screen (press again to stop)" })
-hl.bind(cmdMod .. " + SHIFT + 7",  hl.dsp.exec_cmd("monologue"), { description = "Camera recording (Monologue): Space records, Enter edits" })
+hl.bind(cmdMod .. " + SHIFT + 7",  hl.dsp.exec_cmd("~/.local/bin/monologue"), { description = "Camera recording (Monologue): Space records, Enter edits" })
 hl.bind(cmdMod .. " + SHIFT + D",  hl.dsp.exec_cmd("~/.local/bin/screenshot annotate"), { description = "Screenshot: select area and annotate (draw)" })
 hl.bind("Print",                    hl.dsp.exec_cmd("~/.local/bin/screenshot area"), { description = "Screenshot: select area" })
 hl.bind("SHIFT + Print",            hl.dsp.exec_cmd("~/.local/bin/screenshot screen"), { description = "Screenshot: whole screen" })

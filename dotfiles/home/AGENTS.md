@@ -98,6 +98,10 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
 - Chats/commands: `/watch` (watchlist), `/brief` (situation brief incl. GNSS interference),
   `/inbox` (OpenCode) and `/watch-inbox` (Claude Code): the watchlist as a numbered inbox
   via `~/.local/bin/aeris-inbox`, "open N" for detail, ack per topic.
+- Monologue (camera recorder, Win+Shift+7): `~/.local/bin/monologue` wraps `/usr/bin/monologue`
+  (holds the webcam at 30 fps via `exposure_dynamic_framerate=0`; on 0.3.x forces libx264 at preset
+  veryfast through `~/.local/lib/x264-fast.so`). Built from omarchy-pkgs since upstream dropped its
+  PKGBUILD (2026-11-12). Root causes, upstream fixes and the Qt VA-API bug: `~/aerisos/docs/monologue.md`.
 - Defence-map ontologies: `~/maps`, query with `aeris-onto`.
 - Desktop pet: `~/.local/bin/aeris-pet` (GTK3 full-screen transparent overlay, class `aeris-pet`;
   crumbs strip `aeris-crumbs`; one instance, pid in `$XDG_RUNTIME_DIR/aeris-pet.pid`). Pets: dragon

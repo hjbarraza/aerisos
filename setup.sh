@@ -621,8 +621,36 @@ omacom_app() {
         run git clone -q "$repo" "$src"
     fi
     (( DRY )) && { info "[dry-run] build + install $name"; return 0; }
-    (cd "$src" && ./bin/build >/dev/null && cd pkgbuild && makepkg -fsi --noconfirm) \
-        || { warn "$name: build or install failed (see above); re-run: ./setup.sh omacom"; return 0; }
+    if [[ -f $src/pkgbuild/PKGBUILD ]]; then
+        (cd "$src" && ./bin/build >/dev/null && cd pkgbuild && makepkg -fsi --noconfirm) \
+            || { warn "$name: build or install failed (see above); re-run: ./setup.sh omacom"; return 0; }
+    else
+        # The app moved its packaging to omarchy-pkgs (Monologue since 2026-11-12, #31); that
+        # PKGBUILD builds the tagged release, so ~/.local/src/NAME only serves for reading
+        local pkgs="$HOME/.local/src/omarchy-pkgs"
+        if [[ -d $pkgs/.git ]]; then
+            run git -C "$pkgs" sparse-checkout add "pkgbuilds/$name"
+            run git -C "$pkgs" pull -q --ff-only
+        else
+            run git clone -q --depth 1 --filter=blob:none --sparse https://github.com/omacom/omarchy-pkgs "$pkgs"
+            run git -C "$pkgs" sparse-checkout set "pkgbuilds/$name"
+        fi
+        (cd "$pkgs/pkgbuilds/$name" && makepkg -fsi --noconfirm) \
+            || { warn "$name: build or install failed (see above); re-run: ./setup.sh omacom"; return 0; }
+    fi
+}
+
+# Monologue extras: the wrapper bin/monologue (installed by tools) loads this shim on 0.3.x,
+# and the launcher entry points at the wrapper. Why: docs/monologue.md
+monologue_extras() {
+    pacman_install v4l-utils
+    run mkdir -p "$HOME/.local/lib" "$HOME/.local/share/applications"
+    run gcc -shared -fPIC -O2 -Wall -o "$HOME/.local/lib/x264-fast.so" "$AERIS/omacom/x264-fast.c" \
+        -ldl $(pkg-config --cflags --libs libavutil) $(pkg-config --cflags libavcodec)
+    if [[ -f /usr/share/applications/monologue.desktop ]] && (( ! DRY )); then
+        sed "s|^Exec=monologue|Exec=$HOME/.local/bin/monologue|" /usr/share/applications/monologue.desktop \
+            > "$HOME/.local/share/applications/monologue.desktop"
+    fi
 }
 
 mod_omacom() {
@@ -638,6 +666,7 @@ mod_omacom() {
     fi
     local app
     for app in "${OMACOM_APPS[@]}"; do omacom_app "$app"; done
+    monologue_extras
     # Greyscale icons for the new apps, then a launcher restart so it indexes them with their icons
     [[ -x $HOME/.local/bin/make-mono-icons ]] && run "$HOME/.local/bin/make-mono-icons" >/dev/null
     if pgrep -x vicinae-server >/dev/null && (( ! DRY )); then (setsid vicinae server --replace >/dev/null 2>&1 &); fi

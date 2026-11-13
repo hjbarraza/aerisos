@@ -1,0 +1,31 @@
+#!/bin/bash
+# aeris:summary=Monologue camera recorder, with encoder workarounds for releases before 0.4.0
+# aeris:group=capture
+# aeris:hidden=true
+# Shadows /usr/bin/monologue (Win+Shift+7, the launcher entry and the terminal all land here).
+# Holds the webcam at 30 fps; on Monologue 0.3.x also steers Qt's encoder away from the
+# NVENC/QSV failures and makes libx264 fast enough. Why each line exists: docs/monologue.md.
+
+set -euo pipefail
+
+app=/usr/bin/monologue
+
+# The webcam halves its frame rate in dim light (exposure_dynamic_framerate=1); hold 30 fps.
+# The trade is a darker picture in a dim room.
+v4l2-ctl -d /dev/video0 -c exposure_dynamic_framerate=0 >/dev/null 2>&1 || true
+
+version=$(pacman -Q monologue 2>/dev/null | awk '{print $2}') || version=""
+if [[ -n $version ]] && (( $(vercmp "$version" 0.4.0) < 0 )); then
+  # 0.3.x hands Qt BGRA frames: NVENC refuses the 10-bit format Qt picks, h264_qsv loses two
+  # thirds of the frames to out-of-order timestamps. Use libx264 instead...
+  export QT_FFMPEG_EXCLUDE_ENCODERS=h264_nvenc,h264_qsv,h264_vaapi,hevc_nvenc,hevc_qsv,hevc_vaapi
+  export QT_FFMPEG_ENCODING_HW_DEVICE_TYPES=,
+  # ...at preset veryfast: Qt's default "medium" does ~27 fps on noisy 1080p 4:4:4 here, and the
+  # app aborts the take ("encoding cannot keep up").
+  shim="$HOME/.local/lib/x264-fast.so"
+  if [[ -f $shim ]]; then
+    export LD_PRELOAD="$shim${LD_PRELOAD:+:$LD_PRELOAD}"
+  fi
+fi
+
+exec "$app" "$@"
