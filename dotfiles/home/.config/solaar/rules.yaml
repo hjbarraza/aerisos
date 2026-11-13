@@ -20,8 +20,8 @@
 - MouseGesture: Mouse Down
 - Execute: [/home/h/.local/bin/mouse-gesture, down]
 ...
-# Wheel-mode button (Smart Shift, diverted): open a new terminal
+# Wheel-mode button (Smart Shift, diverted): Return, to send what the back button dictated
 ---
 - Key: [Smart Shift, pressed]
-- Execute: [ghostty]
+- Execute: [/home/h/.local/bin/mouse-gesture, enter]
 ...
