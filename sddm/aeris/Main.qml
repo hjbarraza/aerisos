@@ -1,20 +1,27 @@
 // AerisOS login screen.
 //
-// One grid in a 1600x900 design space, scaled to fill the screen; fades in from black.
-// Same layout as the lock screen (lock/make-hyprlock), so both screens line up:
-//   margins 96 left/right, text rows at y=96 (top) and y=820 (bottom)
-//   left two-thirds  x 96–1120: wordmark, tagline and rule, then the feeds under them —
-//                    WATCHLIST (the week's findings, one telegraphed line each, * = new)
-//                    and WORLD (bulleted telegrams, whole stories only)
-//   right third      x 1224–1504, beside a hairline at x=1160: the login on one row
-//                    (user | password) beside the wordmark (status on its baseline), then
-//                    the cards stacked under it, one key/value per row — LOCATION,
-//                    AIRSPACE, ORBIT, INTERNET, each trimmed to its essential fields.
+// A Swiss grid in a 1600x900 design space, scaled to fill the screen; fades in from black.
+// Same layout as the lock screen (lock/make-hyprlock), so both screens line up.
+//
+// Columns: 12 on a 120 step from x=96 (88 wide, 32 gutters), so column n starts at
+// 96 + 120(n-1) and the grid ends at 1504. Feeds take columns 1-9 (96-1144), the login and
+// cards columns 10-12 (1176-1504). Baselines: every text row sits on the 18 px line grid
+// 9 + 18n, from the top row at 99 to the bottom row at 819.
+//
+//   top row 99        SYS/00 · date and time over the panel
+//   wordmark 243      ÆRIS OS; the login's field rules sit on its baseline
+//   tagline 297       and the login status beside it
+//   rule 324          broken by the gutter between the two columns
+//   heads 369 ...     WATCHLIST and WORLD as tables (date | topic or outlet | telegram, the
+//                     date only where it changes, unread marked in the margin), the cards
+//                     (key flush right against value) beside them; a head's rows follow it
+//                     directly, one blank row between groups, and the last feed row and the
+//                     last card row share a baseline (765)
+//   bottom row 819    build · power
+//
 // IDENTITY, WEATHER, NETWORK and SECURITY are left out on purpose: the login screen is
-// what people see when the laptop is left unattended. Keys are flush right against their
-// values (10 apart); lines are 18 apart. Alerts from status.json (GNSS jammed, emergency
-// squawk, ISS/CSS overhead, geomagnetic storm, an outage in this country) read inverted.
-// Type scale: wordmark 144 · heads 13 (//)/11 white · values 12 · keys and labels 11.
+// what people see when the laptop is left unattended. Alerts from status.json read inverted.
+// Type: wordmark Söhne 144; everything else Söhne Mono, values 12 white, keys and labels 11 grey.
 
 import QtQuick 2.15
 import QtQuick.Window 2.15
@@ -25,34 +32,35 @@ Rectangle {
     height: Screen.height
     color: "#000000"
 
-    // 1600x900 design space, scaled uniformly and centred
     readonly property real s: Math.min(width / 1600, height / 900)
     readonly property color white: "#ffffff"
     readonly property color grey: "#7a7a7a"
+    readonly property color read: "#c8c8c8"                 // acknowledged telegrams
     readonly property color dim: "#3a3a3a"
-    readonly property color hairline: "#262626"
     readonly property string sans: config.Font || "Söhne"
     readonly property string mono: config.MonoFont || "Söhne Mono"
     readonly property string jp: config.JapaneseFont || "Source Han Sans JP"
 
-    // Grid, as in lock/make-hyprlock (the wordmark sits lower here: 280/324/364)
+    // ---- grid ----
+    function col(n) { return 96 + 120 * (n - 1) }          // left edge of column n
+    function colEnd(n) { return col(n) + 88 }               // right edge of column n
     readonly property real gridLeft: 96
     readonly property real gridRight: 1504
-    readonly property real panel: 1224               // login and cards column
-    readonly property real keyEnd: 1320              // right-column cards: keys end here,
-    readonly property real valueAt: 1330             // values start here
-    readonly property real feedRight: 1120           // the feeds' fresh timestamps right-align here
-    readonly property real lineGap: 18
-    readonly property real headGap: 26               // a column head (WATCHLIST, WORLD) to its first line
-    readonly property real cardGap: 30               // vertical space between stacked cards
-    readonly property real loginHead: 178            // beside the wordmark: head at its cap height,
-    readonly property real statusBy: 280             // typed text on 240, status on its baseline
-    readonly property real cardTop: 324              // first card head, under the status row
-    readonly property real fieldWidth: 128           // user | gap | password across the column
-    readonly property real watchHead: 404            // watchlist feed, 40 under the rule
-    readonly property int watchRows: 14              // the lock shows 16; the lower wordmark costs two
-    readonly property real worldHead: watchHead + headGap + watchRows * lineGap + 44   // 726
-    readonly property int newsRows: 4                // last line lands on 806, above the power row
+    readonly property real feedRight: 1144                 // end of column 9
+    readonly property real panel: 1176                     // column 10
+    readonly property real valueAt: 1296                   // column 11: card values, password
+    readonly property real keyEnd: 1286                    // card keys end 10 before their values
+    readonly property real line: 18
+    readonly property real topRow: 99
+    readonly property real bottomRow: 819
+    readonly property real markBy: 243                     // wordmark baseline
+    readonly property real tagBy: 297                      // tagline / login status
+    readonly property real ruleY: 324
+    readonly property real sectionTop: 369                 // WATCHLIST head and first card head
+    readonly property int watchRows: 16
+    readonly property real worldHead: sectionTop + (watchRows + 2) * line   // 693
+    readonly property int newsRows: 4                      // last row on 765
+    readonly property var feedCols: [col(1), col(2), col(4)]   // date | topic | telegram
 
     property int sessionIndex: sessionModel.lastIndex >= 0 ? sessionModel.lastIndex : 0
     property string status: "AWAITING AUTHENTICATION"
@@ -69,7 +77,6 @@ Rectangle {
     function c(k, v, alert) {
         return { k: k, v: v, alert: !!alert && (d.alerts || []).indexOf(alert) >= 0 }
     }
-    // First word of a value ("2.0 QUIET" -> "2.0") and the rest
     function first(v) { return v.split(" ")[0] }
     function rest(v) { return v.split(" ").slice(1).join(" ") || "—" }
     function loadStatus() {
@@ -107,41 +114,53 @@ Rectangle {
             c("OUTAGES", g("world", "outages"), "world.outages"),
             c("PING", g("local", "ping")) ] }
     ]
-    // Each card's head baseline: stacked from cardTop, cardGap apart
+    // Card heads: a head, its rows directly under it, one blank row between cards
     readonly property var cardTops: {
         const tops = []
-        let cy = cardTop
+        let cy = sectionTop
         for (const card of cards) {
             tops.push(cy)
-            cy += headGap + card.pairs.length * lineGap + cardGap
+            cy += (card.pairs.length + 2) * line
         }
         return tops
     }
 
-    // Watchlist rows: pre-formatted by aeris-status (status.json watch.rows), the same
-    // lines the lock screen shows; * marks unacknowledged findings
+    // Watchlist: status.json watch.rows ("* 12 NOV · TOPIC · TELEGRAM", the lines the lock
+    // screen splits the same way) as table cells; the date shows only where it changes,
+    // * (unread) becomes a square in the margin
     readonly property var watch: {
         const rows = ((d.watch && d.watch.rows) || []).slice(0, watchRows)
-        return rows.length ? rows : ["—"]
+        let last = ""
+        return rows.map(r => {
+            const parts = r.slice(2).split(" · ")
+            if (parts.length < 3)
+                return { fresh: false, a: "", b: "", c: r.slice(2) }
+            const day = parts[0]
+            const cell = { fresh: r[0] === "*", a: day === last ? "" : day, b: parts[1], c: parts.slice(2).join(" · ") }
+            last = day
+            return cell
+        })
     }
-    readonly property string watchFresh: {
-        if (d.watch && d.watch.fresh)
-            return String(d.watch.fresh)
-        const checked = ((d.watch && d.watch.items) || []).map(i => i.checked || "").sort().pop()
-        return checked ? checked.slice(-5) : "—"
-    }
+    readonly property string watchFresh: d.watch && d.watch.fresh ? String(d.watch.fresh) : "—"
 
-    // News rows: the pre-telegraphed stories (status.json world.telegrams), whole
-    // stories only, as many as fit
+    // World: the telegrams (world.telegrams) beside their item's time and outlet,
+    // whole stories only, as many as fit
     readonly property var news: {
         const rows = []
-        for (const lines of (d.world && d.world.telegrams) || []) {
+        const items = (d.world && d.world.items) || []
+        const tgs = (d.world && d.world.telegrams) || []
+        for (let i = 0; i < tgs.length; i++) {
+            const lines = tgs[i]
             if (rows.length + lines.length > newsRows)
                 break
-            for (const l of lines)
-                rows.push(l)
+            const src = String((items[i] && items[i].source) || "").split(" · ")
+            for (let j = 0; j < lines.length; j++)
+                rows.push({ fresh: false,
+                            a: j ? "" : (src[1] || ""),
+                            b: j ? "" : src[0].replace(/\.(com|media|org|net|co\.uk)$/i, ""),
+                            c: lines[j].replace(/^[·\s]+/, "") })
         }
-        return rows.length ? rows : ["—"]
+        return rows
     }
 
     // ---- building blocks ----
@@ -155,11 +174,18 @@ Rectangle {
         font.pixelSize: 11 * root.s
         font.letterSpacing: 2 * root.s
         color: root.grey
+        textFormat: Text.PlainText
         x: alignRight ? bx * root.s - width : bx * root.s
         y: by * root.s - baselineOffset
     }
 
-    // Text button
+    component Value: Label {
+        font.pixelSize: 12 * root.s
+        font.letterSpacing: 1.5 * root.s
+        color: root.white
+        elide: Text.ElideRight
+    }
+
     component Action: Label {
         id: action
         signal activated()
@@ -175,44 +201,59 @@ Rectangle {
         }
     }
 
-    // Section head: a white slash, then the name
+    // Section head: // and the name in white, its fetch time right-aligned on the baseline
     component Head: Item {
         property real bx: 0
         property real by: 0
+        property real rightX: 0
         property string en: ""
-        Text {
-            id: slash
-            text: "//"
-            font.family: root.mono
-            font.pixelSize: 13 * root.s
-            color: root.white
-            x: parent.bx * root.s
-            y: parent.by * root.s - baselineOffset
-        }
-        Label {
-            bx: (slash.x + slash.width + 10 * root.s) / root.s
-            by: parent.by
-            text: parent.en
-            color: root.white
+        property string fresh: ""
+        Label { bx: parent.bx; by: parent.by; text: "//  " + parent.en; color: root.white }
+        Label { bx: parent.rightX; by: parent.by; alignRight: true; text: parent.fresh }
+    }
+
+    // A feed table: date | topic or outlet | telegram, one row per line under the head
+    component Feed: Item {
+        property real by: 0
+        property var rows: []
+        Repeater {
+            model: parent.rows
+            delegate: Item {
+                readonly property real ly: parent.by + (index + 1) * root.line
+                Rectangle {   // unread: a small square hanging in the margin
+                    visible: modelData.fresh
+                    x: (root.gridLeft - 14) * root.s; y: (ly - 7) * root.s
+                    width: 5 * root.s; height: 5 * root.s
+                    color: root.white
+                }
+                Label { bx: root.feedCols[0]; by: ly; text: modelData.a; color: modelData.fresh ? root.white : root.grey }
+                Label { bx: root.feedCols[1]; by: ly; text: modelData.b }
+                Value {
+                    bx: root.feedCols[2]; by: ly
+                    width: Math.min(implicitWidth, (root.feedRight - root.feedCols[2]) * root.s)
+                    text: modelData.c
+                    color: modelData.fresh || !modelData.a && !modelData.b && index === 0 ? root.white : root.read
+                }
+            }
         }
     }
 
-    // Underlined input; its caption sits two lines (36) above the typed text, the rule 12 below
+    // Underlined input: caption 27 above the typed text, the rule 9 below it (by = the rule)
     component Field: Item {
         property alias input: field
         property string caption: ""
         property real bx: 0
-        property real by: 0          // baseline of the typed text
+        property real by: 0
+        property real w: 128
         x: bx * root.s
-        y: (by - 48) * root.s
-        property real w: 384
+        y: (by - 36) * root.s
         width: w * root.s
-        height: 61 * root.s
-        Label { bx: 0; by: 12; text: parent.caption; color: field.activeFocus ? root.white : root.grey }
+        height: 37 * root.s
+        Label { bx: 0; by: 0; text: parent.caption; color: field.activeFocus ? root.white : root.grey }
         TextInput {
             id: field
             x: 0
-            y: 48 * root.s - baselineOffset
+            y: 27 * root.s - baselineOffset
             width: parent.width
             font.family: root.mono
             font.pixelSize: 16 * root.s
@@ -222,7 +263,7 @@ Rectangle {
             clip: true
         }
         Rectangle {
-            y: 60 * root.s
+            y: 36 * root.s
             width: parent.width
             height: Math.max(1, root.s)
             color: field.activeFocus ? root.white : root.dim
@@ -237,21 +278,27 @@ Rectangle {
         anchors.centerIn: parent
         opacity: 0
 
-        Label { bx: root.gridLeft; by: 96; text: config.SystemLabel || "SYS/00" }
-        Label { bx: 960; by: 96; alignRight: true; text: config.BuildLabel || "BUILD 2026.10" }
+        // ---- top row ----
+        Label { bx: root.gridLeft; by: root.topRow; text: config.SystemLabel || "SYS/00" }
+        Label {
+            id: dateLabel
+            bx: root.panel; by: root.topRow
+            color: root.white
+        }
         Label {
             id: clockLabel
-            bx: root.gridRight; by: 96; alignRight: true
+            bx: root.gridRight; by: root.topRow; alignRight: true
             color: root.white
             function update() {
                 const now = new Date()
-                text = Qt.formatDateTime(now, "ddd dd MMM yyyy").toUpperCase() + "   " + Qt.formatTime(now, "HH:mm")
+                dateLabel.text = Qt.formatDateTime(now, "ddd dd MMM yyyy").toUpperCase()
+                text = Qt.formatTime(now, "HH:mm")
             }
             Component.onCompleted: update()
             Timer { interval: 1000; running: true; repeat: true; onTriggered: clockLabel.update() }
         }
 
-        // Wordmark: ÆRIS regular (with the Æ ligature), OS bold
+        // ---- wordmark (ÆRIS regular with the Æ ligature, OS bold), tagline, rule ----
         Repeater {
             model: [["ÆRIS", 94, Font.Normal], ["OS", 460, Font.Bold]]
             delegate: Text {
@@ -262,114 +309,48 @@ Rectangle {
                 font.letterSpacing: -6 * root.s
                 color: root.white
                 x: modelData[1] * root.s
-                y: 280 * root.s - baselineOffset
+                y: root.markBy * root.s - baselineOffset
             }
         }
-
-        Label {
-            bx: root.gridLeft; by: 324
-            font.pixelSize: 12 * root.s
-            color: root.white
-            text: "INTELLIGENCE OPERATING SYSTEM"
-        }
+        Label { bx: root.gridLeft; by: root.tagBy; font.pixelSize: 12 * root.s; color: root.white; text: "INTELLIGENCE OPERATING SYSTEM" }
         Text {
             text: "知能情報システム"
             font.family: root.jp
             font.pixelSize: 12 * root.s
             font.letterSpacing: 2 * root.s
             color: root.grey
-            x: 960 * root.s - width
-            y: 324 * root.s - baselineOffset
+            x: root.feedRight * root.s - width
+            y: root.tagBy * root.s - baselineOffset
         }
+        Rectangle { x: root.gridLeft * root.s; y: root.ruleY * root.s; width: (root.feedRight - root.gridLeft) * root.s; height: Math.max(1, root.s); color: root.white }
+        Rectangle { x: root.panel * root.s; y: root.ruleY * root.s; width: (root.gridRight - root.panel) * root.s; height: Math.max(1, root.s); color: root.white }
 
-        // Rule, with a light bead sweeping along it
-        Item {
-            x: root.gridLeft * root.s; y: 362.5 * root.s
-            width: 864 * root.s; height: 4 * root.s
-            clip: true
-            Rectangle { y: 1.5 * root.s; width: parent.width; height: Math.max(1, root.s); color: root.white }
-            Rectangle {
-                id: sweep
-                width: 140 * root.s; height: parent.height
-                x: -width
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: "#00ffffff" }
-                    GradientStop { position: 0.5; color: "#ffffffff" }
-                    GradientStop { position: 1.0; color: "#00ffffff" }
-                }
-                SequentialAnimation on x {
-                    loops: Animation.Infinite
-                    NumberAnimation { from: -sweep.width; to: 864 * root.s; duration: 1800; easing.type: Easing.InOutQuad }
-                    PauseAnimation { duration: 2600 }
-                }
-            }
-        }
-
-        // Divider between the feeds and the login column
-        Rectangle { x: 1160 * root.s; y: 80 * root.s; width: Math.max(1, root.s); height: 756 * root.s; color: root.hairline }
-
-        // ---- live information: feeds in the wide left column, cards under the login ----
-
+        // ---- feeds and cards ----
         Item {
             id: info
             opacity: 0
             width: parent.width; height: parent.height
 
-            // Feed line: white, one row, cut by the collector to the column
-            component FeedRow: Label {
-                width: Math.min(implicitWidth, (root.feedRight - root.gridLeft) * root.s)
-                elide: Text.ElideRight
-                textFormat: Text.PlainText
-                font.pixelSize: 12 * root.s
-                font.letterSpacing: 1.5 * root.s
-                color: root.white
-            }
+            Head { bx: root.gridLeft; by: root.sectionTop; rightX: root.feedRight; en: "WATCHLIST"; fresh: root.watchFresh }
+            Feed { by: root.sectionTop; rows: root.watch }
+            Head { bx: root.gridLeft; by: root.worldHead; rightX: root.feedRight; en: "WORLD"; fresh: g("world", "fresh_news") + " · " + g("world", "via") }
+            Feed { by: root.worldHead; rows: root.news }
 
-            Head { bx: root.gridLeft; by: root.watchHead; en: "WATCHLIST" }
-            Label { bx: root.feedRight; by: root.watchHead; alignRight: true; text: root.watchFresh }
-            Repeater {
-                model: root.watch
-                delegate: FeedRow {
-                    bx: root.gridLeft; by: root.watchHead + root.headGap + index * root.lineGap
-                    text: modelData
-                }
-            }
-
-            Head { bx: root.gridLeft; by: root.worldHead; en: "WORLD" }
-            Label { bx: root.feedRight; by: root.worldHead; alignRight: true; text: g("world", "fresh_news") + " · " + g("world", "via") }
-            Repeater {
-                model: root.news
-                delegate: FeedRow {
-                    bx: root.gridLeft; by: root.worldHead + root.headGap + index * root.lineGap
-                    text: modelData
-                }
-            }
-
-            // Cards stacked in the right column, under the login
             Repeater {
                 model: root.cards
                 delegate: Item {
                     id: card
                     readonly property real cy: root.cardTops[index]
-                    Head { bx: root.panel; by: card.cy; en: modelData.en }
-                    // When this card's data was fetched, on its head's baseline
-                    Label { bx: root.gridRight; by: card.cy; alignRight: true; text: modelData.fresh }
+                    Head { bx: root.panel; by: card.cy; rightX: root.gridRight; en: modelData.en; fresh: modelData.fresh }
                     Repeater {
                         model: modelData.pairs
                         delegate: Item {
-                            readonly property real ly: card.cy + root.headGap + index * root.lineGap
+                            readonly property real ly: card.cy + (index + 1) * root.line
                             readonly property var cell: modelData
-                            // Key (grey, 11), flush right against its value
                             Label { bx: root.keyEnd; by: parent.ly; alignRight: true; text: cell.k }
-                            // Value (white, 12)
-                            Label {
+                            Value {
                                 bx: root.valueAt; by: parent.ly
                                 width: Math.min(implicitWidth, (root.gridRight - root.valueAt) * root.s)
-                                elide: Text.ElideRight
-                                textFormat: Text.PlainText
-                                font.pixelSize: 12 * root.s
-                                font.letterSpacing: 1.5 * root.s
                                 color: cell.alert ? "#000000" : root.white
                                 text: cell.v
                                 // Alerts read inverted: black on white
@@ -387,20 +368,18 @@ Rectangle {
             }
         }
 
-        // ---- login: right third, beside the wordmark ----
-
+        // ---- login: the field rules on the wordmark's baseline, status on the tagline's ----
         Item {
             id: loginPanel
             opacity: 0
             x: 16 * root.s
             width: parent.width; height: parent.height
 
-            Head { bx: root.panel; by: root.loginHead; en: "AUTHENTICATE" }
-
+            Head { bx: root.panel; by: root.markBy - 3 * root.line; rightX: root.gridRight; en: "AUTHENTICATE" }
             Field {
                 id: userField
-                bx: root.panel; by: root.loginHead + root.headGap + 2 * root.lineGap   // 240, caption on 204
-                w: root.fieldWidth
+                bx: root.panel; by: root.markBy
+                w: root.colEnd(10) - root.panel
                 caption: "USER"
                 input.text: userModel.lastUser
                 input.KeyNavigation.tab: passField.input
@@ -408,51 +387,46 @@ Rectangle {
             }
             Field {
                 id: passField
-                bx: root.gridRight - root.fieldWidth; by: userField.by
-                w: root.fieldWidth
+                bx: root.valueAt; by: userField.by
+                w: root.gridRight - root.valueAt
                 caption: "PASSWORD"
                 input.echoMode: TextInput.Password
                 input.passwordCharacter: "•"
                 input.KeyNavigation.backtab: userField.input
                 input.onAccepted: root.login()
             }
-
             Label {
                 id: statusLabel
-                bx: root.panel; by: root.statusBy
+                bx: root.panel; by: root.tagBy
                 text: root.status + (keyboard.capsLock ? " · CAPS LOCK" : "")
                 color: root.status === "ACCESS DENIED" ? root.white : root.grey
             }
             Action {
-                bx: root.gridRight; by: statusLabel.by; alignRight: true
-                font.pixelSize: 12 * root.s
+                bx: root.gridRight; by: root.tagBy; alignRight: true
                 text: "ENTER →"
                 onActivated: root.login()
             }
         }
 
-        // ---- bottom row: power, under the cards (the session is always the last one used) ----
-
+        // ---- bottom row: build, power (the session is always the last one used) ----
         Item {
             id: controls
             opacity: 0
             width: parent.width; height: parent.height
 
+            Label { bx: root.gridLeft; by: root.bottomRow; text: config.BuildLabel || "BUILD 2026.10" }
             Action {
-                id: sleepAction
-                bx: root.panel; by: 820; text: "SLEEP"
+                bx: root.panel; by: root.bottomRow; text: "SLEEP"
                 visible: sddm.canSuspend
                 onActivated: sddm.suspend()
             }
             Action {
-                id: restartAction
-                bx: (sleepAction.visible ? sleepAction.x + sleepAction.width + 32 * root.s : root.panel * root.s) / root.s
-                by: 820; text: "RESTART"
+                bx: root.valueAt; by: root.bottomRow; text: "RESTART"
                 visible: sddm.canReboot
                 onActivated: sddm.reboot()
             }
             Action {
-                bx: root.gridRight; by: 820; alignRight: true; text: "SHUT DOWN"
+                bx: root.gridRight; by: root.bottomRow; alignRight: true; text: "SHUT DOWN"
                 visible: sddm.canPowerOff
                 onActivated: sddm.powerOff()
             }

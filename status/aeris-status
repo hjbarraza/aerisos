@@ -811,9 +811,9 @@ def security():
 # SECURITY (the lock screen shows where the laptop is left unattended). Keys are the ones
 # lock/make-hyprlock lays out.
 
-NEWS_ROWS = 5    # lock screen news lines, below the watchlist (18 apart)
+NEWS_ROWS = 4    # lock screen news lines, below the watchlist (18 apart)
 WATCH_ROWS = 16  # lock screen watchlist lines between the wordmark and WORLD
-FEED_WIDTH = 112  # lock screen feed lines use the whole left column, unlike the login's 44
+FEED_WIDTH = 78  # telegram column of the feed tables (columns 4-9, 688 design px of 12 px mono)
 WATCH_DAYS = 7   # the lock screen shows this much watchlist history, acknowledged or not
 
 
@@ -865,8 +865,38 @@ def watch_feed(st):
         mark = "*" if f.get("new") else "·"
         day = time.strftime("%d %b", time.localtime(when)).upper()
         seen.append((sig, len(wrows)))
-        wrows.append(f"{mark} " + cut(f"{day} · {name.upper()} · {tg}", FEED_WIDTH))
+        wrows.append(f"{mark} {day} · {name.upper()} · {cut(tg, FEED_WIDTH)}")
     return wrows or [f"ALL QUIET · {len(wl)} TOPICS · {WATCH_DAYS}D"]
+
+
+def watch_cells(rows):
+    """Watch rows ("* 12 NOV · TOPIC · TELEGRAM") as lock-screen table cells (mark, date,
+    topic, telegram): the date only where it changes, * as a square mark. The login screen
+    splits status.json watch.rows the same way."""
+    cells, last = [], ""
+    for r in rows:
+        parts = r[2:].split(" · ")
+        if len(parts) < 3:
+            cells.append(("", "", "", r[2:]))
+            continue
+        day = parts[0]
+        cells.append(("■" if r[0] == "*" else "", "" if day == last else day, parts[1], " · ".join(parts[2:])))
+        last = day
+    return cells
+
+
+def news_cells(telegrams, items, most):
+    """World telegrams as table cells (time, outlet, line) beside their item's source,
+    whole stories only, up to `most` rows; continuation lines leave time and outlet empty."""
+    rows = []
+    for i, lines in enumerate(telegrams):
+        if len(rows) + len(lines) > most:
+            break
+        outlet, _, when = ((items[i] if i < len(items) else {}).get("source") or "").partition(" · ")
+        outlet = re.sub(r"\.(com|media|org|net|co\.uk)$", "", outlet, flags=re.I)
+        for j, line in enumerate(lines):
+            rows.append(("" if j else when, "" if j else outlet, line.lstrip("· ").strip()))
+    return rows
 
 
 def telegram_feed(st, most=8):
@@ -931,22 +961,23 @@ def lock_view(st):
     # Watchlist feed: the rows main() already published into status.json watch.rows
     wl = (st.get("watch") or {}).get("items") or []
     wrows = (st.get("watch") or {}).get("rows") or watch_feed(st)
+    cells = watch_cells(wrows)
     for i in range(WATCH_ROWS):
-        v[f"watch.{i + 1}"] = wrows[i] if i < len(wrows) else ""
-        v[f"watch.{i + 1}s"] = ""
+        mark, day, topic, text = cells[i] if i < len(cells) else ("", "", "", "")
+        v[f"watch.{i + 1}m"], v[f"watch.{i + 1}d"] = mark, day
+        v[f"watch.{i + 1}t"], v[f"watch.{i + 1}h"] = topic, text
+        # Pango colours for the date and telegram: white while unread, as on the login screen
+        v[f"watch.{i + 1}dc"], v[f"watch.{i + 1}hc"] = ("ffffff", "ffffff") if mark else ("7a7a7a", "c8c8c8")
     checked = max((it.get("checked") or "" for it in wl), default="")
     v["fresh.watch"] = checked[-5:] if checked else NA
     # News rows: the telegrams main() published into status.json world.telegrams,
     # whole stories only, as many as fit the lock screen's row count
-    rows = []
-    for lines in (st.get("world") or {}).get("telegrams") or telegram_feed(st):
-        if len(rows) + len(lines) > NEWS_ROWS:
-            break
-        rows += [(line, False) for line in lines]
-    rows = rows or [(NA, False)]
+    world = st.get("world") or {}
+    rows = news_cells(world.get("telegrams") or telegram_feed(st), world.get("items") or [], NEWS_ROWS)
+    rows = rows or [("", "", NA)]
     for i in range(NEWS_ROWS):
-        text, source = rows[i] if i < len(rows) else ("", False)
-        v[f"news.{i + 1}"], v[f"news.{i + 1}s"] = ("", text) if source else (text, "")
+        when, outlet, text = rows[i] if i < len(rows) else ("", "", "")
+        v[f"news.{i + 1}d"], v[f"news.{i + 1}t"], v[f"news.{i + 1}h"] = when, outlet, text
     # The Iran digest: one pre-wrapped line per row, exactly as the login screen renders it
     return v
 
