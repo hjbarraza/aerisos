@@ -1,0 +1,18 @@
+#!/bin/bash
+# aeris:summary=MX Master 3 gesture button actions, called by Solaar rules
+# aeris:group=desktop
+# aeris:args=tap|up|down|left|right
+# aeris:hidden=true
+# Solaar (~/.config/solaar/rules.yaml) diverts the thumb gesture button and runs this with the
+# gesture name. Edit the actions here; Solaar needs no restart. From tinyraven, 2026-11-13.
+
+set -euo pipefail
+
+case ${1:-} in
+  tap)   exec "$HOME/.local/bin/screenshot" area ;;                                   # screenshot an area
+  up)    if command -v vicinae >/dev/null; then exec vicinae toggle; else exec hyprlauncher; fi ;;  # launcher
+  down)  hyprctl dispatch 'hl.dsp.window.close()' ;;                                  # close the window
+  left)  hyprctl dispatch 'hl.dsp.send_shortcut({ mods = "ALT", key = "Left" })' ;;   # back (browser, files)
+  right) hyprctl dispatch 'hl.dsp.send_shortcut({ mods = "ALT", key = "Right" })' ;;  # forward
+  *)     echo "usage: mouse-gesture tap|up|down|left|right" >&2; exit 2 ;;
+esac

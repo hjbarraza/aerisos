@@ -1,0 +1,27 @@
+%YAML 1.3
+# MX Master 3 gesture button: each gesture runs ~/.local/bin/mouse-gesture <name> (aerisos bin/)
+---
+- MouseGesture: []
+- Execute: [/home/h/.local/bin/mouse-gesture, tap]
+...
+---
+- MouseGesture: Mouse Left
+- Execute: [/home/h/.local/bin/mouse-gesture, left]
+...
+---
+- MouseGesture: Mouse Right
+- Execute: [/home/h/.local/bin/mouse-gesture, right]
+...
+---
+- MouseGesture: Mouse Up
+- Execute: [/home/h/.local/bin/mouse-gesture, up]
+...
+---
+- MouseGesture: Mouse Down
+- Execute: [/home/h/.local/bin/mouse-gesture, down]
+...
+# Wheel-mode button (Smart Shift, diverted): open a new terminal
+---
+- Key: [Smart Shift, pressed]
+- Execute: [ghostty]
+...

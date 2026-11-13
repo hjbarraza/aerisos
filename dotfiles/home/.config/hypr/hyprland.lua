@@ -89,6 +89,7 @@ hl.on("hyprland.start", function ()
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
     hl.exec_cmd("command -v vicinae >/dev/null && vicinae server")
     hl.exec_cmd("swayosd-server")
+    hl.exec_cmd("command -v solaar >/dev/null && solaar --window=hide")   -- MX Master 3: gesture + wheel-mode buttons (~/.config/solaar/rules.yaml -> mouse-gesture)
     hl.exec_cmd("hyprpm reload -n")   -- load enabled hyprpm plugins (Screenix cursor bridge)
     hl.exec_cmd("~/.local/bin/aeris-hello")   -- spoken greeting: date + fun fact (Kokoro, bf_emma)
     -- Two terminals after login (both show the AerisOS greeting). The left one runs ÆRIS Agent and falls back to a

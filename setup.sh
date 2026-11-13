@@ -54,6 +54,7 @@ HOME_PATHS=(
     .config/gtk-3.0
     .config/gtk-4.0
     .config/mimeapps.list
+    .config/solaar
     .config/voxtype/config.toml
     .config/vicinae/settings.json
     .local/share/vicinae/themes
@@ -555,6 +556,10 @@ mod_tools() {
         run install -m644 "$AERIS/brave-theme/manifest.json" "$HOME/.var/app/com.brave.Browser/aeris-theme/"
         info "Brave theme: brave://extensions → Developer mode → Load unpacked → ~/.var/app/com.brave.Browser/aeris-theme"
     fi
+
+    # Logitech MX Master 3: Solaar diverts the gesture and wheel-mode buttons to bin/mouse-gesture
+    # (rules in ~/.config/solaar, restored by dotfiles; started from hyprland.lua)
+    pacman_install solaar
 
     # Media codecs for every app (GStreamer) and Files thumbnails
     pacman_install gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav ffmpeg ffmpegthumbnailer

@@ -102,6 +102,10 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   (holds the webcam at 30 fps via `exposure_dynamic_framerate=0`; on 0.3.x forces libx264 at preset
   veryfast through `~/.local/lib/x264-fast.so`). Built from omarchy-pkgs since upstream dropped its
   PKGBUILD (2026-11-12). Root causes, upstream fixes and the Qt VA-API bug: `~/aerisos/docs/monologue.md`.
+- MX Master 3 (Solaar, from tinyraven 2026-11-13): `solaar --window=hide` starts from hyprland.lua;
+  `~/.config/solaar/config.yaml` diverts the gesture button (key 195) and the wheel-mode button (196),
+  `rules.yaml` maps gestures to `~/.local/bin/mouse-gesture` (tap screenshot area, up launcher, down
+  close window, left/right back/forward) and the wheel-mode button to a new Ghostty.
 - Defence-map ontologies: `~/maps`, query with `aeris-onto`.
 - Desktop pet: `~/.local/bin/aeris-pet` (GTK3 full-screen transparent overlay, class `aeris-pet`;
   crumbs strip `aeris-crumbs`; one instance, pid in `$XDG_RUNTIME_DIR/aeris-pet.pid`). Pets: dragon
