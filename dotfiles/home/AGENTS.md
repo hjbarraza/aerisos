@@ -119,7 +119,7 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
 - MX Master 3 (Solaar, from tinyraven 2026-11-13): `solaar --window=hide` starts from hyprland.lua;
   `~/.config/solaar/config.yaml` diverts the gesture button (key 195) and the wheel-mode button (196),
   `rules.yaml` maps gestures to `~/.local/bin/mouse-gesture` (tap screenshot area, up launcher, down
-  close window, left/right back/forward) and the wheel-mode button to Return (`mouse-gesture enter`). The back button (not diverted, `mouse:275` in hyprland.lua) runs
+  close window, left/right back/forward) and the wheel-mode button to Return (`mouse-gesture enter`; same on tinyraven since 2026-11-13, where Superwhisper, not voxtype, owns the back button). The back button (not diverted, `mouse:275` in hyprland.lua) runs
   `mouse-dictate press|release`: voxtype with auto-submit (Enter); held ≥1 s it stops on release, a
   shorter click keeps recording until the next press. The forward button opens the pet ask.
 - Pet ask (from tinyraven, synced 2026-11-13): `aeris-ask` (Super+/ or the mouse forward button)
