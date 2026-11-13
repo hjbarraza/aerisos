@@ -1,0 +1,51 @@
+{
+    "global": {
+        "ask_for_confirmation_before_quitting": false,
+        "show_in_menu_bar": false
+    },
+    "profiles": [
+        {
+            "complex_modifications": {
+                "rules": [
+                    {
+                        "description": "Map EarPods volume up to Right Option + Space, volume down to Right Option",
+                        "manipulators": [
+                            {
+                                "from": { "key_code": "volume_increment" },
+                                "to": [
+                                    {
+                                        "key_code": "spacebar",
+                                        "modifiers": ["right_option"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "from": { "key_code": "volume_decrement" },
+                                "to": [{ "key_code": "right_option" }],
+                                "type": "basic"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "devices": [
+                {
+                    "identifiers": { "is_keyboard": true },
+                    "ignore": true
+                },
+                {
+                    "identifiers": {
+                        "is_consumer": true,
+                        "product_id": 4363,
+                        "vendor_id": 1452
+                    },
+                    "ignore": false
+                }
+            ],
+            "name": "Default profile",
+            "selected": true,
+            "virtual_hid_keyboard": { "keyboard_type_v2": "iso" }
+        }
+    ]
+}

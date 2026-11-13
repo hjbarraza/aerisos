@@ -1,0 +1,23 @@
+# AERIS Ghostty config, macOS port of rzr's ~/.config/ghostty/config.
+# Old Mac config saved as config.bak-2026-11-13.
+
+# Match rzr: avoids breakage on SSH hosts that don't know xterm-ghostty
+term = xterm-256color
+
+# AERIS monochrome theme (themes/Aeris, copied from rzr)
+theme = Aeris
+window-padding-x = 8
+window-padding-y = 4
+cursor-style = bar
+copy-on-select = clipboard
+scrollback-limit = 100000000
+mouse-scroll-multiplier = 3
+right-click-action = paste
+confirm-close-surface = false
+
+font-family = Söhne Mono
+font-size = 13
+
+# No title bar: yabai tiles the window, the theme is the frame
+macos-titlebar-style = hidden
+keybind = ctrl+shift+f=unbind

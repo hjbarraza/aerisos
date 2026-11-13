@@ -1,0 +1,27 @@
+[user]
+	email = hjbarraza@gmail.com
+	name = hjbarraza
+[credential "https://github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[url "https://github.com/"]
+	insteadOf = git@github.com:
+[init]
+	defaultBranch = main
+[alias]
+	ida = "!f() { x=\"/Applications/IDA Professional 9.5.app/Contents/MacOS/tools/teams/git-ida\"; if [ -x \"$x\" ]; then cd \"${GIT_PREFIX:-.}\" || exit; exec \"$x\" \"$@\"; fi; echo \"git-ida: $x not found (IDA was moved or uninstalled).\" >&2; echo \"Start IDA to repair alias.ida, or point alias.ida at a git-ida binary, then retry.\" >&2; exit 1; }; f"
+[filter "git-ida"]
+	clean = git ida clean %f
+	smudge = git ida smudge %f
+	required = true
+[merge "git-ida"]
+	name = git-ida 3-way merge
+	driver = git ida merge %O %A %B %L %P
+[diff "git-ida"]
+	name = git-ida structural diff
+	command = git ida diff
+[difftool "ida"]
+	cmd = git ida difftool \"$LOCAL\" \"$REMOTE\" \"$MERGED\"

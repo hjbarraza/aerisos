@@ -1,0 +1,27 @@
+# AERIS theme for Ghostty — monochrome, derived 1:1 from
+# ~/.config/opencode/themes/AERIS.json (black bg, paper text, white emphasis,
+# grey/silver muted, hairline for subtle UI). All ANSI roles collapse onto
+# the AERIS greyscale ramp; emphasis comes from the bright cells.
+background = #000000
+foreground = #e6e6e6
+cursor-color = #ffffff
+cursor-text = #000000
+selection-background = #e6e6e6
+selection-foreground = #000000
+
+palette = 0=#0a0a0a
+palette = 1=#8c8c8c
+palette = 2=#e6e6e6
+palette = 3=#b0b0b0
+palette = 4=#b0b0b0
+palette = 5=#9a9a9a
+palette = 6=#e6e6e6
+palette = 7=#e6e6e6
+palette = 8=#262626
+palette = 9=#ffffff
+palette = 10=#ffffff
+palette = 11=#e6e6e6
+palette = 12=#ffffff
+palette = 13=#e6e6e6
+palette = 14=#f0f0f0
+palette = 15=#ffffff

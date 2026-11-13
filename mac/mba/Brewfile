@@ -1,0 +1,207 @@
+tap "antoniorodr/memo"
+tap "asmvik/formulae", "https://github.com/asmvik/homebrew-formulae.git"
+tap "browsh-org/browsh"
+tap "charmbracelet/tap"
+tap "felixkratz/formulae", "https://github.com/FelixKratz/homebrew-formulae", trusted: true
+tap "iyadhkhalfallah/clauditor", "https://github.com/IyadhKhalfallah/homebrew-clauditor"
+tap "libsql/sqld"
+tap "nikitabobko/tap", trusted: true
+tap "oven-sh/bun"
+tap "steipete/tap"
+tap "supabase/tap"
+tap "tursodatabase/tap"
+# Another unofficial Qt installer
+brew "aqtinstall"
+# Automatic configure script builder
+brew "autoconf"
+# Tool for generating GNU Standards-compliant Makefiles
+brew "automake"
+# Resource monitor. C++ version and continuation of bashtop and bpytop
+brew "btop"
+# Perl compatible regular expressions library with a new API
+brew "pcre2"
+# C routines to compute the Discrete Fourier Transform
+brew "fftw"
+# Console-based Audio Visualizer for ALSA
+brew "cava"
+# Cross-platform make
+brew "cmake"
+# GNU File, Shell, and Text utilities
+brew "coreutils"
+# Isolated development environments using Docker
+brew "docker-compose"
+# .NET Core
+brew "dotnet"
+# Perl lib for reading and writing EXIF metadata
+brew "exiftool"
+# Like neofetch, but much faster because written mostly in C
+brew "fastfetch"
+# Simple, fast and user-friendly alternative to find
+brew "fd"
+# Play, record, convert, and stream select audio and video codecs
+brew "ffmpeg"
+# Command-line tools for fly.io services
+brew "flyctl"
+# Fast and simple Node.js version manager
+brew "fnm"
+# Monitor a directory for changes and run a shell command
+brew "fswatch"
+# Command-line fuzzy finder written in Go
+brew "fzf"
+# Open-source, cross-platform JavaScript runtime environment
+brew "node"
+# Interact with Google Gemini AI models from the command-line
+brew "gemini-cli"
+# GitHub command-line tool
+brew "gh"
+# Distributed revision control system
+brew "git"
+# Quickly rewrite git repository history
+brew "git-filter-repo"
+# Audit git repos for secrets
+brew "gitleaks"
+# Render markdown on the CLI
+brew "glow"
+# OpenGL and OpenGL ES reference compiler for shading languages
+brew "glslang"
+# Open source programming language to build simple/reliable/efficient software
+brew "go"
+# Configurable static site generator
+brew "hugo"
+# Generic library support script
+brew "libtool"
+# Tools and libraries to manipulate images in select formats
+brew "imagemagick"
+# Lightweight and flexible command-line JSON processor
+brew "jq"
+# Library for Apple Binary- and XML-Property Lists
+brew "libplist"
+# Library with common system API code for libimobiledevice projects
+brew "libimobiledevice-glue"
+# Library and utility to talk to iBoot/iBSS via USB
+brew "libirecovery"
+# Postgres C API library
+brew "libpq"
+# Library to render SVG files using Cairo
+brew "librsvg"
+# USB multiplexor library for iOS devices
+brew "libusbmuxd"
+# C library for reading, creating, and modifying zip archives
+brew "libzip"
+# Sudoless performance monitoring for Apple Silicon processors
+brew "macmon"
+# Mac App Store command-line interface
+brew "mas"
+# Fast markdown preview server with live reload and theme support
+brew "mdserve"
+# Remote terminal application
+brew "mosh"
+# Audio time stretcher tool and library
+brew "rubberband"
+# Media player based on MPlayer and mplayer2
+brew "mpv"
+# Text-based UI library
+brew "ncurses"
+# Create, run, and share large language models (LLMs)
+brew "ollama"
+# Development kit for the Java programming language
+brew "openjdk"
+# Swiss-army knife of markup format conversion
+brew "pandoc"
+# Execute binaries from Python packages in isolated environments
+brew "pipx"
+# Package compiler and linker metadata toolkit
+brew "pkgconf"
+# PDF rendering library (based on the xpdf-3.0 code base)
+brew "poppler"
+# Interpreted, interactive, object-oriented programming language
+brew "python@3.11"
+# Python interface to Tcl/Tk
+brew "python-tk@3.11"
+# Python interface to Tcl/Tk
+brew "python-tk@3.13"
+# Develop and deploy code with zero configuration
+brew "railway"
+# Rsync for cloud storage
+brew "rclone"
+# SVG rendering tool and library
+brew "resvg"
+# Search tool like grep and The Silver Searcher
+brew "ripgrep"
+# Easily detect and prevent bugs and anti-patterns in your codebase
+brew "semgrep"
+# 7-Zip is a file archiver with a high compression ratio
+brew "sevenzip"
+# Non-interactive SSH password auth
+brew "sshpass"
+# Multi-modal AI tool to extract and summarize content
+brew "summarize"
+# Postgres development platform
+brew "supabase"
+# Generate scripting interfaces to C/C++ code
+brew "swig"
+# Change macOS audio source from the command-line
+brew "switchaudio-osx"
+# Powerful free data recovery utility
+brew "testdisk"
+# Official documentation format of the GNU project
+brew "texinfo"
+# Internet file retriever
+brew "wget"
+# Generate your Xcode project from a spec file and your folder structure
+brew "xcodegen"
+# Command-line tool to install and switch between multiple versions of Xcode
+brew "xcodes"
+# Blazing fast terminal file manager written in Rust, based on async I/O
+brew "yazi"
+# Shell extension to navigate your filesystem faster
+brew "zoxide"
+# Custom macOS statusbar with shell plugin, interaction and graph support
+brew "felixkratz/formulae/sketchybar", trusted: true
+# Browse/extract images from .car files
+cask "asset-catalog-tinkerer"
+# OpenAI's coding agent that runs in your terminal
+cask "codex"
+# App to build and share containerised applications and microservices
+cask "docker-desktop"
+# Web browser
+cask "firefox"
+cask "font-figtree"
+cask "font-symbols-only-nerd-font"
+# Set of tools to manage resources and applications hosted on Google Cloud
+cask "gcloud-cli"
+# Terminal emulator that uses platform-native UI and GPU acceleration
+cask "ghostty"
+# Web browser
+cask "google-chrome"
+# Desktop automation application
+cask "hammerspoon"
+# Keyboard customiser
+cask "karabiner-elements"
+# Free cross-platform office suite, fresh version
+cask "libreoffice"
+# CSV editor
+cask "modern-csv"
+# AI coding agent desktop client
+cask "opencode-desktop"
+# Control your tools with a few keystrokes
+cask "raycast"
+# Music streaming service
+cask "spotify"
+# JDK from the Eclipse Foundation (Adoptium)
+cask "temurin@8"
+# Rust-based terminal
+cask "warp"
+mas "Apple Configurator", id: 1037126344
+mas "Developer", id: 640199958
+mas "Keynote", id: 361285480
+mas "Magnet", id: 441258766
+mas "Numbers", id: 361304891
+mas "Pages", id: 361309726
+mas "Pinery", id: 6747726205
+mas "Transmit", id: 1436522307
+mas "Xcode", id: 497799835
+npm "@modelcontextprotocol/inspector"
+npm "ghost-cli"
+npm "pptxgenjs"
+npm "vercel"

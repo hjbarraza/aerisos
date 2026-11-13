@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /Users/h/.hermes/hermes-agent/venv/bin/hermes -p aeris "$@"
