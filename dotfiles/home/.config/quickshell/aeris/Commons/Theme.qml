@@ -11,7 +11,7 @@ Singleton {
 
     readonly property var defaults: ({
         colors: { bg: "#0a0a0a", fg: "#e6e6e6", dim: "#7a7a7a", warn: "#ffffff", line: "#2a2a2a" },
-        fonts:  { sans: "Söhne", nerd: "NotoSansM Nerd Font", size: 12, small: 11 },
+        fonts:  { sans: "Söhne", mono: "Söhne Mono", nerd: "NotoSansM Nerd Font", size: 12, small: 11 },
         bar:    { height: 26 },
         dock:   { enabled: true }
     })
@@ -28,6 +28,7 @@ Singleton {
     readonly property color warn: get("colors", "warn")
     readonly property color line: get("colors", "line")
     readonly property string sans: get("fonts", "sans")
+    readonly property string mono: get("fonts", "mono")   // small caps labels
     readonly property string nerd: get("fonts", "nerd")
     readonly property int size:  get("fonts", "size")
     readonly property int small: get("fonts", "small")

@@ -294,7 +294,7 @@ ShellRoot {
                                   : msg.who === "confirm" ? "run?" : msg.who).toUpperCase()
                             color: msg.who === "confirm" ? Theme.fg : box.grey
                             elide: Text.ElideRight
-                            font { family: Theme.sans; pixelSize: box.labelSize; weight: Font.Medium; letterSpacing: 0.9 }
+                            font { family: Theme.mono; pixelSize: box.labelSize; weight: Font.Medium; letterSpacing: 0.9 }
                         }
                         TextEdit {   // selectable, so an answer or command can be copied
                             id: body
@@ -378,7 +378,7 @@ ShellRoot {
                         anchors.baseline: input.baseline
                         text: "YOU"
                         color: box.grey
-                        font { family: Theme.sans; pixelSize: box.labelSize; weight: Font.Medium; letterSpacing: 0.9 }
+                        font { family: Theme.mono; pixelSize: box.labelSize; weight: Font.Medium; letterSpacing: 0.9 }
                     }
                     TextInput {
                         id: input

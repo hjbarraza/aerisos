@@ -76,6 +76,7 @@ linux-headers
 mangohud
 meson
 mkinitcpio
+mosh
 mpv
 nano
 nasm
@@ -146,6 +147,7 @@ vulkan-intel
 vulkan-nouveau
 vulkan-radeon
 w3m
+wf-recorder
 wget
 wiremix
 wireplumber

@@ -10,9 +10,10 @@ Text {
     property var onClick: null
     SystemClock { id: clock; precision: SystemClock.Minutes }
     text: alt ? Qt.formatDateTime(clock.date, "dd MMMM") + "  W" + Shell.isoWeek(clock.date) + " " + Qt.formatDateTime(clock.date, "yyyy")
-              : Qt.formatDateTime(clock.date, "dddd HH:mm")
+              : Qt.formatDateTime(clock.date, "ddd dd MMM  HH:mm")
+    // A small label: caps Söhne Mono, tracked 1px, as on tinyraven's bar.
     color: Theme.fg
-    font { family: Theme.sans; pixelSize: Theme.size }
+    font { family: Theme.mono; pixelSize: Theme.small; letterSpacing: 1; capitalization: Font.AllUppercase }
     leftPadding: 7
     rightPadding: 7
     MouseArea {
