@@ -1,0 +1,42 @@
+#!/bin/bash
+# aeris:summary=Mouse back button dictation: hold to talk, or click to start and click to stop
+# aeris:group=desktop
+# aeris:args=press|release
+# aeris:hidden=true
+# Bound to mouse:275 (press and release) in hyprland.lua. Press starts a voxtype recording
+# that types the text and presses Enter. Released after HOLD_MS or longer, it stops right
+# away (hold to talk); a shorter click leaves it recording until the next press stops it.
+
+set -euo pipefail
+
+HOLD_MS=${MOUSE_DICTATE_HOLD_MS:-1000}
+state=${XDG_RUNTIME_DIR:-/tmp}/mouse-dictate
+down=$state.down        # when the recording press happened (ms)
+stopped=$state.stopped  # this press stopped a recording: its release does nothing
+
+now_ms() { date +%s%3N; }
+
+case ${1:-} in
+  press)
+    if [[ $(voxtype status) == "recording" ]]; then
+      touch "$stopped"
+      voxtype record stop
+    else
+      rm -f "$stopped"
+      now_ms > "$down"
+      voxtype record start --auto-submit
+    fi
+    ;;
+  release)
+    if [[ -e $stopped ]]; then
+      rm -f "$stopped"
+    elif [[ -s $down ]]; then
+      held=$(( $(now_ms) - $(<"$down") ))
+      rm -f "$down"
+      if (( held >= HOLD_MS )); then
+        voxtype record stop
+      fi
+    fi
+    ;;
+  *) echo "usage: mouse-dictate press|release" >&2; exit 2 ;;
+esac
