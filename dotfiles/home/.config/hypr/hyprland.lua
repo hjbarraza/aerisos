@@ -430,6 +430,8 @@ hl.bind(mainMod .. " + SHIFT + C", webapp("https://calendar.notion.so"), { descr
 hl.bind(mainMod .. " + SHIFT + Y", webapp("https://youtube.com"), { description = "YouTube" })
 hl.bind(mainMod .. " + SHIFT + I", webapp("https://claude.ai"), { description = "Claude" })
 hl.bind(mainMod .. " + SHIFT + G", webapp("https://gemini.google.com"), { description = "Gemini" })
+hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("~/.local/bin/aeris-ask"), { description = "Ask the pet a quick question" })
+hl.bind("mouse:276",   hl.dsp.exec_cmd("~/.local/bin/aeris-ask"), { description = "Mouse forward button: ask the pet" })
 hl.bind(mainMod .. " + SHIFT + slash", webapp("https://www.google.com"), { description = "Google" })
 -- Apps (Omarchy-style SUPER+SHIFT+letter)
 hl.bind(mainMod .. " + SHIFT + B", hl.dsp.exec_cmd("brave"), { description = "Browser (Brave)" })
@@ -450,8 +452,8 @@ hl.bind(mainMod .. " + CTRL + S", hl.dsp.exec_cmd("~/.local/bin/nightlight toggl
 hl.bind(mainMod .. " + CTRL + C", hl.dsp.exec_cmd("hyprpicker -a"), { description = "Pick a colour (copies hex)" })
 hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("~/.local/bin/screen-off"), { description = "Lock + screen off (laptop stays awake)" })
 -- Ask terminal: the physical Win key + ` (Option on the macOS layout, as the cheat sheet); Shift asks about the selection
-hl.bind((mac and "ALT" or mainMod) .. " + grave",         hl.dsp.exec_cmd("~/.local/bin/aeris-ask toggle"), { description = "Ask the local model (drop-down terminal)" })
-hl.bind((mac and "ALT" or mainMod) .. " + SHIFT + grave", hl.dsp.exec_cmd("~/.local/bin/aeris-ask toggle --selection"), { description = "Ask the local model about the selected text" })
+hl.bind((mac and "ALT" or mainMod) .. " + grave",         hl.dsp.exec_cmd("~/.local/bin/aeris-ask-term toggle"), { description = "Ask the local model (drop-down terminal)" })
+hl.bind((mac and "ALT" or mainMod) .. " + SHIFT + grave", hl.dsp.exec_cmd("~/.local/bin/aeris-ask-term toggle --selection"), { description = "Ask the local model about the selected text" })
 -- Escape hides it too; non-consuming, so every other window still gets its Escape
 hl.bind("Escape", function ()
     local w = hl.get_active_window()
@@ -617,7 +619,7 @@ hl.window_rule({
 })
 
 
--- Ask terminal (aeris-ask): lives on special:ask, a wide panel centred on the screen
+-- Ask terminal (aeris-ask-term): lives on special:ask, a wide panel centred on the screen
 hl.window_rule({
     name  = "aeris-ask",
     match = { class = "^aeris\\.ask$" },

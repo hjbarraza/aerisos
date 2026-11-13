@@ -59,7 +59,7 @@ Scope {
                 Alerts {}
             }
 
-            RowLayout {   // ---- right: wallpaper, pet, tailscale, network, audio, battery, drawer
+            RowLayout {   // ---- right: wallpaper, pet, tailscale, note, network, audio, mouse, battery, drawer
                 id: rightGroup
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
@@ -77,8 +77,13 @@ Scope {
                     onClick: () => tsPopup.toggle()
                     onRightClick: () => Shell.sh("~/.local/bin/tailscale-status admin")
                 }
+                Note {
+                    id: noteIcon
+                    onClick: () => notePopup.toggle()
+                }
                 Network {}
                 Volume {}
+                Mouse {}
                 Battery {}
                 Drawer { barWindow: bar }
             }
@@ -123,6 +128,12 @@ Scope {
         id: wpPopup
         anchor.window: bar
         anchorItem: wpIcon
+    }
+
+    NotePopup {
+        id: notePopup
+        anchor.window: bar
+        anchorItem: noteIcon
     }
 
     ClockPopup {

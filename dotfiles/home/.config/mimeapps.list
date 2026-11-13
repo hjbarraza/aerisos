@@ -2,3 +2,13 @@
 [Default Applications]
 x-scheme-handler/claude-cli=claude-code-url-handler.desktop
 inode/directory=org.gnome.Nautilus.desktop
+image/png=imv.desktop
+image/jpeg=imv.desktop
+image/gif=imv.desktop
+image/webp=imv.desktop
+image/bmp=imv.desktop
+image/tiff=imv.desktop
+image/avif=imv.desktop
+image/heic=imv.desktop
+image/svg+xml=imv.desktop
+application/pdf=org.gnome.Papers.desktop

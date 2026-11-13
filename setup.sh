@@ -55,6 +55,11 @@ HOME_PATHS=(
     .config/gtk-4.0
     .config/mimeapps.list
     .config/solaar
+    .config/MangoHud
+    .config/tinyraven
+    .config/aeris/ask.json
+    .local/share/aeris-pet
+    .ssh/config
     .config/voxtype/config.toml
     .config/vicinae/settings.json
     .local/share/vicinae/themes
@@ -560,6 +565,15 @@ mod_tools() {
     # Logitech MX Master 3: Solaar diverts the gesture and wheel-mode buttons to bin/mouse-gesture
     # (rules in ~/.config/solaar, restored by dotfiles; started from hyprland.lua)
     pacman_install solaar
+
+    # "SSH to…" in the launcher (bin/aeris-ssh): pick a Tailscale machine, ssh in Ghostty
+    (( DRY )) || printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=SSH to…' \
+        'Comment=Open an ssh session to a Tailscale machine' "Exec=$HOME/.local/bin/aeris-ssh" \
+        'Icon=utilities-terminal' 'Terminal=false' 'Categories=Network;RemoteAccess;' \
+        'Keywords=ssh;remote;tailscale;server;' > "$HOME/.local/share/applications/aeris-ssh.desktop"
+
+    # Gaming overlay: MangoHud (config restored by dotfiles; per game: mangohud gamemoderun %command%)
+    pacman_install mangohud lib32-mangohud gamemode
 
     # Media codecs for every app (GStreamer) and Files thumbnails
     pacman_install gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav ffmpeg ffmpegthumbnailer
@@ -1127,7 +1141,7 @@ mod_snapshot() {
 
     if (( DRY )); then info "[dry-run] write package lists"; return; fi
     mkdir -p "$PKG"
-    # wl-clipboard (aeris-ask) is often only a dependency here, so -Qqe would drop it
+    # wl-clipboard (aeris-ask-term) is often only a dependency here, so -Qqe would drop it
     { pacman -Qqen; echo wl-clipboard; } | sort -u > "$PKG/pacman.txt"
     # Omarchy apps are built by the omacom module from their own PKGBUILDs, not the AUR (the AUR
     # "hype" is an unrelated Twitch app), so keep them and their -debug packages out of aur.txt

@@ -81,7 +81,7 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
 - The Radeon flicker rule for the Studio Display (see "This machine") is unrelated to the shell.
 
 ## Other standing infrastructure
-- Ask terminal: `aeris-ask` (Win+` on the Razer) toggles a Ghostty window (class `aeris.ask`) on
+- Ask terminal: `aeris-ask-term` (Win+` on the Razer, renamed from aeris-ask 2026-11-13) toggles a Ghostty window (class `aeris.ask`) on
   `special:ask` running an Ollama chat (first installed of qwen3.5:9b, gemma4:e4b, …; override
   `AERIS_ASK_MODEL`). Win+Shift+` sends the primary selection through `$XDG_RUNTIME_DIR/aeris-ask.fifo`.
 - Watchlist (news topics, feeds, real-time collection): manage with
@@ -106,6 +106,19 @@ strip; memo keys prefixed `@topic|`). The deployed collector is `/usr/local/bin/
   `~/.config/solaar/config.yaml` diverts the gesture button (key 195) and the wheel-mode button (196),
   `rules.yaml` maps gestures to `~/.local/bin/mouse-gesture` (tap screenshot area, up launcher, down
   close window, left/right back/forward) and the wheel-mode button to a new Ghostty.
+- Pet ask (from tinyraven, synced 2026-11-13): `aeris-ask` (Super+/ or the mouse forward button)
+  opens `ask.qml` under the pet; answers by free OpenRouter models (`OPENROUTER_API_KEY` in
+  `~/.env`), commands judged by the Jev model; slash commands (/help /timer /remind /hush /status
+  /run /cd /open ...) answered locally. Personality for this machine in `~/.config/aeris/ask.json`.
+  While the pet shows, dunst's `[aeris-pet-notifier]` rules hand notifications to `aeris-pet-notify`
+  (the bubble). The old Ollama drop-down terminal is now `aeris-ask-term` (Win+`).
+- `open` (folder, file, link or app by name), `aeris-ssh` ("SSH to…" in the launcher: Tailscale
+  machines, ssh in Ghostty; `~/.ssh/config` shares one login per host for 30 min).
+- Bar extras: scratch note (`Bar/Note.qml` + `NotePopup.qml`, text in `~/.local/state/aeris/scratch.md`),
+  mouse battery (`Bar/Mouse.qml`, UPower, hidden without a wireless mouse).
+- Gaming overlay: MangoHud (`~/.config/MangoHud/MangoHud.conf`, monochrome; per game
+  `mangohud gamemoderun %command%`, Right Shift+F12 toggles).
+- Keys: `~/.env` (chmod 600, never in the repo), one NAME=value per line.
 - Defence-map ontologies: `~/maps`, query with `aeris-onto`.
 - Desktop pet: `~/.local/bin/aeris-pet` (GTK3 full-screen transparent overlay, class `aeris-pet`;
   crumbs strip `aeris-crumbs`; one instance, pid in `$XDG_RUNTIME_DIR/aeris-pet.pid`). Pets: dragon

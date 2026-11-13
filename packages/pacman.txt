@@ -59,6 +59,7 @@ intel-media-driver
 intel-ucode
 kitty
 lazygit
+lib32-mangohud
 lib32-mesa
 lib32-nvidia-utils
 lib32-vulkan-intel
@@ -72,6 +73,7 @@ libvpl
 linux
 linux-firmware
 linux-headers
+mangohud
 meson
 mkinitcpio
 mpv

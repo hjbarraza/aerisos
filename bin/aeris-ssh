@@ -1,0 +1,29 @@
+#!/bin/bash
+# aeris:summary=Pick a Tailscale machine and open an ssh session to it in Ghostty
+# aeris:group=net
+# aeris:args=[host]
+# The launcher entry "SSH to…" runs this with no host: Vicinae lists the tailnet's Linux and
+# macOS machines (online first) and the pick opens `ssh <host>` in a new Ghostty window.
+# Connections share one login per host for 30 min (ControlMaster in ~/.ssh/config).
+
+set -euo pipefail
+
+host=${1:-}
+if [[ -z $host ]]; then
+  list=$(tailscale status --json 2>/dev/null | python3 -c '
+import json, sys
+peers = json.load(sys.stdin).get("Peer", {}).values()
+rows = [(not p.get("Online"), p["DNSName"].split(".")[0], p.get("OS", ""))
+        for p in peers if p.get("OS") in ("linux", "macOS") and p.get("DNSName")]
+for offline, name, os_ in sorted(rows):
+    print(f"{name}\t{os_}{\"  (offline)\" if offline else \"\"}")
+') || list=""
+  if [[ -z $list ]]; then
+    notify-send "SSH" "No Tailscale machines found (is tailscale up?)"
+    exit 0
+  fi
+  pick=$(printf '%s\n' "$list" | tr '\t' ' ' | vicinae dmenu -n "SSH to…" -p "machine" 2>/dev/null) || exit 0
+  host=${pick%% *}
+fi
+[[ -n $host ]] || exit 0
+setsid -f ghostty --title="ssh $host" -e ssh "$host" >/dev/null 2>&1 </dev/null
