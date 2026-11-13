@@ -31,24 +31,12 @@ for i in $(yabai -m query --spaces | jq '.[].index'); do
                            fi'
 done
 
-# ---- left: layout of the focused space (TILE / GRID / FLOAT / FULL). Click cycles tile → grid → float.
-LAYOUT='export PATH=/opt/homebrew/bin:$PATH
-        s=$(yabai -m query --spaces --space | jq -r .index)
-        if yabai -m query --spaces --space | grep -q "native-fullscreen.:true"; then l=FULL
-        elif grep -qx "$s" "$HOME/.local/state/aeris/grid-spaces" 2>/dev/null; then l=GRID
-        elif [ "$(yabai -m query --spaces --space | jq -r .type)" = bsp ]; then l=TILE
-        else l=FLOAT; fi'
+# ---- left: layout of the focused space (TILE / GRID / FLOAT / FULL). Click cycles it, like ⌃⌥L.
 sketchybar --add event layout_change \
            --add item layout left \
            --set layout icon.drawing=off label.color=$DIM padding_left=10 \
-                 script="$LAYOUT"'
-                         sketchybar --set $NAME label=$l' \
-                 click_script="$LAYOUT"'
-                         case $l in
-                           TILE) "$HOME/.local/bin/grid" ;;
-                           GRID) "$HOME/.local/bin/floating" ;;
-                           FLOAT) "$HOME/.local/bin/tile" ;;
-                         esac' \
+                 script='sketchybar --set $NAME label=$("$HOME/.local/bin/layout")' \
+                 click_script='"$HOME/.local/bin/layout" next' \
            --subscribe layout space_change display_change front_app_switched layout_change
 
 # ---- centre: clock, uppercase mono (like Clock.qml)

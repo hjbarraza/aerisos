@@ -1,0 +1,31 @@
+#!/bin/bash
+# aeris:summary=Layout of the current yabai space: print it (TILE, GRID, FLOAT, FULL), or `next` to cycle
+# aeris:group=desktop
+# aeris:args=[next]
+# Cycle order: tile → grid → float → tile, through the `tile`, `grid` and `floating` commands.
+# The bar's layout label and the ⌃⌥L hotkey both use this.
+
+set -euo pipefail
+
+export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH
+info=$(yabai -m query --spaces --space)
+if [[ $(jq -r '."is-native-fullscreen"' <<< "$info") == "true" ]]; then
+  current=FULL
+elif grep -qx -- "$(jq -r .index <<< "$info")" "$HOME/.local/state/aeris/grid-spaces" 2>/dev/null; then
+  current=GRID
+elif [[ $(jq -r .type <<< "$info") == "bsp" ]]; then
+  current=TILE
+else
+  current=FLOAT
+fi
+
+if [[ ${1:-} == "next" ]]; then
+  case $current in
+    TILE) exec "$HOME/.local/bin/grid" ;;
+    GRID) exec "$HOME/.local/bin/floating" ;;
+    FLOAT) exec "$HOME/.local/bin/tile" ;;
+    *) exit 0 ;; # a macOS full-screen space has no layout to change
+  esac
+else
+  echo "$current"
+fi

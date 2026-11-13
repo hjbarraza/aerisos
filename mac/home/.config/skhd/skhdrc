@@ -39,3 +39,6 @@ cmd - k : open -a ~/Applications/Keysheet.app
 
 # Move window to other display
 ctrl + alt - m : yabai -m window --display next || yabai -m window --display first
+
+# Cycle layout: tile, grid, float
+ctrl + alt - l : $HOME/.local/bin/layout next
