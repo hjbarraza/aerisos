@@ -14,10 +14,11 @@
 //   rule 324          broken by the gutter between the two columns
 //   heads 369 ...     WATCHLIST and WORLD as tables (date | topic or outlet | telegram, the
 //                     date only where it changes, unread marked in the margin), the cards
-//                     (key flush right against value) beside them; a head's rows follow it
-//                     directly, one blank row between groups, and the last feed row and the
-//                     last card row share a baseline (765)
-//   bottom row 819    build · power
+//                     beside them (keys on column 10, values on column 11; the login rows
+//                     the same way); a head's rows follow it directly, one blank row and a
+//                     hairline between groups, and the last feed row and the last card row
+//                     share a baseline (765)
+//   bottom row 819    build · power, under a hairline
 //
 // IDENTITY, WEATHER, NETWORK and SECURITY are left out on purpose: the login screen is
 // what people see when the laptop is left unattended. Alerts from status.json read inverted.
@@ -37,6 +38,7 @@ Rectangle {
     readonly property color grey: "#7a7a7a"
     readonly property color read: "#c8c8c8"                 // acknowledged telegrams
     readonly property color dim: "#3a3a3a"
+    readonly property color hairline: "#2a2a2a"
     readonly property string sans: config.Font || "Söhne"
     readonly property string mono: config.MonoFont || "Söhne Mono"
     readonly property string jp: config.JapaneseFont || "Source Han Sans JP"
@@ -48,8 +50,7 @@ Rectangle {
     readonly property real gridRight: 1504
     readonly property real feedRight: 1144                 // end of column 9
     readonly property real panel: 1176                     // column 10
-    readonly property real valueAt: 1296                   // column 11: card values, password
-    readonly property real keyEnd: 1286                    // card keys end 10 before their values
+    readonly property real valueAt: 1296                   // column 11: values, typed user and password
     readonly property real line: 18
     readonly property real topRow: 99
     readonly property real bottomRow: 819
@@ -238,33 +239,38 @@ Rectangle {
         }
     }
 
-    // Underlined input: caption 27 above the typed text, the rule 9 below it (by = the rule)
+    // Hairline between groups
+    component Rule: Rectangle {
+        property real x0: 0
+        property real x1: 0
+        property real y0: 0
+        x: x0 * root.s; y: y0 * root.s
+        width: (x1 - x0) * root.s; height: Math.max(1, root.s)
+        color: root.hairline
+    }
+
+    // A login row, laid out like a card row: key on column 10, the typed value on column 11
+    // over an underline 7 below its baseline
     component Field: Item {
         property alias input: field
         property string caption: ""
-        property real bx: 0
         property real by: 0
-        property real w: 128
-        x: bx * root.s
-        y: (by - 36) * root.s
-        width: w * root.s
-        height: 37 * root.s
-        Label { bx: 0; by: 0; text: parent.caption; color: field.activeFocus ? root.white : root.grey }
+        Label { bx: root.panel; by: parent.by; text: parent.caption }
         TextInput {
             id: field
-            x: 0
-            y: 27 * root.s - baselineOffset
-            width: parent.width
+            x: root.valueAt * root.s
+            y: parent.by * root.s - baselineOffset
+            width: (root.gridRight - root.valueAt) * root.s
             font.family: root.mono
-            font.pixelSize: 16 * root.s
-            font.letterSpacing: 2 * root.s
+            font.pixelSize: 12 * root.s
+            font.letterSpacing: 1.5 * root.s
             color: root.white
             selectionColor: root.grey
             clip: true
         }
         Rectangle {
-            y: 36 * root.s
-            width: parent.width
+            x: root.valueAt * root.s; y: (parent.by + 7) * root.s
+            width: (root.gridRight - root.valueAt) * root.s
             height: Math.max(1, root.s)
             color: field.activeFocus ? root.white : root.dim
             Behavior on color { ColorAnimation { duration: 150 } }
@@ -333,6 +339,7 @@ Rectangle {
 
             Head { bx: root.gridLeft; by: root.sectionTop; rightX: root.feedRight; en: "WATCHLIST"; fresh: root.watchFresh }
             Feed { by: root.sectionTop; rows: root.watch }
+            Rule { x0: root.gridLeft; x1: root.feedRight; y0: root.worldHead - 21 }
             Head { bx: root.gridLeft; by: root.worldHead; rightX: root.feedRight; en: "WORLD"; fresh: g("world", "fresh_news") + " · " + g("world", "via") }
             Feed { by: root.worldHead; rows: root.news }
 
@@ -342,12 +349,13 @@ Rectangle {
                     id: card
                     readonly property real cy: root.cardTops[index]
                     Head { bx: root.panel; by: card.cy; rightX: root.gridRight; en: modelData.en; fresh: modelData.fresh }
+                    Rule { visible: index > 0; x0: root.panel; x1: root.gridRight; y0: card.cy - 21 }
                     Repeater {
                         model: modelData.pairs
                         delegate: Item {
                             readonly property real ly: card.cy + (index + 1) * root.line
                             readonly property var cell: modelData
-                            Label { bx: root.keyEnd; by: parent.ly; alignRight: true; text: cell.k }
+                            Label { bx: root.panel; by: parent.ly; text: cell.k }
                             Value {
                                 bx: root.valueAt; by: parent.ly
                                 width: Math.min(implicitWidth, (root.gridRight - root.valueAt) * root.s)
@@ -378,8 +386,7 @@ Rectangle {
             Head { bx: root.panel; by: root.markBy - 3 * root.line; rightX: root.gridRight; en: "AUTHENTICATE" }
             Field {
                 id: userField
-                bx: root.panel; by: root.markBy
-                w: root.colEnd(10) - root.panel
+                by: root.markBy - 2 * root.line
                 caption: "USER"
                 input.text: userModel.lastUser
                 input.KeyNavigation.tab: passField.input
@@ -387,8 +394,7 @@ Rectangle {
             }
             Field {
                 id: passField
-                bx: root.valueAt; by: userField.by
-                w: root.gridRight - root.valueAt
+                by: root.markBy
                 caption: "PASSWORD"
                 input.echoMode: TextInput.Password
                 input.passwordCharacter: "•"
@@ -414,6 +420,8 @@ Rectangle {
             opacity: 0
             width: parent.width; height: parent.height
 
+            Rule { x0: root.gridLeft; x1: root.feedRight; y0: root.bottomRow - 21 }
+            Rule { x0: root.panel; x1: root.gridRight; y0: root.bottomRow - 21 }
             Label { bx: root.gridLeft; by: root.bottomRow; text: config.BuildLabel || "BUILD 2026.10" }
             Action {
                 bx: root.panel; by: root.bottomRow; text: "SLEEP"

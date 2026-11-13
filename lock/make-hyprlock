@@ -10,9 +10,10 @@ cards in columns 10-12 (1176-1504). Every text baseline sits on the 18 px grid 9
     tagline 297       and the lock status beside it
     rule 324          broken by the gutter between the two columns
     heads 369 ...     WATCHLIST and WORLD as tables (date | topic or outlet | telegram, unread
-                      marked in the margin), the cards (key flush right against value) beside
-                      them; the last feed row and the last card row share a baseline (765)
-    bottom row 819    build
+                      marked in the margin), the cards beside them (keys on column 10, values on
+                      column 11, the password laid out the same way); hairlines between groups;
+                      the last feed row and the last card row share a baseline (765)
+    bottom row 819    build, under a hairline
 
 IDENTITY, WEATHER, NETWORK and SECURITY are left out on purpose: the lock screen is what
 people see when the laptop is left unattended.
@@ -34,6 +35,7 @@ LS_K = 1.6 * 1024       # design px -> letter_spacing: Pango takes 1/1024 device
 ASCENT = {"Söhne Mono": 1.037, "Söhne": 1.171, "Source Han Sans JP": 1.160}   # hhea ascender / em
 MONO, SANS, JP = "Söhne Mono", "Söhne", "Source Han Sans JP"
 WHITE, GREY, READ, DIM = "rgba(ffffffff)", "rgba(7a7a7aff)", "rgba(c8c8c8ff)", "rgba(3a3a3aff)"
+HAIRLINE = "rgba(2a2a2aff)"
 FIELD = os.path.expanduser("~/.local/bin/aeris-lock-field")
 REFRESH = 15000
 
@@ -44,7 +46,7 @@ def col(n):
 GRID_LEFT, GRID_RIGHT = 96, 1504
 FEED_RIGHT = 1144                # end of column 9
 PANEL = col(10)                  # 1176
-VALUE_AT, KEY_END = col(11), col(11) - 10   # card values (and the password) on column 11
+VALUE_AT = col(11)               # keys on column 10, values (and the password) on column 11
 FEED_COLS = (col(1), col(2), col(4))         # date | topic or outlet | telegram
 LINE = 18
 TOP_ROW, BOTTOM_ROW = 99, 819
@@ -124,12 +126,20 @@ def head(x, by, name, right, fresh):
     label("", right, by, 11, right=True, cmd=fresh)
 
 
-def card(cy, name, pairs, fresh):
-    """One right-column card: its rows directly under the head, the key flush right against
-    its value. Returns the next card's head, one blank row further."""
+def hairline(x0, x1, by):
+    """The hairline above a group's head (or the bottom row), 21 above its baseline."""
+    rule(x0, by - 21, x1 - x0, 1, HAIRLINE)
+
+
+def card(cy, name, pairs, fresh, first=False):
+    """One right-column card: its rows directly under the head, keys on column 10, values on
+    column 11, a hairline above unless it opens the column. Returns the next card's head, one
+    blank row further."""
+    if not first:
+        hairline(PANEL, GRID_RIGHT, cy)
     head(PANEL, cy, name, GRID_RIGHT, fresh)
     for i, (key, field) in enumerate(pairs, 1):
-        label(key, KEY_END, cy + i * LINE, 11, right=True)
+        label(key, PANEL, cy + i * LINE, 11)
         label("", VALUE_AT, cy + i * LINE, 12, color=WHITE, spacing=1.5, cmd=field)
     return cy + (len(pairs) + 2) * LINE
 
@@ -168,6 +178,7 @@ for i in range(1, WATCH_ROWS + 1):
     label("", FEED_COLS[1], ly, 11, cmd=f"watch.{i}t")
     label("", FEED_COLS[2], ly, 12, spacing=1.5, cmd=f"watch.{i}h", fg=f"watch.{i}hc")
 
+hairline(GRID_LEFT, FEED_RIGHT, WORLD_HEAD)
 head(GRID_LEFT, WORLD_HEAD, "WORLD", FEED_RIGHT, "fresh.news")
 for i in range(1, NEWS_ROWS + 1):
     ly = WORLD_HEAD + i * LINE
@@ -178,7 +189,7 @@ for i in range(1, NEWS_ROWS + 1):
 # Cards in the right column, under the password
 cy = SECTION_TOP
 cy = card(cy, "LOCATION", [("LAT", "location.lat"), ("LON", "location.lon"),
-                           ("UTC", "location.utc")], "fresh.location")
+                           ("UTC", "location.utc")], "fresh.location", first=True)
 cy = card(cy, "AIRSPACE", [("TRAFFIC", "air.traffic"), ("NEAREST", "air.nearest"),
                            ("GNSS", "air.gnss"), ("SQUAWK", "air.squawk")], "fresh.airspace")
 cy = card(cy, "ORBIT", [("ISS", "orbit.iss"), ("CSS", "orbit.css"),
@@ -187,13 +198,15 @@ cy = card(cy, "ORBIT", [("ISS", "orbit.iss"), ("CSS", "orbit.css"),
                         ("T-0", "orbit.t0")], "fresh.orbit")
 card(cy, "INTERNET", [("OUTAGES", "internet.outages"), ("PING", "internet.ping")], "fresh.internet")
 
-# Password: field rules on the wordmark's baseline, captions 36 above, status on the tagline's
+# Login rows laid out like card rows: USER two lines above PASSWORD, whose dots sit on the
+# wordmark's baseline; underlines 7 below, under the value column; status on the tagline's
+user_by = MARK_BY - 2 * LINE
 label("//  AUTHENTICATE", PANEL, MARK_BY - 3 * LINE, 11, color=WHITE)
-label("USER", PANEL, MARK_BY - 2 * LINE, 11)
-label(getpass.getuser(), PANEL, MARK_BY - 9, 16, color=WHITE, spacing=2)
-rule(PANEL, MARK_BY, col(10) + 88 - PANEL, 1, DIM)
-label("PASSWORD", VALUE_AT, MARK_BY - 2 * LINE, 11, color=WHITE)
-rule(VALUE_AT, MARK_BY, GRID_RIGHT - VALUE_AT, 1, WHITE)
+label("USER", PANEL, user_by, 11)
+label(getpass.getuser(), VALUE_AT, user_by, 12, color=WHITE, spacing=1.5)
+rule(VALUE_AT, user_by + 7, GRID_RIGHT - VALUE_AT, 1, DIM)
+label("PASSWORD", PANEL, MARK_BY, 11)
+rule(VALUE_AT, MARK_BY + 7, GRID_RIGHT - VALUE_AT, 1, WHITE)
 out.append(f"""input-field {{
     monitor =
     size = {px(GRID_RIGHT - VALUE_AT)}, {py(28)}
@@ -211,7 +224,7 @@ out.append(f"""input-field {{
     dots_size = 0.22
     dots_spacing = 0.4
     dots_center = false
-    position = {px(VALUE_AT)}, -{py(MARK_BY - 9 - 5 - 14)}
+    position = {px(VALUE_AT)}, -{py(MARK_BY - 5 - 14)}
     halign = left
     valign = top
 }}
@@ -219,7 +232,9 @@ out.append(f"""input-field {{
 label("AWAITING AUTHENTICATION", PANEL, TAG_BY, 11)
 label("ENTER →", GRID_RIGHT, TAG_BY, 11, right=True)
 
-# Bottom row
+# Bottom row, under hairlines in both columns
+hairline(GRID_LEFT, FEED_RIGHT, BOTTOM_ROW)
+hairline(PANEL, GRID_RIGHT, BOTTOM_ROW)
 label("BUILD 2026.10", GRID_LEFT, BOTTOM_ROW, 11)
 
 

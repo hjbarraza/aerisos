@@ -42,7 +42,7 @@ layout, a Swiss grid since 2026-11-13: 12 columns on a 120 step from x=96 in the
 design space, every baseline on 9 + 18n. Feeds (WATCHLIST + WORLD) in columns 1-9 as tables
 (date | topic or outlet | telegram, date only where it changes, unread = square in the
 margin), password and cards (LOCATION, AIRSPACE, ORBIT incl. SATS/LAUNCH/T-0, INTERNET) in
-columns 10-12; the grid is documented at the top of `Main.qml` and `make-hyprlock`. The
+columns 10-12 as one table (keys on column 10, values on column 11, hairlines between groups); the grid is documented at the top of `Main.qml` and `make-hyprlock`. The
 formatted feed rows are built once in the collector (`watch_feed`, `telegram_feed`; telegrams
 cut to `FEED_WIDTH` 78, the telegram column) and published to `status.json` (`watch.rows`/
 `watch.fresh`, `world.telegrams`, split by the login QML) and, already split into cells by
