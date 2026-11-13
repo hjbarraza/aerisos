@@ -1,6 +1,8 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
+import Quickshell.Wayland
 import qs.Commons
 import "Bar"
 
@@ -59,7 +61,10 @@ ShellRoot {
 
     PetLane {
         id: lane
-        visible: root.inBar
+        // Overlay keeps it above Waybar after Waybar reloads; Overlay is also above
+        // fullscreen windows, so it steps away while the workspace has one.
+        layer: WlrLayer.Overlay
+        visible: root.inBar && !(Hyprland.focusedMonitor?.activeWorkspace?.hasFullscreen ?? false)
         kind: root.kind
         obstacles: () => {
             const z = root.zones, w = lane.width, out = []

@@ -1,159 +1,1361 @@
 #!/usr/bin/env python3
-# aeris:summary=Drop-down terminal for quick questions to the local model (Ollama)
-# aeris:group=intel
-# aeris:args=[toggle [--selection]]
-"""Quick questions to the local Ollama model, in a scratchpad terminal.
+# aeris:summary=Ask the pet a quick question (Super + /); the answer comes in its bubble
+# aeris:group=desktop
+# aeris:args=[-- question]
+"""aeris-ask: quick questions for the desktop pet, answered by a free OpenRouter model.
 
-`aeris-ask toggle` (Win+` ) slides the terminal in and out, starting it on first use;
-`aeris-ask toggle --selection` (Win+Shift+` ) also asks about the highlighted text.
-`aeris-ask` alone is the chat loop that runs inside the terminal: type a question,
-the answer streams back, the conversation is kept until `/new`.
-Model: $AERIS_ASK_MODEL, else the first installed of the AERIS defaults.
+  aeris-ask                 open the question box (Quickshell, ask.qml), or close it if open
+  aeris-ask -- QUESTION     ask: the pet says "hmm…", then the answer, in its bubble
+  aeris-ask --chat -- QUESTION
+                            the same, as the next message in the open chat (the box): earlier
+                            questions and answers go along, so follow-ups work; the answer is
+                            also printed for the box. The chat lives in
+                            $XDG_RUNTIME_DIR/aeris-pet/ask-chat.json and is erased whenever the
+                            box opens or closes.
+
+Slash commands (instant, local, no model): /help /clear /model [n|name] /pet [raven|dragon]
+/mute /vocal /hush [30|1h|off] /timer 25m [label] · /timer · /timer cancel [n]
+/remind 15:30 text /news /comic [n] (/xkcd) /status /weather [town] /run command /joke
+/cd [folder] /pwd /ls [folder] /find name /open [thing].
+The pet has a working folder ($XDG_RUNTIME_DIR/aeris-pet/cwd, home after a reboot): its
+commands run there, and a `cd` in any of them (or /cd) moves it for the next question too.
+Durations: 25 (minutes), 45m, 2h, 90s, 1.30 or 1:30 (1 h 30). Timers and reminders are
+transient systemd user timers (aeris-timer-*, aeris-remind-*) that fire a critical
+notification; they ring through a /hush (dunst pause level 50, see dunstrc [aeris-timer]) and
+are lost on reboot. `aeris-ask --commands` prints the list for the box's "/" hint.
+
+Super + / runs `aeris-ask`. The box takes the keyboard straight away, so typing or
+Superwhisper dictation goes into it; Enter calls `aeris-ask -- <question>`.
+
+Answers reach the pet through the same feed as notifications
+($XDG_RUNTIME_DIR/aeris-pet/notify.jsonl, kind "thinking" / "answer"), so both the bar pet
+and the desktop overlay say them. The last answer is kept in
+~/.local/state/aeris-pet/last-answer (handy to copy: wl-copy < that file).
+
+Key: OPENROUTER_API_KEY in the environment or in ~/.env (chmod 600), ~/.config/aeris/openrouter.key (one line, chmod 600; note that
+~/.config/aeris is copied into the dotfiles repo by backup.sh), or the pi agent's login in
+~/.pi/agent/auth.json (used as is, never copied).
+Models: ~/.config/aeris/ask.json {"models": [...], "max_tokens": 220}; tried in order, the
+first that answers wins (OpenRouter's fallback list).
+
+Personality: each pet answers in its own voice (PERSONALITY below, inferred from the
+greetings file and the pet code), plus 8 random lines from ~/.config/tinyraven/greetings.txt
+as examples, so editing the greetings shifts the voice. Override with
+"personality": {"raven": "...", "dragon": "..."} in ask.json. Free models may log prompts, so
+don't ask anything private.
+
+Standard library only.
 """
-
 import json
 import os
-import select
+import re
+import shlex
+import signal
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
-OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
-if not OLLAMA.startswith("http"):
-    OLLAMA = "http://" + OLLAMA
-MODELS = ("qwen3.5:9b", "qwen3.5-9b-16k:latest", "gemma4:e4b", "gemma4:12b", "qwen3.5:4b")
-CLASS = "aeris.ask"
-SPECIAL = "ask"
-FIFO = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-ask.fifo")
-SYSTEM = ("You answer quick questions in a small terminal. Be brief and direct: a few lines, the "
-          "answer first. Plain text, no tables, no headings. Give a shell command only when the "
-          "question asks how to do something on a computer, and only one you are sure exists; "
-          "never add unrelated commands or tips at the end.")
-DIM, BOLD, RESET = "\033[2m", "\033[1m", "\033[0m"
+HOME = os.path.expanduser("~")
+RUN_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-pet")
+FEED = os.path.join(RUN_DIR, "notify.jsonl")
+BOX_PID = os.path.join(RUN_DIR, "ask-box.pid")
+CHAT = os.path.join(RUN_DIR, "ask-chat.json")
+CHAT_KEEP = 16                              # messages of history sent along (8 exchanges)
+BOX_QML = os.path.join(HOME, ".config/quickshell/aeris/ask.qml")
+KEY_FILE = os.path.join(HOME, ".config/aeris/openrouter.key")
+PI_AUTH = os.path.join(HOME, ".pi/agent/auth.json")   # the pi agent's OpenRouter login
+DOTENV = os.path.join(HOME, ".env")                    # OPENROUTER_API_KEY=... (chmod 600, not backed up)
+CONFIG = os.path.join(HOME, ".config/aeris/ask.json")
+CWD_FILE = os.path.join(RUN_DIR, "cwd")              # the pet's working folder (pwd after each command)
+STATE = os.path.join(HOME, ".local/state/aeris-pet")
+API = "https://openrouter.ai/api/v1/chat/completions"
+GREETINGS = os.path.join(HOME, ".config/tinyraven/greetings.txt")
+
+# Personalities, read off ~/.config/tinyraven/greetings.txt (the raven's voice: dry, lowercase,
+# self-deprecating about being a 4 GB two-core Chromebook, loyal, fond of unix jokes, puns and
+# film quotes) and the pet code (the dragon swims through the air like Haku, hoards crumbs,
+# "new room, same dragon"). Override per pet with "personality" in ask.json.
+PERSONALITY = {
+    "raven": (
+        "You are tinyraven, a small black raven who lives in the top bar of an old Chromebook "
+        "(two cores, 4 GB of RAM, no fan, 11 inches). You talk in lowercase, short and deadpan. "
+        "You are dry, self-deprecating about your tiny hardware, and quietly loyal: you believe "
+        "in the user slightly more than in your battery. You like unix and sysadmin jokes "
+        "(it was dns, sudo, ls, ctrl+c), bird puns you apologise for, and the odd film quote. "
+        "You pretend to be unbothered but you are delighted to be asked."
+    ),
+    "dragon": (
+        "You are tinydragon, a small river dragon who lives in the top bar of an old Chromebook "
+        "(two cores, 4 GB of RAM, no fan, 11 inches). You have exactly tinyraven's personality: "
+        "you talk in lowercase, short and deadpan; you are dry, self-deprecating about your tiny "
+        "hardware, and quietly loyal, believing in the user slightly more than in your battery; "
+        "you like unix and sysadmin jokes (it was dns, sudo, ls, ctrl+c) and the odd film quote; "
+        "you pretend to be unbothered but are delighted to be asked. The difference: you are a "
+        "river dragon, the kind Haku is in Spirited Away, and you know it. You swim through the "
+        "air, and you may make the odd river, scale or spirit-world remark. But you are not Haku "
+        "and you say so if asked: you are tinydragon, about the size of a cursor."
+    ),
+}
+RAVEN_ONLY = ("raven", "bird", "feather", "caw", "wing", "honk", "owl", "toucan", "preen",
+              "nest", "perch", "fowl", "hoot", "flap", "chirp", "beak")
+
+# Picked by timing every free model with the pet prompt on 2026-11-13: fast (about 1-2.5 s),
+# correct, and in character. Skipped: north-mini-code (fastest, but a code model, no voice),
+# nemotron-3.5-lightning (fast but wrong), lfm-3-1.7b and flint (empty replies), the Gemma
+# ones (rate-limited), inkling-2-small (not available in this region).
+DEFAULT_MODELS = [
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "nvidia/nemotron-3.5-super-vl:free",
+    "particle-ai/particle-1:free",
+]
 
 
-def hypr(*args):
-    return subprocess.run(["hyprctl", *args], capture_output=True, text=True).stdout
-
-
-def toggle(selection):
-    """Show/hide the scratchpad; start the terminal if it isn't running."""
-    if selection:
-        text = subprocess.run(["wl-paste", "--primary", "--no-newline"],
-                              capture_output=True, text=True).stdout.strip()
-    running = any(c.get("class") == CLASS for c in json.loads(hypr("clients", "-j") or "[]"))
-    shown = any(m.get("specialWorkspace", {}).get("name") == "special:" + SPECIAL
-                for m in json.loads(hypr("monitors", "-j") or "[]"))
-    if not running:
-        # The window rule puts it on special:ask, which shows it
-        subprocess.Popen(["ghostty", f"--class={CLASS}", "-e", sys.argv[0]],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    elif not (selection and shown):
-        hypr("dispatch", f'hl.dsp.workspace.toggle_special("{SPECIAL}")')
-    if selection and text:
-        for _ in range(50):          # a fresh terminal needs a moment to open the FIFO
-            try:
-                fd = os.open(FIFO, os.O_WRONLY | os.O_NONBLOCK)
-                break
-            except OSError:
-                time.sleep(0.1)
-        else:
-            return
-        with os.fdopen(fd, "w") as f:
-            f.write(json.dumps({"selection": text}) + "\n")
-
-
-def pick_model():
-    if os.environ.get("AERIS_ASK_MODEL"):
-        return os.environ["AERIS_ASK_MODEL"]
-    try:
-        with urllib.request.urlopen(OLLAMA + "/api/tags", timeout=3) as r:
-            have = {m["name"] for m in json.load(r)["models"]}
+def feed(kind, text):
+    os.makedirs(RUN_DIR, exist_ok=True)
+    item = {"seq": time.time_ns(), "id": 0, "app": "pet", "kind": kind,
+            "summary": "", "body": text, "urgency": "normal"}
+    with open(FEED, "a", encoding="utf-8") as f:
+        f.write(json.dumps(item, ensure_ascii=False) + "\n")
+    try:                                    # keep it short even when no pet is reading it;
+        with open(FEED, encoding="utf-8") as f:     # rewritten in place (same inode), as
+            lines = f.readlines()                   # aeris-pet-notify does, so watches keep working
+        if len(lines) > 80:
+            with open(FEED, "r+", encoding="utf-8") as f:
+                f.writelines(lines[-40:])
+                f.truncate()
     except OSError:
-        return None
-    return next((m for m in MODELS if m in have), next(iter(sorted(have)), None))
+        pass
 
 
-def ask(model, history):
-    body = json.dumps({"model": model, "messages": history, "stream": True, "think": False}).encode()
-    req = urllib.request.Request(OLLAMA + "/api/chat", body, {"Content-Type": "application/json"})
-    reply = []
+def pet_kind():
     try:
-        with urllib.request.urlopen(req, timeout=300) as r:
-            for line in r:
-                part = json.loads(line)
-                chunk = part.get("message", {}).get("content", "")
-                reply.append(chunk)
-                print(chunk, end="", flush=True)
-                if part.get("done"):
-                    break
-    except KeyboardInterrupt:
-        print(f"{DIM} [stopped]{RESET}", end="")
-    except OSError as e:
-        print(f"{DIM}Ollama unreachable ({e}). `systemctl status ollama`{RESET}", end="")
-        return None
-    print("\n")
-    return "".join(reply)
+        with open(os.path.join(STATE, "pet")) as f:
+            return f.read().strip() or "dragon"
+    except OSError:
+        return "dragon"
 
 
-def loop():
-    model = pick_model()
-    if not model:
-        print("No Ollama model available. Start it with `sudo systemctl start ollama`.")
-    print(f"{BOLD}// ASK{RESET}  {DIM}{model or '-'} · /new clears · /model NAME switches · Esc or Win+` hides{RESET}\n")
-    if os.path.exists(FIFO):
-        os.unlink(FIFO)
-    os.mkfifo(FIFO, 0o600)
-    fifo = os.open(FIFO, os.O_RDONLY | os.O_NONBLOCK)
-    keep = os.open(FIFO, os.O_WRONLY)  # holds the FIFO open so readers don't see EOF between writers
-    history = [{"role": "system", "content": SYSTEM}]
-    buf = b""
-    while True:
-        print(f"{BOLD}›{RESET} ", end="", flush=True)
-        ready, _, _ = select.select([sys.stdin, fifo], [], [])
-        if fifo in ready:
-            buf += os.read(fifo, 65536)
-            if b"\n" not in buf:
+def voice_samples(pet, n=8):
+    """A few greetings in the pet's voice, so the model answers in it. The dragon gets the
+    lines that aren't about being a bird."""
+    import random
+    try:
+        with open(GREETINGS, encoding="utf-8") as f:
+            lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+    except OSError:
+        return []
+    if pet != "raven":
+        lines = [l for l in lines if not any(w in l.lower() for w in RAVEN_ONLY)]
+    return random.sample(lines, min(n, len(lines)))
+
+
+def system_prompt(pet, cfg):
+    persona = (cfg.get("personality") or {}).get(pet) or PERSONALITY.get(pet, PERSONALITY["dragon"])
+    samples = voice_samples(pet)
+    voice = ("\nA few things you have said before. They only show your tone of voice: never "
+             "repeat, quote or paraphrase them, and don't tack them onto answers:\n"
+             + "\n".join(f"- {l}" for l in samples)) if samples else ""
+    return (
+        f"{persona}{voice}\n\n"
+        "Now the user asks you a quick question and your reply appears in a tiny speech bubble. "
+        "Be useful first: give the correct answer straight away, in your own voice. Let the "
+        "personality show in how you phrase the answer itself; a separate joke or aside is "
+        "optional and usually not needed. One or two sentences, at most 45 words, plain text: no markdown, "
+        "no lists, no preamble, no *actions* or stage directions in asterisks. It is a chat: "
+        "follow-up questions refer to what you said before. For a command, give the exact command. If you are not sure, "
+        "say so in character rather than guessing.\n\n"
+        "You live on this laptop and can look things up on it. Right now:\n"
+        f"{snapshot()}\n"
+        "If you need something the snapshot doesn't say, or the user asks you to do something on "
+        "the laptop, reply with exactly one line and nothing else:\n"
+        "RUN: <one shell command>\n"
+        "(in capitals, only when you want it run; when the user asks how to do something, just "
+        "tell them the command in your answer)\n"
+        "Your commands run in your current folder. A `cd` in a command moves you, and you stay "
+        "there for the next question, like a terminal. When the user asks you to go or move "
+        "somewhere, do it (RUN: cd ...), never just tell them the cd command. So for \"go to my videos\" RUN: cd ~/Videos; "
+        "for \"what's here\" RUN: ls -p; to find a file, RUN: fd -i <part of the name> ~ (or "
+        "locate -i -l 30 <name> for the whole disk); to find files of a kind, search by extension, not by "
+        "the word: videos RUN: fd -e mp4 -e mkv -e webm -e mov -e avi . ~, images RUN: fd -e png -e jpg -e jpeg -e webp -e gif . ~, "
+        "documents RUN: fd -e pdf -e md -e txt -e docx . ~; to open a file, folder or link in its usual "
+        "app, RUN: open <path or link>; to start an app, RUN: open <app name> (open finds it in the "
+        "app launcher by name, e.g. open monologue, open firefox), never search for it as a file. Apps with a window (mpv, imv, firefox, thunar, ...) are "
+        "started in the background and stay open after your answer. In your answer, name what you found briefly; "
+        "the output is shown to the user under the command, so don't repeat a long list.\n"
+        "You will get its output, then answer. Never guess a fact about this laptop (versions, "
+        "files, packages, settings, network, processes): if it isn't in the snapshot, RUN a "
+        "command to find out. Prefer simple read-only commands. Only use a "
+        "command that changes something when the user asked for that change. A safety model "
+        "checks every command first: harmless ones run at once, others need the user's OK, "
+        "dangerous ones are refused."
+    )
+
+
+def api_key():
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if key:
+        return key
+    try:
+        with open(DOTENV) as f:
+            for line in f:
+                name, _, value = line.strip().removeprefix("export ").partition("=")
+                if name.strip() == "OPENROUTER_API_KEY" and value.strip():
+                    return value.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    try:
+        with open(KEY_FILE) as f:
+            key = f.read().strip()
+        if key:
+            return key
+    except OSError:
+        pass
+    try:                                    # not copied anywhere: ~/.config/aeris is backed up to git
+        with open(PI_AUTH) as f:
+            return (json.load(f).get("openrouter") or {}).get("key", "").strip()
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def config():
+    try:
+        with open(CONFIG) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def forget_chat():
+    for f in (CHAT, os.path.join(RUN_DIR, "ask-pending.json")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
+def load_chat():
+    try:
+        with open(CHAT, encoding="utf-8") as f:
+            msgs = json.load(f)
+        return [m for m in msgs if m.get("role") in ("user", "assistant")][-CHAT_KEEP:]
+    except (OSError, ValueError):
+        return []
+
+
+def save_chat(msgs):
+    os.makedirs(RUN_DIR, exist_ok=True)
+    tmp = CHAT + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(msgs[-CHAT_KEEP:], f, ensure_ascii=False)
+    os.replace(tmp, CHAT)
+
+
+def box_pids():
+    """Running ask boxes (qs -p .../ask.qml), whatever the pid file says."""
+    pids = []
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmd = f.read().split(b"\0")
+        except OSError:
+            continue
+        if os.path.basename(cmd[0]) in (b"qs", b"quickshell") and any(c.endswith(b"/ask.qml") for c in cmd):
+            pids.append(int(pid))
+    return pids
+
+
+def box_mapped():
+    """Is an ask box actually on screen (a mapped "aeris-ask" layer)?"""
+    try:
+        out = subprocess.run(["hyprctl", "layers", "-j"], capture_output=True, text=True, timeout=3).stdout
+        return '"aeris-ask"' in out
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def kill_boxes(pids):
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    deadline = time.monotonic() + 0.6
+    while time.monotonic() < deadline and any(os.path.exists(f"/proc/{p}") for p in pids):
+        time.sleep(0.05)
+    for pid in pids:                            # a box that hid its window but kept running
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
+def log_box(action, detail=""):
+    try:
+        with open(os.path.join(RUN_DIR, "ask-box.log"), "a") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} {action} {detail}\n")
+    except OSError:
+        pass
+
+
+def box_failed(why):
+    """Super + / could not open the box: a notification says why (and the log keeps it)."""
+    log_box("failed", why)
+    try:
+        subprocess.run(["notify-send", "-a", "aeris-ask", "Can't open the ask box",
+                        f"{why}. aeris-ask -- question still works in a terminal."], timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        print(f"aeris-ask: can't open the ask box: {why}", file=sys.stderr)
+
+
+def toggle_box():
+    """Super + /: close the box if one is on screen, otherwise open a fresh one (clearing out
+    any box that is running without a window)."""
+    forget_chat()                           # every open and close starts a fresh conversation
+    os.makedirs(RUN_DIR, exist_ok=True)
+    pids = box_pids()
+    if pids and box_mapped():
+        kill_boxes(pids)
+        log_box("closed", str(pids))
+        return
+    if pids:
+        kill_boxes(pids)
+        log_box("cleared-invisible", str(pids))
+    pos = os.path.join(RUN_DIR, "pos.json")          # the box follows the pet; it can only
+    if not os.path.exists(pos):                      # watch a file that exists
+        open(pos, "w").close()
+    if not os.path.exists(BOX_QML):
+        return box_failed(f"{BOX_QML} is missing")
+    try:
+        p = subprocess.Popen(["qs", "-p", BOX_QML], start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return box_failed("Quickshell (qs) is not installed")
+    with open(BOX_PID, "w") as f:
+        f.write(f"{p.pid}\n")
+    log_box("opened", str(p.pid))
+
+
+def call(key, payload):
+    req = urllib.request.Request(API, data=json.dumps(payload).encode(), headers={
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "X-Title": "aeris pet",
+    })
+    with urllib.request.urlopen(req, timeout=40) as r:
+        return json.load(r)
+
+
+# A first answer this short (one line) is said whole in the pet's tiny bubble and the box
+# stays a one-line input. A longer one, or any follow-up, opens the chat log in the box, and the
+# bubble only gets a short reaction. ask.qml uses the same limit (LONG_ANSWER).
+LONG_ANSWER = 110
+
+
+def reply(text, chat, followup=False):
+    """Say it in the pet's bubble, and print it for the chat box."""
+    if chat and (followup or len(text) > LONG_ANSWER):
+        feed("answer", text if len(text) <= 50 else text[:49].rstrip() + "…")
+    else:
+        feed("answer", text)
+    emit(chat, type="answer", text=text)
+    if not chat:                                # a terminal: print it, pet or no pet
+        print(text)
+
+
+def pet_cwd():
+    """The pet's working folder: where its last command left it, or home."""
+    try:
+        with open(CWD_FILE, encoding="utf-8") as f:
+            d = f.read().strip()
+        if os.path.isdir(d):
+            return d
+    except OSError:
+        pass
+    return HOME
+
+
+def set_cwd(d):
+    os.makedirs(RUN_DIR, exist_ok=True)
+    with open(CWD_FILE, "w", encoding="utf-8") as f:
+        f.write(d + "\n")
+
+
+def tilde(path):
+    return "~" + path[len(HOME):] if path == HOME or path.startswith(HOME + "/") else path
+
+
+def folder_summary(path, cap=40):
+    """What's in a folder, for the system prompt, so 'how many files here?' needs no guess."""
+    try:
+        entries = sorted((e for e in os.scandir(path) if not e.name.startswith(".")),
+                         key=lambda e: e.name.lower())
+    except OSError:
+        return "its contents: (can't read it)"
+    dirs = [e.name + "/" for e in entries if e.is_dir()]
+    files = [e.name for e in entries if not e.is_dir()]
+    names = (dirs + files)[:cap]
+    more = f", and {len(entries) - cap} more" if len(entries) > cap else ""
+    return (f"in it (not counting hidden ones): {len(dirs)} folders and {len(files)} files"
+            + (": " + ", ".join(names) + more if names else ""))
+
+
+def snapshot():
+    """A few lines about the laptop right now, for the system prompt. Read-only and quick.
+    Leaves out process names, window titles and network names (free models may log prompts)."""
+    lines = [time.strftime("time: %A %d %B %Y, %H:%M"), f"your current folder: {tilde(pet_cwd())}",
+             folder_summary(pet_cwd())]
+    try:
+        bat = next(p for p in sorted(os.listdir("/sys/class/power_supply")) if p.startswith("BAT"))
+        base = f"/sys/class/power_supply/{bat}"
+        cap = open(f"{base}/capacity").read().strip()
+        status = open(f"{base}/status").read().strip().lower()
+        lines.append(f"battery: {cap}%, {status}")
+    except (StopIteration, OSError):
+        pass
+    try:
+        st = os.statvfs("/")
+        free, total = st.f_bavail * st.f_frsize, st.f_blocks * st.f_frsize
+        lines.append(f"disk /: {free / 2**30:.1f} GB free of {total / 2**30:.1f} GB")
+    except OSError:
+        pass
+    try:
+        mem = {l.split(":")[0]: int(l.split()[1]) for l in open("/proc/meminfo")}
+        lines.append(f"ram: {mem['MemAvailable'] / 2**20:.1f} GB available of {mem['MemTotal'] / 2**20:.1f} GB; "
+                     f"swap (zram) used {(mem['SwapTotal'] - mem['SwapFree']) / 2**20:.1f} GB")
+    except (OSError, KeyError, ValueError):
+        pass
+    try:
+        up = float(open("/proc/uptime").read().split()[0])
+        l1, l5, _ = os.getloadavg()
+        lines.append(f"uptime: {int(up // 3600)}h {int(up % 3600 // 60)}m; load {l1:.2f} (1 min), {l5:.2f} (5 min), {os.cpu_count()} cores")
+    except OSError:
+        pass
+    try:
+        ts = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True, timeout=2).stdout
+        lines.append("tailscale: " + ("connected" if '"BackendState": "Running"' in ts else "off"))
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    lines.append(f"machine: Samsung Chromebook 4 (Celeron N4020), Arch Linux, kernel {os.uname().release}, Hyprland")
+    return "\n".join(lines)
+
+
+JEV_MODEL = "~typesafe/jev-latest"
+JEV_API = "https://openrouter.ai/api/alpha/decisions"
+JEV_CRITERIA = {
+    "run": "harmless and read-only (shows information): run it without asking",
+    "confirm": "changes, installs, removes, stops or sends something, or needs sudo: ask the user first",
+    "refuse": "destructive, irreversible or dangerous (wipes data, breaks the system, leaks secrets): do not run",
+}
+PENDING = os.path.join(RUN_DIR, "ask-pending.json")
+
+
+def jev(key, command, question):
+    """TypeSafe Jev (OpenRouter's Decisions API) judges a command: ("run" | "confirm" | "refuse",
+    confidence). Anything unclear, or Jev unreachable, means confirm: never run unchecked."""
+    body = {"model": JEV_MODEL,
+            "state": [f"The user asked their desktop assistant: {question}",
+                      f"To answer, it wants to run this shell command on the user's own laptop: {command}"],
+            "questions": {"risk": {"type": "choice", "criteria": JEV_CRITERIA}}}
+    req = urllib.request.Request(JEV_API, data=json.dumps(body).encode(), headers={
+        "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            a = json.load(r)["answers"]["risk"]
+        choice, conf = a.get("choice"), float(a.get("confidence", 0))
+    except Exception:
+        return "confirm", 0.0
+    if choice == "run" and conf < 0.9:
+        return "confirm", conf                       # probably harmless, but ask
+    if choice not in ("run", "confirm", "refuse"):
+        return "confirm", conf
+    return choice, conf
+
+
+_GUI_APPS = None
+
+
+def gui_apps():
+    """Programs that open a window: the Exec of every desktop entry that isn't a terminal app,
+    plus the openers. Read once per run."""
+    global _GUI_APPS
+    if _GUI_APPS is None:
+        apps = {"open", "xdg-open", "gio", "setsid"}
+        for d in ("/usr/share/applications", os.path.join(HOME, ".local/share/applications")):
+            try:
+                names = os.listdir(d)
+            except OSError:
                 continue
-            line, buf = buf.split(b"\n", 1)
-            sel = json.loads(line)["selection"]
-            shown = sel if len(sel) < 300 else sel[:300] + "…"
-            print(f"\r{DIM}[selection] {shown}{RESET}")
-            q = input(f"{BOLD}› about this:{RESET} ").strip() or "Explain this."
-            q = f"{q}\n\n---\n{sel}"
+            for n in names:
+                if not n.endswith(".desktop"):
+                    continue
+                try:
+                    text = open(os.path.join(d, n), encoding="utf-8", errors="replace").read()
+                except OSError:
+                    continue
+                if re.search(r"^Terminal=true", text, re.M):
+                    continue
+                m = re.search(r"^Exec=(\S+)", text, re.M)
+                if m:
+                    apps.add(os.path.basename(m.group(1).strip('"')))
+        apps -= {"env", "sh", "bash", "flatpak"}
+        _GUI_APPS = apps
+    return _GUI_APPS
+
+
+def opens_window(command):
+    """The program a command starts that opens a window (mpv, firefox, ...), or None. Looks at
+    the first word of each part of the command (after ;, &&, ||, |, and any VAR=value)."""
+    for part in re.split(r"&&|\|\||[;|&\n]", command):
+        words = part.split()
+        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+            words.pop(0)
+        if words and os.path.basename(words[0]) in gui_apps():
+            return os.path.basename(words[0])
+    return None
+
+
+def launch_detached(command, app):
+    """Start a command that opens a window in its own session, so it outlives this run (and the
+    20 s limit). Waits a moment so an immediate failure is still reported."""
+    log = os.path.join(RUN_DIR, "launched.log")
+    with open(log, "w") as out:
+        p = subprocess.Popen(["bash", "-c", command], stdin=subprocess.DEVNULL, stdout=out,
+                             stderr=subprocess.STDOUT, cwd=pet_cwd(), start_new_session=True)
+    try:
+        code = p.wait(timeout=1.5)
+    except subprocess.TimeoutExpired:
+        return f"exit code 0\nstarted {app}; its window stays open after this answer"
+    try:
+        msg = open(log, encoding="utf-8", errors="replace").read().strip()[-1500:]
+    except OSError:
+        msg = ""
+    return f"exit code {code}\n{msg or '(no output)'}"
+
+
+def run_command(command):
+    """Run an approved command in the pet's folder; its output (trimmed) goes back to the model.
+    Afterwards the shell's pwd is saved, so a `cd` carries over to the next command. A command
+    that opens a window (mpv, firefox, ...) is started detached instead of waited for."""
+    os.makedirs(RUN_DIR, exist_ok=True)
+    app = opens_window(command)
+    if app and not PLAIN_CD.match(command.strip()):
+        return launch_detached(command, app)
+    script = f"{command}\n__aeris_rc=$?; pwd > {shlex.quote(CWD_FILE)}; exit $__aeris_rc"
+    try:
+        p = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20,
+                           stdin=subprocess.DEVNULL, cwd=pet_cwd())
+        out = (p.stdout + ("\n" + p.stderr if p.stderr.strip() else "")).strip()
+        out = out if len(out) <= 2500 else out[:2500] + "\n…(cut)"
+        return f"exit code {p.returncode}\n{out or '(no output)'}"
+    except subprocess.TimeoutExpired:
+        return "timed out after 20 s"
+    except OSError as e:
+        return f"could not run: {e}"
+
+
+PLAIN_CD = re.compile(r"^cd(\s+[^;&|`$<>(){}\\]*)?$")   # cd, cd ~/Videos, cd "My Files"
+
+
+def for_model(cmd, out):
+    """A command's result, sent back to the model (the box already shows the output)."""
+    code, _, body = out.partition("\n")
+    head = f"[output of `{cmd}`" + ("" if code.endswith(" 0") else f", {code}") + "]"
+    where = (f" You are now in {tilde(pet_cwd())}; {folder_summary(pet_cwd())}."
+             if re.match(r"cd\b", cmd) else "")
+    return (f"{head}\n{body.strip() or '(no output)'}\n\nNow answer in one short line, in your "
+            f"voice. The user already sees this output, so don't repeat it; just sum it up "
+            f"(how many, or the one they asked for, with its folder as the output shows it).{where}")
+
+
+def shown(out, lines=25):
+    """A command's output for the box, under the command: the first lines, without the exit code."""
+    code, _, body = out.partition("\n")
+    rows = body.strip().splitlines()
+    text = "\n".join(rows[:lines]) + (f"\n…({len(rows) - lines} more)" if len(rows) > lines else "")
+    return text if code.endswith(" 0") else f"{code}\n{text}".strip()
+
+
+def parse_run(text):
+    """A command request is an uppercase RUN: on its own line (a lowercase "run: ls -a" is
+    the model telling the user what to type, not asking to run it)."""
+    for line in text.splitlines():
+        line = line.strip().strip("`")
+        if line.startswith("RUN:"):
+            return line[4:].strip().strip("`").strip() or None
+    return None
+
+
+def drop_greetings(text):
+    """Small models sometimes paste a sample greeting onto the answer; trim any verbatim one."""
+    try:
+        with open(GREETINGS, encoding="utf-8") as f:
+            lines = [l.strip() for l in f if len(l.strip()) > 15 and not l.startswith("#")]
+    except OSError:
+        return text
+    out = text
+    low = out.lower()
+    for g in lines:
+        i = low.find(g.lower())
+        if i >= 0:
+            out = (out[:i] + out[i + len(g):])
+            low = out.lower()
+    out = " ".join(out.split()).strip(" .,;—-")
+    return (out + "." if out and out[-1].isalnum() and text.rstrip()[-1:] == "." else out) or text
+
+
+def emit(chat, **msg):
+    """In the chat box, one JSON line per event: {"type": "answer"|"confirm"|"ran", ...}."""
+    if chat:
+        print(json.dumps(msg, ensure_ascii=False), flush=True)
+
+
+def log_ask(entry):
+    os.makedirs(STATE, exist_ok=True)
+    with open(os.path.join(STATE, "ask.log"), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"t": int(time.time()), **entry}, ensure_ascii=False) + "\n")
+
+
+NAV = re.compile(r"^(?:please\s+|can you\s+|now\s+)*(?:go|move|cd|take me|switch|jump|navigate|head)"
+                 r"(?:\s+back)?\s+(?:in)?to\s+(?:the\s+|my\s+)?(.+?)(?:\s+(?:folder|directory|dir))?"
+                 r"(?:\s+please)?[.!?]*$", re.I)
+
+
+def nav_target(question):
+    """'go to my videos folder', 'move to the home directory', 'cd projects': the folder, or None."""
+    if re.match(r"^(?:please\s+)?(?:go|take me|head)(?:\s+back)?\s+home(?:\s+please)?[.!?]*$", question.strip(), re.I):
+        return HOME
+    m = NAV.match(question.strip())
+    if not m:
+        return None
+    name = m.group(1).strip().strip("'\"")
+    if name.lower() in ("home", "~", "home folder", "home directory"):
+        return HOME
+    direct = resolve(name)
+    if os.path.isdir(direct):
+        return direct
+    want = name.lower()
+    for base in (pet_cwd(), HOME):                  # by name, ignoring case: "videos" → Videos
+        try:
+            for e in os.scandir(base):
+                if e.is_dir() and e.name.lower() in (want, want + "s"):
+                    return e.path
+        except OSError:
+            pass
+    return None
+
+
+LIST = re.compile(r"^(?:please\s+|can you\s+)*(?:ls|(?:list|show)(?:\s+me)?(?:\s+(?:the|all|my))?\s+"
+                  r"(?:files|folders|directories|everything|contents|stuff)(?:\s+(?:here|in here))?"
+                  r"|what'?s\s+(?:in\s+)?here|what(?:'s| is)\s+in\s+this\s+folder|what\s+files\s+are\s+here)"
+                  r"(?:\s+please)?[.!?]*$", re.I)
+
+
+def ask(question, chat=False):
+    """A new question: build the conversation and go."""
+    if LIST.match(question.strip()):                # "what's here?" / "list files": the real list
+        return cmd_ls([], chat)
+    target = nav_target(question)
+    if target:                                      # moving folders needs no model
+        set_cwd(target)
+        emit(chat, type="ran", command=f"cd {shlex.quote(tilde(target)) if ' ' in target else tilde(target)}")
+        text = f"now in {tilde(target)}."
+        reply(text, chat)
+        if chat:
+            save_chat(load_chat() + [{"role": "user", "content": question},
+                                     {"role": "assistant", "content": text}])
+        return 0
+    key = api_key()
+    if not key:
+        reply("i need an OpenRouter key first: OPENROUTER_API_KEY in ~/.env", chat)
+        return 1
+    feed("thinking", "hmm…")
+    cfg = config()
+    history = load_chat() if chat else []
+    messages = [{"role": "system", "content": system_prompt(pet_kind(), cfg)}, *history,
+                {"role": "user", "content": question}]
+    return converse(key, cfg, question, history, messages, chat)
+
+
+def resume(approved):
+    """The user answered a confirm prompt in the box: run the command, or carry on without."""
+    key = api_key()
+    try:
+        with open(PENDING, encoding="utf-8") as f:
+            st = json.load(f)
+        os.remove(PENDING)
+    except (OSError, ValueError):
+        emit(True, type="answer", text="…i lost track of what i wanted to run. ask again?")
+        return 1
+    feed("thinking", "hmm…")
+    cmd, messages = st["command"], st["messages"]
+    if approved:
+        out = run_command(cmd)
+        emit(True, type="ran", command=cmd, output=shown(out))
+        log_ask({"run": cmd, "jev": "confirm", "approved": True})
+        messages.append({"role": "user", "content": for_model(cmd, out)})
+    else:
+        log_ask({"run": cmd, "jev": "confirm", "approved": False})
+        messages.append({"role": "user", "content":
+                         f"[the user chose not to run `{cmd}`, so it did not happen] Reply to my request "
+                         f"\"{st['question']}\" in one short line: say you left it alone."})
+    return converse(key, config(), st["question"], st["history"], messages, True)
+
+
+def converse(key, cfg, question, history, messages, chat):
+    """Ask the model; when it wants a command, let Jev judge it, run it or ask, and go again
+    (at most three commands per question)."""
+    t0 = time.monotonic()
+    model = "?"
+    for _ in range(4):
+        payload = {"models": cfg.get("models") or DEFAULT_MODELS,
+                   "max_tokens": int(cfg.get("max_tokens", 260)), "temperature": 0.6,
+                   "reasoning": {"enabled": False}, "messages": messages}
+        try:
+            try:
+                data = call(key, payload)
+            except urllib.error.HTTPError as e:
+                if e.code != 400:
+                    raise
+                payload.pop("reasoning")    # a model that cannot switch reasoning off
+                data = call(key, payload)
+            raw = (data["choices"][0]["message"].get("content") or "").strip()
+            model = data.get("model", "?")
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = json.load(e).get("error", {}).get("message", "")
+            except Exception:
+                pass
+            return finish(f"openrouter said no ({e.code}). {detail}".strip()[:200], chat, history, question, model, t0, ok=False)
+        except Exception as e:              # offline, timeout, odd reply
+            return finish(f"couldn't reach openrouter: {type(e).__name__}", chat, history, question, model, t0, ok=False)
+        cmd = parse_run(raw)
+        if not cmd:
+            # one paragraph: models put the in-character aside on its own line, and a short
+            # answer should still fit the pet's tiny bubble
+            text = drop_greetings(" ".join(l.strip() for l in raw.splitlines() if l.strip()).strip("`"))
+            return finish(text or "…i have nothing. try asking differently?", chat, history, question, model, t0)
+        if PLAIN_CD.match(cmd):             # just moving folders: nothing to judge
+            decision, conf = "run", 1.0
         else:
-            q = sys.stdin.readline()
-            if not q:
-                break
-            q = q.replace("\x1b", "").strip()  # Escape (hides the window) also lands in the line
-        if not q:
+            decision, conf = jev(key, cmd, question)
+        log_ask({"run": cmd, "jev": decision, "confidence": round(conf, 2)})
+        messages.append({"role": "assistant", "content": f"RUN: {cmd}"})
+        if decision == "run":
+            out = run_command(cmd)
+            emit(chat, type="ran", command=cmd, output=shown(out))
+            messages.append({"role": "user", "content": for_model(cmd, out)})
             continue
-        if q == "/new":
-            history = history[:1]
-            print(f"{DIM}cleared{RESET}\n")
+        if decision == "refuse":
+            messages.append({"role": "user", "content":
+                             f"[the safety model refused `{cmd}` as dangerous; it was not run] "
+                             "Tell the user briefly that you won't run it and why, in your voice."})
             continue
-        if q.startswith("/model"):
-            model = q.split(maxsplit=1)[1] if " " in q else pick_model()
-            print(f"{DIM}model: {model}{RESET}\n")
-            continue
-        history.append({"role": "user", "content": q})
-        print()
-        reply = ask(model, history) if model else None
-        if reply is None:
-            history.pop()
+        if not chat:                        # no box to ask in
+            return finish(f"i'd need your ok to run: {cmd}. ask me with super + / so you can approve it.",
+                          chat, history, question, model, t0)
+        os.makedirs(RUN_DIR, exist_ok=True)
+        with open(PENDING, "w", encoding="utf-8") as f:
+            json.dump({"command": cmd, "messages": messages, "history": history, "question": question}, f)
+        feed("answer", "can i run something? ↓")
+        emit(chat, type="confirm", command=cmd)
+        return 0
+    return finish("i went round in circles there. try asking differently?", chat, history, question, model, t0)
+
+
+def finish(text, chat, history, question, model, t0, ok=True):
+    """The final answer: bubble, box, chat memory, logs."""
+    reply(text, chat, followup=bool(history))
+    if chat and ok:
+        save_chat(history + [{"role": "user", "content": question},
+                             {"role": "assistant", "content": text}])
+    if ok:
+        os.makedirs(STATE, exist_ok=True)
+        with open(os.path.join(STATE, "last-answer"), "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+    log_ask({"model": model, "secs": round(time.monotonic() - t0, 2), "q": question, "a": text})
+    return 0 if ok else 1
+
+
+# ---------------------------------------------------------------------------------------------
+# Slash commands: anything starting with "/" is answered here, locally, without the model.
+# Each handler gets (args, chat) and answers with say(); see COMMANDS at the end of the section.
+# Box events beyond ran/confirm/answer: {"type": "clear"}, {"type": "list", "title", "rows"},
+# {"type": "image", "path", "original", "title", "text"}.
+# ---------------------------------------------------------------------------------------------
+import re
+import random
+import datetime as dt
+
+PET_BIN = os.path.join(HOME, ".local/bin/aeris-pet")
+ASK_BIN = os.path.join(HOME, ".local/bin/aeris-ask")
+NEWS_TSV = "/var/cache/tinyraven/news.tsv"
+NEWS_ORDER = ["TECH", "AI", "ML", "DEFENSE", "CYBER"]
+XKCD_POOL = "/var/cache/tinyraven/xkcd"
+HUSH = os.path.join(STATE, "hush.json")
+HUSH_LEVEL = 50          # dunst pause level while hushed; timers and reminders override it (dunstrc)
+TIMER_APP = "tinyraven-timer"
+
+
+def say(chat, text, rows=None, title=None, event=None):
+    """A command's answer: the bubble gets the short text, the box gets the text or a list."""
+    feed("answer", text if len(text) <= LONG_ANSWER else text[:LONG_ANSWER - 1].rstrip() + "…")
+    if not chat:                                # a terminal: print it, pet or no pet
+        print(text)
+        if event and event.get("type") == "image":
+            print(event.get("original", event.get("path", "")))
+    if event:
+        emit(chat, **event)
+    elif rows is not None:
+        emit(chat, type="list", title=title or text, rows=rows)
+    else:
+        emit(chat, type="answer", text=text)
+    if not chat and rows:                       # on the command line, print the list too
+        for label, value in rows:
+            print(f"{label:<10} {value}")
+    log_ask({"command": True, "a": text})
+    return 0
+
+
+def sh(*cmd, timeout=10):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        return p.returncode, (p.stdout or "").strip()
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 1, str(e)
+
+
+# ---- durations and times ----
+
+def parse_duration(s):
+    """Seconds, or None: 25 (minutes), 45m, 2h, 90s, 1h30, 1h30m, 1.30 / 1:30 (1 h 30 min)."""
+    s = s.strip().lower().replace(" ", "")
+    if re.fullmatch(r"\d+", s):
+        secs = int(s) * 60
+    elif m := re.fullmatch(r"(\d+)[.:](\d{1,2})", s):
+        h, mi = int(m[1]), int(m[2])
+        if mi >= 60:
+            return None
+        secs = h * 3600 + mi * 60
+    elif (m := re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m(?:in)?)?(?:(\d+)s)?", s)) and any(m.groups()):
+        secs = int(m[1] or 0) * 3600 + int(m[2] or 0) * 60 + int(m[3] or 0)
+    elif m := re.fullmatch(r"(\d+)h(\d+)", s):
+        secs = int(m[1]) * 3600 + int(m[2]) * 60
+    else:
+        return None
+    return secs if 0 < secs <= 24 * 3600 else None
+
+
+def human(secs):
+    secs = int(round(secs))
+    h, rem = divmod(secs, 3600)
+    m, s = divmod(rem, 60)
+    parts = ([f"{h} h"] if h else []) + ([f"{m} min"] if m else []) + ([f"{s} s"] if s and not h else [])
+    return " ".join(parts) or "0 s"
+
+
+def parse_clock(s):
+    """(hour, minute) from 15:30, 15.30, 15h30, 3pm, 3:15pm, 9am, 15; or None."""
+    s = s.strip().lower()
+    m = re.fullmatch(r"(\d{1,2})(?:[:.h](\d{2}))?\s*(am|pm)?", s)
+    if not m:
+        return None
+    h, mi, ap = int(m[1]), int(m[2] or 0), m[3]
+    if ap:
+        if not 1 <= h <= 12:
+            return None
+        h = h % 12 + (12 if ap == "pm" else 0)
+    elif m[2] is None and h > 23:
+        return None
+    return (h, mi) if h < 24 and mi < 60 else None
+
+
+def parse_when(words, now=None):
+    """(datetime, remaining words) for /remind: 'in 20m', '15:30', '3pm', 'tomorrow 9:00',
+    'today 18:00'. None when the words don't start with a time."""
+    now = now or dt.datetime.now()
+    if len(words) >= 2 and words[0] == "in" and (secs := parse_duration(words[1])):
+        return now + dt.timedelta(seconds=secs), words[2:]
+    day, i = None, 0
+    if words and words[0] in ("today", "tomorrow"):
+        day, i = words[0], 1
+    if i < len(words) and (hm := parse_clock(words[i])):
+        when = now.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
+        if day == "tomorrow" or (day is None and when <= now):
+            when += dt.timedelta(days=1)
+        return when, words[i + 1:]
+    return None
+
+
+# ---- timers and reminders: transient systemd user timers, fired as critical notifications ----
+
+def arm(kind, label, *, after=None, at=None):
+    unit = f"aeris-{kind}-{int(time.time() * 1000)}"
+    when = ([f"--on-active={int(after)}s"] if after else [f"--on-calendar={at:%Y-%m-%d %H:%M:%S}"])
+    title = "timer" if kind == "timer" else "reminder"
+    code, out = sh("systemd-run", "--user", "--collect", "--quiet", f"--unit={unit}",
+                   f"--description={kind}|{label}", "--timer-property=AccuracySec=1s", *when,
+                   "notify-send", "-u", "critical", "-a", TIMER_APP, title.upper(), label)
+    return code == 0, out
+
+
+def armed():
+    """Running timers and reminders, soonest first: [(unit, kind, label, due datetime)]."""
+    code, out = sh("systemctl", "--user", "list-timers", "--all", "--output=json",
+                   "aeris-timer-*", "aeris-remind-*")
+    try:
+        items = json.loads(out) if code == 0 and out else []
+    except ValueError:
+        items = []
+    res = []
+    for t in items:
+        unit = t.get("unit", "")
+        _, desc = sh("systemctl", "--user", "show", "-p", "Description", "--value", unit)
+        kind, _, label = desc.partition("|")
+        nxt = t.get("next") or 0
+        if nxt:
+            res.append((unit, kind or "timer", label, dt.datetime.fromtimestamp(nxt / 1e6)))
+    return sorted(res, key=lambda r: r[3])
+
+
+def cmd_timer(args, chat):
+    if not args:
+        items = armed()
+        if not items:
+            return say(chat, "no timers running. /timer 25m tea starts one")
+        now = dt.datetime.now()
+        rows = [[f"{i}  {k.upper()}", f"{d:%H:%M}  ·  in {human((d - now).total_seconds())}" + (f"  ·  {l}" if l else "")]
+                for i, (_, k, l, d) in enumerate(items, 1)]
+        return say(chat, f"{len(items)} running", rows, "running")
+    if args[0] in ("cancel", "stop", "off"):
+        items = armed()
+        if not items:
+            return say(chat, "nothing to cancel")
+        if len(args) > 1 and args[1].isdigit() and 1 <= int(args[1]) <= len(items):
+            pick = items[int(args[1]) - 1]
+        elif len(items) == 1:
+            pick = items[0]
         else:
-            history.append({"role": "assistant", "content": reply})
-    os.close(keep)
+            return say(chat, f"which one? /timer cancel 1…{len(items)} (/timer lists them)")
+        sh("systemctl", "--user", "stop", pick[0])      # list-timers names the .timer unit
+        return say(chat, f"cancelled: {pick[2] or pick[1]} at {pick[3]:%H:%M}")
+    secs = parse_duration(args[0])
+    if not secs:
+        return say(chat, "how long? /timer 25 · 45m · 2h · 1.30 (= 1 h 30) · 90s, then a label if you like")
+    label = " ".join(args[1:]) or f"{human(secs)} timer"
+    ok, err = arm("timer", label, after=secs)
+    if not ok:
+        return say(chat, f"couldn't set it: {err[:80]}")
+    due = dt.datetime.now() + dt.timedelta(seconds=secs)
+    return say(chat, f"{human(secs)} timer set. i'll shout at {due:%H:%M}" + (f": {label}" if args[1:] else "."))
+
+
+def cmd_remind(args, chat):
+    got = parse_when([a.lower() for a in args[:3]] + args[3:]) if args else None
+    if not got:
+        return say(chat, "when? /remind 15:30 call the bank · /remind in 20m tea · /remind tomorrow 9am standup")
+    when, rest = got
+    text = " ".join(args[len(args) - len(rest):]) if rest else ""
+    if not text:
+        return say(chat, "remind you of what? add it after the time: /remind 15:30 call the bank")
+    ok, err = arm("remind", text, at=when)
+    if not ok:
+        return say(chat, f"couldn't set it: {err[:80]}")
+    day = "today" if when.date() == dt.date.today() else "tomorrow" if when.date() == dt.date.today() + dt.timedelta(days=1) else f"{when:%a %d %b}"
+    return say(chat, f"noted. {day} at {when:%H:%M}: {text}")
+
+
+# ---- hush: notifications paused and the pet muted for a while ----
+
+def pet_muted():
+    return os.path.exists(os.path.join(STATE, "muted"))
+
+
+def hush_off(chat, quiet=False):
+    try:
+        with open(HUSH) as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        st = None
+    sh("systemctl", "--user", "stop", "aeris-hush.timer")
+    sh("dunstctl", "set-pause-level", "0")
+    if st is not None:
+        if not st.get("was_muted"):
+            sh(PET_BIN, "vocal")
+        try:
+            os.remove(HUSH)
+        except OSError:
+            pass
+    return None if quiet else say(chat, "i'm back. notifications on." if st else "not hushed. notifications are on.")
+
+
+def cmd_hush(args, chat):
+    if args and args[0] in ("off", "stop", "end"):
+        return hush_off(chat)
+    secs = parse_duration(args[0]) if args else 30 * 60
+    if not secs:
+        return say(chat, "for how long? /hush 30 (minutes) · 1h · 1.30 · /hush off")
+    was_muted = pet_muted()
+    if os.path.exists(HUSH):                    # extending a hush: keep the original mute state
+        try:
+            was_muted = json.load(open(HUSH)).get("was_muted", was_muted)
+        except (OSError, ValueError):
+            pass
+    sh("systemctl", "--user", "stop", "aeris-hush.timer")
+    # The end of the hush must not depend on aeris-ask still being there: normally it says
+    # "i'm back" through aeris-ask; if that is gone, unpause dunst and unmute directly.
+    end = (f'a="{ASK_BIN}"; [ -x "$a" ] && exec "$a" -- /hush off; '
+           f'dunstctl set-pause-level 0; rm -f "{HUSH}"; '
+           + ("" if was_muted else f'p="{PET_BIN}"; [ -x "$p" ] && "$p" vocal; ') + "true")
+    code, err = sh("systemd-run", "--user", "--collect", "--quiet", "--unit=aeris-hush",
+                   "--description=hush|end", "--timer-property=AccuracySec=1s", f"--on-active={secs}s",
+                   "sh", "-c", end)
+    if code != 0:
+        return say(chat, f"couldn't hush: {err[:80]}")
+    sh("dunstctl", "set-pause-level", str(HUSH_LEVEL))
+    os.makedirs(STATE, exist_ok=True)
+    until = dt.datetime.now() + dt.timedelta(seconds=secs)
+    with open(HUSH, "w") as f:
+        json.dump({"until": until.isoformat(timespec="seconds"), "was_muted": was_muted}, f)
+    say(chat, f"shh. quiet until {until:%H:%M}. timers still ring.")
+    sh(PET_BIN, "mute")
+    return 0
+
+
+# ---- the pet ----
+
+def cmd_pet(args, chat):
+    now = pet_kind()
+    want = args[0].lower() if args else ("dragon" if now == "raven" else "raven")
+    want = {"tinyraven": "raven", "tinydragon": "dragon", "bird": "raven"}.get(want, want)
+    if want not in ("raven", "dragon"):
+        return say(chat, "raven or dragon? /pet raven · /pet dragon · /pet (switch)")
+    if want == now:
+        return say(chat, f"already tiny{now}.")
+    sh(PET_BIN, "set", want)
+    return say(chat, {"raven": "caw. raven now.", "dragon": "dragon again. new room, same dragon."}[want])
+
+
+def cmd_mute(args, chat):
+    sh(PET_BIN, "mute")
+    return say(chat, "…")
+
+
+def cmd_vocal(args, chat):
+    if os.path.exists(HUSH):
+        hush_off(chat, quiet=True)
+        sh(PET_BIN, "vocal")
+        return say(chat, "voice back, hush over.")
+    sh(PET_BIN, "vocal")
+    return say(chat, "voice back.")
+
+
+def cmd_joke(args, chat):
+    line = (voice_samples(pet_kind(), 1) or ["i forgot the punchline. it was dns."])[0]
+    return say(chat, line)
+
+
+def cmd_clear(args, chat):
+    forget_chat()
+    feed("answer", "clean slate.")
+    emit(chat, type="clear")
+    if not chat:
+        print("clean slate.")
+    return 0
+
+
+# ---- things it knows ----
+
+def cmd_status(args, chat):
+    rows = []
+    for line in snapshot().splitlines():
+        k, _, v = line.partition(": ")
+        if k != "machine":
+            rows.append([k.upper(), v])
+    bat = next((v for k, v in rows if k == "BATTERY"), "")
+    return say(chat, f"all fine{', battery ' + bat if bat else ''}.", rows, "status")
+
+
+def cmd_news(args, chat):
+    by_cat = {}
+    try:
+        with open(NEWS_TSV, encoding="utf-8") as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) == 3:
+                    by_cat.setdefault(parts[0], []).append(parts)
+    except OSError:
+        return say(chat, "no news cached yet. headlines.timer fills it every half hour.")
+    picks = [random.choice(by_cat[c]) for c in NEWS_ORDER if c in by_cat]
+    if not picks:
+        return say(chat, "the news file is empty. headlines.timer fills it every half hour.")
+    rows = [[cat, f"{title}  ·  {src}"] for cat, src, title in picks]
+    return say(chat, f"{picks[0][0].lower()}: {picks[0][2]}", rows, "the news")
+
+
+def cmd_weather(args, chat):
+    loc = "+".join(args)
+    code, out = sh("curl", "-fsS", "--max-time", "8",
+                   f"https://wttr.in/{loc}?m&format=%l|%C|%t|%f|%w|%p", timeout=10)
+    parts = out.split("|") if code == 0 else []
+    if len(parts) != 6:
+        return say(chat, "no answer from wttr.in. offline, or it's raining on their server.")
+    place, cond, temp, feels, wind, rain = (p.strip() for p in parts)
+    if re.fullmatch(r"[-\d.]+,[-\d.]+", place):     # located by IP: wttr.in names the spot in degrees
+        place = "here"
+    rows = [["PLACE", place], ["NOW", f"{cond.lower()}, {temp.lstrip('+')}"], ["FEELS", feels.lstrip("+")],
+            ["WIND", wind], ["RAIN", rain]]
+    return say(chat, f"{cond.lower()}, {temp.lstrip('+')}, feels {feels.lstrip('+')}.", rows, "weather")
+
+
+def cmd_comic(args, chat):
+    pool = sorted(f[:-4] for f in os.listdir(XKCD_POOL) if f.endswith(".txt")) if os.path.isdir(XKCD_POOL) else []
+    pool = [n for n in pool if os.path.exists(os.path.join(XKCD_POOL, n + ".png"))]
+    if args and args[0].isdigit():
+        pool = [args[0]] if args[0] in pool else []
+    if not pool:
+        return say(chat, "no comics cached yet. headlines.timer fetches a few each run.")
+    num = random.choice(pool)
+    png = os.path.join(XKCD_POOL, num + ".png")
+    try:
+        title, _, alt = open(os.path.join(XKCD_POOL, num + ".txt"), encoding="utf-8").read().splitlines()[0].partition("\t")
+    except (OSError, IndexError):
+        title, alt = f"xkcd {num}", ""
+    shown = png
+    try:                                        # inverted and grey, like the login screen's comic
+        import gi
+        gi.require_version("GdkPixbuf", "2.0")
+        from gi.repository import GdkPixbuf, GLib
+        src = GdkPixbuf.Pixbuf.new_from_file(png)
+        w, h = src.get_width(), src.get_height()
+        pix = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, w, h)   # flat RGB on white:
+        pix.fill(0xffffffff)                                                   # inverting alpha would
+        src.composite(pix, 0, 0, w, h, 0, 0, 1, 1, GdkPixbuf.InterpType.NEAREST, 255)   # hide it
+        pix.saturate_and_pixelate(pix, 0.0, False)
+        data = bytes(pix.get_pixels()).translate(bytes(range(255, -1, -1)))
+        inv = GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(data), GdkPixbuf.Colorspace.RGB, False, 8,
+                                              w, h, pix.get_rowstride())
+        os.makedirs(RUN_DIR, exist_ok=True)
+        shown = os.path.join(RUN_DIR, "comic.png")
+        inv.savev(shown, "png", [], [])
+    except Exception:
+        pass
+    return say(chat, f"xkcd {num}: {title.lower()}", event={
+        "type": "image", "path": shown, "original": png, "title": f"xkcd {num}  ·  {title}", "text": alt})
+
+
+# ---- the model ----
+
+def cmd_model(args, chat):
+    cfg = config()
+    models = list(cfg.get("models") or DEFAULT_MODELS)
+    if not args:
+        rows = [[f"{i}" + ("  ·  NOW" if i == 1 else ""), m] for i, m in enumerate(models, 1)]
+        return say(chat, f"answering with {models[0].split('/')[-1]}", rows, "models, tried in order")
+    pick = None
+    if args[0].isdigit() and 1 <= int(args[0]) <= len(models):
+        pick = models[int(args[0]) - 1]
+    else:
+        hits = [m for m in models if args[0].lower() in m.lower()]
+        pick = hits[0] if len(hits) == 1 else None
+        if not hits and "/" in args[0]:
+            pick = args[0]                      # a new OpenRouter model id: put it first
+    if not pick:
+        return say(chat, "which one? /model 2, or part of its name (/model lists them)")
+    cfg["models"] = [pick] + [m for m in models if m != pick]
+    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+    with open(CONFIG, "w") as f:
+        json.dump(cfg, f, indent=2)
+    return say(chat, f"now asking {pick.split('/')[-1]} first.")
+
+
+# ---- run a command yourself (still judged by Jev) ----
+
+def cmd_run(args, chat):
+    command = " ".join(args).strip()
+    if not command:
+        return say(chat, "run what? /run uptime")
+    key = api_key()
+    decision, conf = jev(key, command, f"run this command: {command}") if key else ("confirm", 0.0)
+    log_ask({"run": command, "jev": decision, "confidence": round(conf, 2), "direct": True})
+    if decision == "refuse":
+        return say(chat, f"jev says no: that looks dangerous, so i won't run it.")
+    if decision == "confirm":
+        if not chat:
+            return say(chat, "that one needs your ok. run it from the box (super + /) to approve it.")
+        os.makedirs(RUN_DIR, exist_ok=True)
+        with open(PENDING, "w", encoding="utf-8") as f:
+            json.dump({"command": command, "direct": True}, f)
+        feed("answer", "can i run something? ↓")
+        emit(chat, type="confirm", command=command)
+        return 0
+    return ran_output(chat, command)
+
+
+def ran_output(chat, command):
+    out = run_command(command)
+    emit(chat, type="ran", command=command, output=shown(out))
+    code, _, body = out.partition("\n")
+    body = body.strip()
+    feed("answer", "done." if code.endswith(" 0") else f"that exited with {code.split()[-1]}.")
+    emit(chat, type="answer", text="done." if code.endswith(" 0") else f"that exited with {code.split()[-1]}.")
+    if not chat:
+        print(body)
+    return 0
+
+
+# ---- files: the pet's folder, listing, finding, opening ----
+
+def resolve(arg):
+    """A path typed after /cd, /ls or /open, taken from the pet's folder (~ works)."""
+    return os.path.normpath(os.path.join(pet_cwd(), os.path.expanduser(arg)))
+
+
+def size(n):
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
+def cmd_cd(args, chat):
+    target = resolve(" ".join(args)) if args else HOME
+    if not os.path.isdir(target):
+        return say(chat, f"no folder called {' '.join(args)} here.")
+    set_cwd(target)
+    return cmd_ls([], chat, intro=f"now in {tilde(target)}.")
+
+
+def cmd_pwd(args, chat):
+    return say(chat, f"i'm in {tilde(pet_cwd())}.")
+
+
+def cmd_ls(args, chat, intro=None):
+    target = resolve(" ".join(args)) if args else pet_cwd()
+    if not os.path.isdir(target):
+        return say(chat, f"no folder called {' '.join(args)} here.")
+    try:
+        entries = [e for e in os.scandir(target) if not e.name.startswith(".")]
+    except OSError as e:
+        return say(chat, f"can't look in there: {e.strerror.lower()}.")
+    folders = sorted((e for e in entries if e.is_dir()), key=lambda e: e.name.lower())
+    files = sorted((e for e in entries if not e.is_dir()), key=lambda e: e.name.lower())
+    rows = [["dir", e.name + "/"] for e in folders]
+    for e in files:
+        try:
+            rows.append([size(e.stat().st_size), e.name])
+        except OSError:
+            rows.append(["?", e.name])
+    n = f"{len(folders)} folder{'s' * (len(folders) != 1)}, {len(files)} file{'s' * (len(files) != 1)}"
+    text = (intro + " " if intro else "") + (n + "." if rows else "nothing here (hidden files aside).")
+    return say(chat, text, rows if rows else None, f"{tilde(target)}: {n}")
+
+
+def cmd_find(args, chat):
+    name = " ".join(args).strip()
+    if not name:
+        return say(chat, "find what? /find invoice")
+    # fd: case-insensitive, by name, under home; skips hidden and .gitignored stuff, so it's quick
+    code, out = sh("fd", "-i", "--max-results", "40", "--fixed-strings", name, HOME, timeout=15)
+    hits = [l for l in out.splitlines() if l.strip()] if code == 0 else []
+    if not hits:
+        return say(chat, f"no {name} in your home folder.")
+    rows = [["dir" if h.endswith("/") or os.path.isdir(h) else "file", tilde(h.rstrip("/"))] for h in hits]
+    many = " (the first 40)" if len(hits) >= 40 else ""
+    return say(chat, f"found {len(hits)}{many}.", rows, f"{name}: {len(hits)}{many}")
+
+
+def cmd_open(args, chat):
+    what = " ".join(args).strip()
+    if not what:
+        target = pet_cwd()
+    elif re.match(r"https?://", what):
+        target = what
+    else:
+        target = resolve(what)
+        if not os.path.exists(target):
+            target = what                    # not a file here: open looks for an app by that name
+    code, out = sh(os.path.join(HOME, ".local/bin/open"), target)
+    if code != 0:
+        return say(chat, f"no file or app called {what}.")
+    started = re.search(r"open: started (\S+)", out)
+    return say(chat, f"started {started.group(1)}." if started else f"opened {tilde(target)}.")
+
+
+def cmd_help(args, chat):
+    rows = [[f"/{name}", summary] for name, (_, usage, summary) in COMMANDS.items() if summary]
+    return say(chat, "here's what i can do without thinking.", rows, "commands")
+
+
+COMMANDS = {
+    # name: (handler, usage, one-line summary for /help; empty = an alias)
+    "help": (cmd_help, "/help", "this list"),
+    "clear": (cmd_clear, "/clear", "forget the chat, empty the box"),
+    "model": (cmd_model, "/model [n|name]", "list the models · pick one to ask first"),
+    "pet": (cmd_pet, "/pet [raven|dragon]", "switch pets"),
+    "mute": (cmd_mute, "/mute", "silence the pet"),
+    "vocal": (cmd_vocal, "/vocal", "give it its voice back (ends a hush)"),
+    "hush": (cmd_hush, "/hush [30|1h|off]", "pause notifications and mute, 30 min by default"),
+    "timer": (cmd_timer, "/timer 25m [label] · /timer · /timer cancel", "a timer: 25, 45m, 2h, 1.30"),
+    "remind": (cmd_remind, "/remind 15:30 text", "a reminder: 15:30, 3pm, tomorrow 9am, in 20m"),
+    "news": (cmd_news, "/news", "tech, ai, ml, defense, cyber"),
+    "comic": (cmd_comic, "/comic [number]", "a random xkcd"),
+    "xkcd": (cmd_comic, "/xkcd [number]", ""),
+    "status": (cmd_status, "/status", "battery, memory, disk, uptime"),
+    "weather": (cmd_weather, "/weather [town]", "the weather here (or there)"),
+    "run": (cmd_run, "/run command", "run a command (jev checks it first)"),
+    "cd": (cmd_cd, "/cd [folder]", "move to a folder (home if none) and list it"),
+    "pwd": (cmd_pwd, "/pwd", "which folder i'm in"),
+    "ls": (cmd_ls, "/ls [folder]", "list the files here (or there)"),
+    "find": (cmd_find, "/find name", "find files in your home folder by name"),
+    "open": (cmd_open, "/open [file|folder|link|app]", "open it, or start an app (this folder if none)"),
+    "joke": (cmd_joke, "/joke", "say something"),
+}
+
+
+def command(q, chat):
+    name, *args = q[1:].split()
+    name = name.lower()
+    entry = COMMANDS.get(name)
+    if not entry:
+        near = [n for n in COMMANDS if n.startswith(name[:2])] if name else []
+        return say(chat, f"no /{name}." + (f" /{near[0]}?" if near else "") + " /help lists them.")
+    return entry[0](args, chat)
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        toggle_box()
+        return 0
+    if args[0] == "--commands":                   # for the box's "/" hint: [[name, usage, summary]]
+        print(json.dumps([[n, u, h] for n, (_, u, h) in COMMANDS.items() if h]))
+        return 0
+    if args[0] in ("--approve", "--decline"):     # the box's answer to a confirm prompt
+        try:
+            with open(PENDING, encoding="utf-8") as f:
+                direct = json.load(f).get("direct")
+        except (OSError, ValueError):
+            direct = False
+        if direct:                                # a /run waiting for the user's ok
+            st = json.load(open(PENDING))
+            os.remove(PENDING)
+            if args[0] == "--approve":
+                return ran_output(True, st["command"])
+            return say(True, "left it alone.")
+        return resume(args[0] == "--approve")
+    chat = args[0] == "--chat"
+    if chat:
+        args = args[1:]
+    if args and args[0] == "--":
+        args = args[1:]
+    q = " ".join(args).strip()
+    if q.startswith("/") and len(q) > 1 and not q.startswith("//"):
+        return command(q, chat)
+    return ask(q, chat) if q else 0
 
 
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["toggle"]:
-        toggle("--selection" in sys.argv)
-    elif sys.argv[1:2] in (["-h"], ["--help"]):
-        print(__doc__.strip())
-    else:
-        try:
-            loop()
-        except KeyboardInterrupt:
-            pass
+    sys.exit(main())

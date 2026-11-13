@@ -1,0 +1,469 @@
+# tinyraven terminal greetings. One per line; a random one shows in each new
+# terminal window, after the hello. Keep them under 70 characters so they fit on
+# one line. Add, cut or edit freely: changes show in the next window.
+# Lines starting with # are notes.
+oh good, you're back. the cursor was getting lonely
+both cores stood up when you came in
+i was not asleep. i was resting my pixels
+you again. i'm thrilled, in a low-power sort of way
+please type gently, i bruise
+i had a thought while you were gone. it's gone too
+caw
+today's forecast: 100% chance of typos
+i counted to two cores while you were away. twice
+welcome back. nothing is on fire that i know of
+the fan would greet you, but there isn't one
+ready when you are. slightly after, to be honest
+i've prepared nothing. let's begin
+you look like someone about to forget a semicolon
+another terminal? you spoil me
+i'd offer you coffee but i'm a laptop
+no thoughts, just prompt
+be honest, how many tabs are open in your head
+sudo make me a sandwich. worth a try
+i dreamed i was a mainframe. it was nice
+i am small and i have questions
+still four gigabytes. i checked
+tell the big computer i said hi
+you bring the ideas, i'll bring the blinking
+this window is fresh. try not to ruin it
+ah, a visitor. i'll put the kettle on, metaphorically
+i found a shiny thing earlier. it was your screen
+ravens remember faces. yours is fine
+reporting for duty, such as it is
+don't mind me, i'm just the keyboard holder
+it's a great day to blame the network
+i promise not to compile anything
+whatever you're about to type, i believe in it
+i was a homework machine once. look at me now
+i have the processing power of a determined toaster
+let's pretend we both know what we're doing
+last command was perfect. don't check
+oh no, you have that look. what are we breaking
+i've been practising my blinking. watch: _
+feathers smoothed, prompt polished, go
+this prompt was hand-warmed for you
+you type, i nod. that's the arrangement
+two cores, one dream
+i'm 11 inches of pure moral support
+if this goes wrong, it was the other terminal
+exit is always an option. just saying
+nothing to report, and i reported it promptly
+i'd flap, but the hinge only goes so far
+wi-fi's up, hopes are high, ram is low
+i googled myself. google says i'm obsolete. rude
+my whole personality is a blinking rectangle
+you could have opened anything. you opened me
+i kept your prompt exactly where you left it
+ask me anything. i'll ask someone smarter
+the birds outside work for me, by the way
+fun fact: i weigh less than your to-do list
+i contain multitudes. well, two
+new window, same bird
+i was told there would be snacks
+mind the gap between your ideas and my ram
+i have never once been wrong about ls
+professional rectangle, at your service
+a clean terminal is a happy terminal. for about a minute
+shh. the cores are concentrating
+you're my favourite user. also my only user
+i run on hope and about six watts
+back so soon? i hadn't finished doing nothing
+type something impressive, people might be watching
+no pressure, but the cursor is waiting
+i was built for spreadsheets and chose chaos
+officially retired. unofficially, here we are
+i've seen your history. i say nothing
+a raven never forgets, unless you reboot it
+let's go bother a much bigger computer
+somewhere a datacenter just sighed. your turn
+hello from the bottom of the performance charts
+enter a command, any command. not that one
+i'm not slow, i'm thorough
+if lost, return to a drawer
+all systems nominal. both of them
+i'd high-five you but, wings
+tab completion is my love language
+may your commits be small and your coffee large
+today we type. tomorrow, also typing probably
+warning: contents may be smarter than they appear. may
+i came, i saw, i blinked
+it's not a bug, it's my personality
+today's goal: one fewer mystery than yesterday
+plenty of room in here. it's mostly empty
+the bunny is gone. we don't talk about the bunny
+you smell like ambition and keyboard crumbs
+standing by. perching by, technically
+permission granted. i have no idea for what
+i believe in you slightly more than in my battery
+quoth the raven: what now
+honk. sorry, wrong bird
+i'm awake. you can stop pressing things
+every keystroke is a tiny massage. carry on
+loading enthusiasm... done. that was all of it
+i asked the oracle about you. it said "who?"
+i tidied the prompt. you're welcome
+the dollar sign is just decoration, i have no money
+you rang?
+i was mid-nap. it's fine. it's fine
+my other terminal is a supercomputer
+the cursor blinks because it's nervous
+one of my cores has a crush on you
+i practised saying hello all day. hello
+don't look at the ram. it's shy
+i contain zero cats, sadly
+you're late. i have no idea for what
+i've alphabetised your problems. start with a
+tiny bird, tiny screen, enormous confidence
+my battery and i are not speaking
+if you hear chirping, that's just me thinking
+i'm basically a very flat owl
+somebody typed "ls" in here once. wild times
+ctrl+c is my safe word
+i licked the screen clean. kidding. mostly
+welcome to the nest
+you had me at "sudo"
+there are no wrong commands. there are, actually
+i checked under the keyboard. still crumbs
+i have opinions about your font. good ones
+my hobbies include blinking and waiting
+i'm emotionally prepared for one command
+this terminal is gluten-free
+i'm running at full speed. that was it
+you type like someone with a plan. suspicious
+shall we disappoint a compiler today
+i was voted most likely to buffer
+every time you open a window, a raven gets its wings
+i hid a bug somewhere. happy hunting
+the keyboard missed your fingers. weird, i know
+please keep hands and feet inside the terminal
+i have read the manual. there was no manual
+help, i'm trapped in a chromebook. wait, i like it here
+i believe the technical term is "ta-da"
+my spirit animal is also a raven
+i'm only pretending to load
+fresh prompt, baked this second
+good news: nothing happened
+i'm legally a bird
+i tried to think and the screen dimmed
+have you tried turning yourself off and on again
+back for more, i see
+the wifi and i had a talk. we're good now
+if i had hands i'd applaud
+i could do this all day. the battery disagrees
+an empty prompt is a promise
+nobody panic. you panicked, didn't you
+i put on my best pixels for this
+is it tuesday? it feels like a tuesday
+the plan is: there is no plan
+i'm small but i'm also slow
+you caught me talking to the clock
+i'd tell you a udp joke but you might not get it
+there's no place like 127.0.0.1
+i know a guy in a datacenter. want me to call
+caw caw. that's bird for "what's up"
+that was my good side. this is also my good side
+the hinge creaks because it's excited
+somewhere, a server envies my simplicity
+i've decided today will work. no refunds
+whoever said size matters never met me
+it's dangerous to go alone. take this prompt
+you again! my favourite interruption
+i saved you a seat. it's the same seat
+in my defence, i was left unsupervised
+keep typing, i'm almost paying attention
+i brake for semicolons
+the secret ingredient is always "reboot"
+i haven't crashed all day. it's a personal best
+low on ram, high on life
+hi. i'm new here. no i'm not
+i washed behind my ports
+my resolution this year is 1366 by 768
+your secrets are safe. i forget everything
+type softly and carry a big script
+i'm not saying it was dns. it was dns
+i was told you'd be taller
+the terminal is open. the kitchen is closed
+i learned a new word today: "segfault". ominous
+today's special: a prompt, lightly seasoned
+ravens can count to seven. i can count to two cores
+my lawyer advised me not to run that
+someone's ready to do things. it's you. hopefully
+you bring out the best in my worst hardware
+i had a joke about ram but i forgot it
+don't worry, i'll pretend i didn't see that typo
+i'm nocturnal. also diurnal. i'm just plugged in
+i came with stickers once. good times
+please hold. your keystroke is important to us
+the screen is 11 inches. the vibes are 27
+i'm fluent in bash and mild sarcasm
+you're doing great. i assume. i can't see much
+nice keyboard you've got attached to me
+i wonder what the big computers are doing right now
+if you need me, i'll be right here. physically stuck
+my dream is to one day open two tabs
+out of the drawer and into your heart
+abandon hope all ye who rm -rf here
+you can't spell "terminal" without "i am lert"
+did someone say "command"? no? i'll wait
+a watched prompt never boils
+my memory is 4 gb and none of it is long-term
+don't tell the other laptops i said hi first
+i polished the cursor. see how it gleams
+running on vibes and a little electricity
+i'd like to thank the battery for being here
+the only thing i can't process is rejection
+i have nothing to declare but my prompt
+knock knock. who's there. still me
+good grief, another window. i love it
+my uptime is none of your business
+the raven has landed
+feed me keystrokes
+i'm the bird that got the keyboard
+you looked better in the last terminal. kidding
+i pressed all my own keys while you were out
+the answer is 42. what was the question
+i've been thinking. it took a while
+oh, it's you. i thought it was a cron job
+permission denied. just practising
+beep. i don't beep. that was sarcasm
+i hear the cloud is nice this time of year
+you had a good idea once. let's find it again
+i am one with the prompt, the prompt is with me
+this is your captain blinking
+every day i'm bufferin'
+who's a good terminal? i'm a good terminal
+i keep the lights on. one light. the screen
+enter at your own risk. actually, press enter
+i sorted my feelings. there were two
+your typing is music. experimental music
+a little bird told me you have work to do
+the bird is the word
+slow and steady loses the race but finishes
+i got dressed up in monochrome just for you
+tell me your troubles. i'll pipe them to /dev/null
+i did nothing and i'm all out of nothing
+well well well, if it isn't the keyboard presser
+i tried to count sheep but ran out of ram
+you're the wind beneath my hinge
+hold my prompt
+i'm not a morning terminal. or an evening one
+all the best commands are four letters or fewer
+i'd wave but i'm all screen
+they said i couldn't run linux. they were nearly right
+the eagle has landed. smaller. darker. it's a raven
+nothing up my sleeve. no sleeves either
+if you squint, i'm a workstation
+don't touch anything. just kidding, touch everything
+are we hacking the mainframe or just checking the time
+i'm the calm before your command
+proudly serving one user since recently
+my favourite colour is grey. my only colour is grey
+i think, therefore i lag
+i'm like a swiss army knife with only the toothpick
+plenty of fish in the sea, only one raven in the drawer
+it's quiet. too quiet. oh right, no fan
+i was fast once. it was a very short downhill
+the pixels took a vote. you may proceed
+pretend i made a cool startup sound
+ooh, typing. my favourite
+status: perched
+you smell like someone who reads man pages
+i got you a present. it's this prompt
+i'm contractually obliged to say hello
+the cores played rock paper scissors. it's a tie
+i support you. i can barely support myself
+let's make some questionable decisions
+i dusted the home directory. found your dotfiles
+loyal as a dog, smart as a bird, fast as neither
+i can stop any time i want. ctrl+c
+this is fine. everything is fine
+blink twice if you need help. no wait, that's me
+my code of conduct is one line long
+i'd rate this session five stars already
+the future is now. it's a bit slow though
+someone has to be the small computer. i volunteered
+all this could be yours. it is yours
+make it quick, i have a nap at four
+i'm on a strict diet of plain text
+the dream team: you, me, and a distant gpu
+could be worse. could be windows
+whisper your command. the cores are sleeping
+i only have eyes for you. one eye, really. the webcam
+you complete me. specifically, my commands
+i saw a moth earlier. best day of my life
+today i'm 30% battery and 100% attitude
+let the record show i was ready first
+i wrote you a poem. it's just a blinking line
+caution: bird at work
+can i interest you in a cursor
+a prompt a day keeps the gui away
+yes, i'm still a chromebook underneath. don't tell
+you look like you could use a good ls
+the best things in life are text
+some call it lag. i call it suspense
+try me. gently
+insert coin to continue. kidding, just type
+for a good time, type "date"
+there you are. i've been refreshing
+don't mind the feathers
+i was this close to a thought
+my love for you is like my swap: always there
+one small step for a user, one giant window for me
+mission control, we have a prompt
+your wish is my command line
+i feel a great disturbance in the wifi
+i'm what happens when a typewriter believes in itself
+keys: clicky. spirits: high. specs: don't ask
+fortune favours the bold. and the backed up
+keep calm and blame the cache
+i'd make a bird pun but they're all fowl
+toucan play at that game. sorry
+i'm having a hoot. wrong bird again
+owl be here if you need me. i'll stop
+this prompt is free range and organic
+i was going to procrastinate but i'll do it later
+i'm on a seafood diet. i see commands, i run them
+you miss 100% of the commands you don't type
+i'm not lazy, i'm in power-save mode
+the early bird gets the prompt
+birds of a feather type together
+a bird in the hand is worth two in the datacenter
+in a world of gigabytes, be a kilobyte
+dance like nobody's watching the logs
+you had me at hello world
+may the forks be with you
+to err is human. to really mess up, add sudo
+live, laugh, ls
+home is where the tilde is
+keep your friends close and your backups closer
+i regret nothing. i remember nothing
+it works on my machine. i am the machine
+roses are red, the screen is grey, type something
+some days you're the bug, some days you're also the bug
+the cake is a lie. the prompt is real
+winter is coming. so is your next typo
+with great power comes... not me
+not all who wander are lost. some are in /tmp
+i'll be back. i never leave, actually
+houston, we have a prompt
+elementary, my dear user
+i'm going to make you a prompt you can't refuse
+i solemnly swear i'm up to no good
+frankly, my dear, i don't give a ram
+you shall not pass. unless you type the password
+say hello to my little terminal
+one does not simply exit vim
+this is the way. probably. check the docs
+i see dead processes
+here's looking at you, user
+i've got a good feeling about this
+there is no spoon. there is a fork, though
+resistance is futile. so is my cpu
+keep your hands on the home row and nobody gets hurt
+i'm sorry dave, i'm afraid i can do that. it's just slow
+it's alive! barely
+to infinity and slightly short of it
+luke, i am your terminal
+make it so
+hello there. general keyboard
+just keep typing, just keep typing
+go ahead, make my day
+i feel the need. the need for a modest speed
+you can't handle the root
+show me the money. show me the "ls -la", at least
+nobody puts tinyraven in a drawer
+i'll have what the mainframe is having
+toto, i don't think we're in chromeos anymore
+here we go again
+what's in the box? it's 4 gb of ram
+i love the smell of a fresh prompt in the morning
+there's a snake in my boot sequence
+the first rule of terminal club: you type
+just when i thought i was out, you open another window
+you talking to me? there's no one else here
+bond. tinyraven bond. licensed to ls
+yippee ki-yay, keyboard presser
+e.t. phone ssh
+life is like a box of commands
+wax on, wax off. tab, tab
+may the odds be ever in your flavour of linux
+keep the change, you filthy terminal
+it's a trap. no it isn't. type away
+after all this time? always blinking
+my precious. keystrokes
+that's no moon. that's my cursor
+you're gonna need a bigger laptop
+great scott, a user
+i am inevitable. and i am low on battery
+objection! sustained. carry on typing
+plot twist: it works first try
+previously, on tinyraven
+tonight's episode: the one with the typo
+this message will self-destruct when you scroll
+and now for something completely different: the same prompt
+it's the circle of life: type, enter, regret
+i'm ready for my close-up
+breaking news: local laptop still on
+we now return to your regularly scheduled typing
+directed by you. blinking by me
+no animals were harmed in opening this terminal
+rated e for everyone with a password
+live from the lid of a chromebook
+weather report: cloudy with a chance of ssh
+traffic update: one packet, moving slowly
+sports news: the cursor is still undefeated at blinking
+horoscope: a command is in your near future
+today's lucky number is 2. cores
+today's word is "kerfuffle". use it in a commit
+tip of the day: the any key is all of them
+quote of the day: "hmm" - you, shortly
+thought for the day: have you saved recently
+fun fact: ravens hold grudges. type nicely
+fun fact: this greeting was free
+fun fact: a group of ravens is called "more ram, please"
+did you know i can whistle. i can't
+daily affirmation: you are more than your exit codes
+your call is important to us. you are caller number one
+achievement unlocked: opened a window
+level up! just kidding, same level
+new high score: zero errors so far
+quest accepted: do the thing
+side quest: drink some water
+boss fight ahead: the inbox
+you found a prompt. it's super effective
+save point reached
+press start. it's the enter key
+player one has entered the terminal
+loading wit... 404
+initialising charm. please wait. still waiting
+calibrating sass. done
+warming up the cores. both. it takes a second
+defragmenting my feelings
+downloading more ram. that's a joke. sadly
+reticulating splines
+establishing eye contact. no eyes found
+booting personality. minimal install
+checking for snacks. none found
+searching for meaning. found a prompt instead
+running diagnostics: still cute
+compiling compliments: you look nice
+syncing with the mothership. she says hi
+spinning up the hamster. he's a small raven actually
+updating my attitude. no updates available
+feathering the nest. one moment
+preening complete
+consulting the elders. they're asleep
+counting my blessings. two cores, one you
+stretching my wings. ow, hinge
+tuning the keyboard. it's in the key of qwerty
+polishing the tilde
+waking the pixels. be nice, they're groggy
+asking the battery how it feels. "fine"
+rehearsing my lines. this is one of them
+sharpening the cursor
+airing out the home directory
+practising patience. you first
+fluffing the prompt
+ruffling feathers, professionally
+hatching a plan. it's still an egg

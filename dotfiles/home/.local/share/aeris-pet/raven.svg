@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+  <!-- tinyraven bird, taken from splash.svg (the boot splash) and drawn in a 200x200 box.
+       {{LEGS}}, {{EYE}} and {{WING}} are filled in by aeris-pet for each animation frame.
+       The wing is a separate shape hinged at the shoulder (125,92), so it can flap. -->
+  {{LEGS}}
+  <path fill="#fff" d="M186,74 C172,62 160,52 146,48 C128,40 110,46 102,62 C88,84 66,112 48,142 C36,160 22,178 10,192 C30,186 46,178 60,170 C80,170 100,168 116,158 C136,146 148,124 150,100 C151,90 156,82 162,80 C170,78 178,76 186,74 Z"/>
+  {{WING}}
+  {{EYE}}
+</svg>

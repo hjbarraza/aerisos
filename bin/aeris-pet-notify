@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+# aeris:summary=Hands dunst notifications to the pet (the pet is the notifier while it is shown)
+# aeris:group=desktop
+"""aeris-pet-notify: dunst's script for the [aeris-pet-notifier] rule (see dunstrc).
+
+While the pet is shown, `aeris-pet` enables that rule: dunst stops drawing popups
+(skip_display, they still land in history) and runs this for every notification.
+It appends one JSON line per notification to $XDG_RUNTIME_DIR/aeris-pet/notify.jsonl:
+
+  {"seq": <ns>, "id": 12, "app": "...", "summary": "...", "body": "...", "urgency": "normal"}
+
+The pet watches that file (the Python overlay in desktop mode, PetLane.qml in bar mode) and
+says new lines in its bubble. If no pet is actually running (crashed, killed), this turns the
+rule off again and puts the notification back on screen, so nothing is swallowed.
+
+Standard library only: dunst runs it once per notification.
+"""
+import html
+import json
+import os
+import re
+import subprocess
+import time
+
+RUN_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-pet")
+FEED = os.path.join(RUN_DIR, "notify.jsonl")
+STATE = os.path.expanduser("~/.local/state/aeris-pet")
+PID_FILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-pet.pid")
+RULES = ("aeris-pet-notifier", "aeris-pet-notifier-critical")
+KEEP = 40
+
+
+def plain(text):
+    """Notification markup (<b>, <a>, &amp;) to plain text on one or two lines."""
+    text = re.sub(r"<br\s*/?>", "\n", text or "", flags=re.I)
+    text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
+def pet_alive():
+    try:
+        with open(os.path.join(STATE, "where")) as f:
+            where = f.read().strip()
+    except OSError:
+        where = "desktop"
+    if where == "bar":
+        # a Quickshell instance drawing the aeris bar or the standalone bar pet
+        for pid in filter(str.isdigit, os.listdir("/proc")):
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmd = f.read().split(b"\0")
+            except OSError:
+                continue
+            if os.path.basename(cmd[0]) in (b"qs", b"quickshell") and b"aeris" in b" ".join(cmd):
+                return True
+        return False
+    try:
+        with open(PID_FILE) as f:
+            pid = int(f.read().strip())
+        os.kill(pid, 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def dictation_for_box(item):
+    """Superwhisper's "copied to clipboard" notice while the ask box is open: the box fetches that
+    dictation itself (ask.qml, Dictation), so the pet needn't say it. Still in dunst's history."""
+    if "superwhisper" not in item["app"].lower() or "had the keyboard" not in item["body"]:
+        return False
+    try:
+        with open(os.path.join(RUN_DIR, "ask-box.pid")) as f:
+            pid = int(f.read().strip())
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return b"ask.qml" in f.read()
+    except (OSError, ValueError):
+        return False
+
+
+def main():
+    env = os.environ
+    nid = env.get("DUNST_ID", "")
+    if not pet_alive():
+        for r in RULES:
+            subprocess.run(["dunstctl", "rule", r, "disable"], capture_output=True)
+        if nid.isdigit():
+            subprocess.run(["dunstctl", "history-pop", nid], capture_output=True)
+        return
+    item = {
+        "seq": time.time_ns(),
+        "id": int(nid) if nid.isdigit() else 0,
+        "app": plain(env.get("DUNST_APP_NAME", "")),
+        "summary": plain(env.get("DUNST_SUMMARY", "")),
+        "body": plain(env.get("DUNST_BODY", "")),
+        "urgency": env.get("DUNST_URGENCY", "NORMAL").lower(),
+    }
+    if not (item["summary"] or item["body"]):
+        return
+    if dictation_for_box(item):
+        return
+    os.makedirs(RUN_DIR, exist_ok=True)
+    with open(FEED, "a", encoding="utf-8") as f:
+        f.write(json.dumps(item, ensure_ascii=False) + "\n")
+    try:
+        with open(FEED, encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > KEEP * 2:
+            # rewritten in place (same inode), so the pet's file watch keeps working
+            with open(FEED, "r+", encoding="utf-8") as f:
+                f.writelines(lines[-KEEP:])
+                f.truncate()
+    except OSError:
+        pass
+
+
+if __name__ == "__main__":
+    main()

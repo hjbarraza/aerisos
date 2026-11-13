@@ -1,35 +1,148 @@
 #!/bin/bash
-# aeris:summary=Screen recording to ~/Videos/Screenrecordings; run again to stop
+# aeris:summary=Screen recording (area, screen or window, with desktop sound or mic); run again to stop
 # aeris:group=capture
-# aeris:args=[area|screen|status]
-# screenrecord [area|screen]  - start recording; run again (any mode) to stop and save.
-# screenrecord status         - Waybar JSON: red dot while recording, hidden otherwise.
-# Saves to ~/Videos/Screenrecordings, with desktop audio.
+# aeris:args=[area|screen|window|--with-desktop-audio|--with-microphone-audio|--status]
+# Screen recording with wf-recorder, for the screen and its sound. Webcam recording and
+# editing are Monologue's job (omacom/monologue, with Omacut for trims).
+#
+#   screenrecord                          drag a rectangle, record only that
+#   screenrecord --fullscreen             record the whole screen
+#   screenrecord --window                 click a window, record only that window's area
+#   screenrecord --with-desktop-audio     add what the speakers play
+#   screenrecord --with-microphone-audio  add the microphone (both audio flags mix into one track)
+#   screenrecord --stop-recording         stop only, never start
+#   screenrecord --status                 Waybar JSON: dim mark when idle, REC and elapsed time while recording
+#   screenrecord --status-idle            Waybar JSON: the idle mark only (empty, so hidden, while recording)
+#   screenrecord --status-live            Waybar JSON: REC and elapsed time only (empty, so hidden, when idle)
+#
+# Run it again to stop. Files go to ~/Videos. The graphics chip encodes (VAAPI); if that fails
+# to start, the processor does.
 
-set -euo pipefail
-if [[ ${1:-} == status ]]; then
-  pgrep -x gpu-screen-reco >/dev/null \
-    && printf '{"text":"","class":"on","tooltip":"Recording - click to stop and save"}\n' \
-    || printf '{"text":""}\n'
-  exit
+set -o pipefail   # no -e or -u: stopping a recording must run through pkill misses and unset audio state
+
+[[ -f ~/.config/user-dirs.dirs ]] && source ~/.config/user-dirs.dirs
+dir="${XDG_VIDEOS_DIR:-$HOME/Videos}"
+state="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/screenrecord"
+rec_pid="$state/pid"; rec_file="$state/file"; pa_file="$state/pa-modules"
+mkdir -p "$state"
+
+DESKTOP_AUDIO=0; MIC_AUDIO=0; FULLSCREEN=0; WINDOW=0; STOP_ONLY=0; STATUS=0
+for arg in "$@"; do
+  case $arg in
+  --with-desktop-audio) DESKTOP_AUDIO=1 ;;
+  --with-microphone-audio) MIC_AUDIO=1 ;;
+  --fullscreen) FULLSCREEN=1 ;;
+  --window) WINDOW=1 ;;
+  --stop-recording) STOP_ONLY=1 ;;
+  --status|status) STATUS=1 ;;
+  --status-idle) STATUS=2 ;;
+  --status-live) STATUS=3 ;;
+  area) ;;   # the old name for the default: a selected region
+  screen) FULLSCREEN=1 ;;   # the old name for --fullscreen (hyprland.lua, the AERIS menu)
+  window) WINDOW=1 ;;
+  *) echo "screenrecord: unknown option $arg" >&2; exit 2 ;;
+  esac
+done
+
+notify() { notify-send "$@" 2>/dev/null || true; }
+bar() { pkill -RTMIN+10 waybar 2>/dev/null || true; }
+
+# Our recorder is running when the pid we saved is still wf-recorder.
+recording() {
+  local pid; [[ -f $rec_pid ]] || return 1
+  pid=$(<"$rec_pid")
+  [[ $pid =~ ^[0-9]+$ ]] && [[ $(cat "/proc/$pid/comm" 2>/dev/null) == wf-recorder* ]]
+}
+
+if (( STATUS )); then
+  if recording; then
+    (( STATUS == 2 )) && { echo '{"text":""}'; exit 0; }
+    t=$(( $(date +%s) - $(stat -c %Y "$rec_pid") ))
+    printf '{"text":"\U000F044A REC %d:%02d","class":"on","tooltip":"Recording the screen - click to stop"}\n' $((t/60)) $((t%60))
+  elif (( STATUS == 3 )); then echo '{"text":""}'
+  else printf '{"text":"\U000F044A","class":"off","tooltip":"Screen recorder - click for options"}\n'; fi
+  exit 0
 fi
 
-if pgrep -x gpu-screen-reco >/dev/null; then
-  pkill -SIGINT -x gpu-screen-reco          # SIGINT = stop and finalize the file
-  sleep 0.5; aeris-shell -q bar refresh
-  notify-send "Screen recording saved" "~/Videos/Screenrecordings"
-  exit
-fi
+# ---------------------------------------------------------------- stop
 
-dir="$(xdg-user-dir VIDEOS 2>/dev/null || echo "$HOME/Videos")/Screenrecordings"
+unload_audio() {
+  [[ -f $pa_file ]] || return 0
+  tac "$pa_file" | while read -r m; do [[ -n $m ]] && pactl unload-module "$m" 2>/dev/null; done
+  rm -f "$pa_file"
+}
+
+if recording; then
+  pid=$(<"$rec_pid")
+  kill -INT "$pid" 2>/dev/null                     # SIGINT lets wf-recorder finish the file
+  for _ in $(seq 60); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+  kill -KILL "$pid" 2>/dev/null
+  unload_audio
+  saved=$(cat "$rec_file" 2>/dev/null)
+  rm -f "$rec_pid" "$rec_file"; bar
+  notify "Recording saved" "${saved:-$dir}"
+  exit 0
+fi
+(( STOP_ONLY )) && exit 0
+
+# ---------------------------------------------------------------- start
+
+command -v wf-recorder >/dev/null || { notify -u critical "Recording" "wf-recorder is not installed"; exit 1; }
 mkdir -p "$dir"
-file="$dir/$(date +%Y-%m-%d_%H-%M-%S).mp4"
 
-case "${1:-area}" in
-  area)   region=$(slurp -d -b '#00000066' -c '#ffffffcc' -w 1 -f '%wx%h+%x+%y') || exit 0
-          args=(-w region -region "$region") ;;
-  screen) args=(-w "$(hyprctl activeworkspace -j | python3 -c 'import json,sys; print(json.load(sys.stdin)["monitor"])')") ;;
-esac
+# Region as "X,Y WxH" in the compositor's logical pixels.
+if (( FULLSCREEN )); then
+  geo=$(hyprctl monitors -j | jq -r '.[] | select(.focused) |
+    "\(.x),\(.y) \((.width / .scale) | round)x\((.height / .scale) | round)"')
+elif (( WINDOW )); then
+  # Offer the windows on the visible workspaces; slurp -r only accepts a click on one of them.
+  geo=$(hyprctl clients -j | jq -r --argjson ws "$(hyprctl monitors -j | jq '[.[].activeWorkspace.id]')" \
+    '.[] | select(.mapped and (.hidden | not) and (.workspace.id as $w | $ws | index($w))) |
+     "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"' | slurp -r) || exit 0   # Esc cancels
+  [[ $geo =~ ^-?[0-9]+,-?[0-9]+\ [0-9]+x[0-9]+$ ]] || exit 1
+else
+  geo=$(slurp) || exit 0                          # Esc cancels
+  [[ $geo =~ ^-?[0-9]+,-?[0-9]+\ [0-9]+x[0-9]+$ ]] || exit 1
+fi
 
-gpu-screen-recorder "${args[@]}" -f 60 -a default_output -o "$file" >/dev/null 2>&1 &
-sleep 0.5; aeris-shell -q bar refresh
+# ---- audio: wf-recorder takes one device, so desktop and microphone go through a null sink
+
+audio=""
+if (( DESKTOP_AUDIO || MIC_AUDIO )); then
+  sink=""; src=""
+  (( DESKTOP_AUDIO )) && sink=$(pactl get-default-sink 2>/dev/null)
+  (( MIC_AUDIO )) && src=$(pactl get-default-source 2>/dev/null)
+  if [[ -n $sink && -n $src ]]; then
+    : > "$pa_file"
+    pactl load-module module-null-sink sink_name=aeris_rec sink_properties=device.description=aeris_rec >> "$pa_file" 2>/dev/null
+    pactl load-module module-loopback source="$sink.monitor" sink=aeris_rec latency_msec=20 >> "$pa_file" 2>/dev/null
+    pactl load-module module-loopback source="$src" sink=aeris_rec latency_msec=20 >> "$pa_file" 2>/dev/null
+    audio="aeris_rec.monitor"
+  elif [[ -n $sink ]]; then audio="$sink.monitor"
+  elif [[ -n $src ]]; then audio="$src"
+  fi
+  [[ -n $audio ]] || notify "Recording" "No audio device found; recording without sound"
+fi
+
+# ---- the recorder
+
+file="$dir/screenrecording-$(date +%Y-%m-%d_%H-%M-%S).mp4"
+audio_args=(); [[ -n $audio ]] && audio_args=(--audio="$audio")
+
+wf-recorder -g "$geo" -r 60 -R 48000 "${audio_args[@]}" -c h264_vaapi -d /dev/dri/renderD128 \
+  -f "$file" 9>&- >/dev/null 2>&1 &
+pid=$!
+sleep 1
+if ! kill -0 "$pid" 2>/dev/null; then               # graphics encoder failed: use the processor
+  wf-recorder -g "$geo" -r 60 -R 48000 "${audio_args[@]}" -c libx264 -p preset=ultrafast -p crf=28 \
+    -f "$file" 9>&- >/dev/null 2>&1 &
+  pid=$!
+  sleep 1
+fi
+if kill -0 "$pid" 2>/dev/null; then
+  echo "$pid" > "$rec_pid"; echo "$file" > "$rec_file"; bar
+else
+  notify -u critical "Recording did not start" "wf-recorder could not record the screen"
+  unload_audio; rm -f "$file"; bar
+  exit 1
+fi

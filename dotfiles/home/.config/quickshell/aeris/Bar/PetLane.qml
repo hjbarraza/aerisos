@@ -18,12 +18,15 @@ PanelWindow {
     property string kind: "dragon"
     property var obstacles: () => []   // [[x0, x1], ...] the icons, in bar coordinates
     property var onRightClick: null
+    // Top under the AERIS bar (same process, so it stacks right). The standalone Waybar pet
+    // (pet.qml) sets Overlay: on Top, every Waybar reload maps the bar above it and hides it.
+    property int layer: WlrLayer.Top
 
     anchors { top: true; left: true; right: true }
     implicitHeight: Theme.barHeight + 34
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
-    WlrLayershell.layer: WlrLayer.Top
+    WlrLayershell.layer: lane.layer
     WlrLayershell.namespace: "aeris-pet"
     mask: Region { item: hit }
 
@@ -58,13 +61,20 @@ PanelWindow {
     readonly property real dwellCap: 90
     property real chirpAt: now() + rand(40, 120) * 1000   // next chirp, ms
     property real chirpUntil: 0                           // the note mark shows until then
-    property real attnUntil: 0                            // "!" and big hops after a notification
-    property real lastNotify: 0
+    property real attnUntil: 0                            // "!" while it wants attention
+    // Notifications: the pet is the notifier while shown (dunst rule [aeris-pet-notifier] ->
+    // aeris-pet-notify -> notifyFeed). New lines queue here and are said one by one.
+    readonly property string notifyFeed: Quickshell.env("XDG_RUNTIME_DIR") + "/aeris-pet/notify.jsonl"
+    property var notes: []
+    property real noteSeq: -1                             // -1 until the feed is first read
+    property bool noteShowing: false
+    property string noteKind: ""                          // "thinking", "answer" (aeris-ask) or a notification
     readonly property bool asleep: mode === "sleep" || mode === "nap"
     readonly property string soundDir: Quickshell.env("HOME") + "/.local/share/aeris-pet/sounds/"
     property var crumbs: []
     readonly property bool alert: Status.airHot.length > 0 || Status.labels.length > 0
     readonly property bool moving: mode === "walk" || mode === "jump" || mode === "hop" || mode === "peck"
+                                   || mode === "stomp"
 
     readonly property var greetFallback: ["caw", "still here", "don't mind me"]
     readonly property var feedLines: ["oh! crumbs.", "don't mind if i do", "a snack. the universe provides."]
@@ -162,17 +172,71 @@ PanelWindow {
         else if (kind === "raven") setMode("peck", 1.2)
         else setMode("sit", rand(5, 15))
     }
-    // A desktop notification arrived (dbus-monitor below): wake, hop about with a "!"
-    // and a chirp, and show the notification's title in the bubble.
-    function notified(app, summary) {
-        if (now() - lastNotify < 4000 || mode === "jump") return
-        lastNotify = now()
-        attnUntil = now() + 2200
+    // New lines in the notification feed (FileView below): queue them, oldest first.
+    function feedChanged(text) {
+        const items = []
+        for (const line of text.split("\n")) {
+            try { const j = JSON.parse(line); if (j.seq > Math.max(noteSeq, 0)) items.push(j) } catch (e) {}
+        }
+        if (noteSeq < 0) {   // first read: what is already there is old news
+            noteSeq = items.length ? items[items.length - 1].seq : 0
+            return
+        }
+        if (!items.length) return
+        noteSeq = items[items.length - 1].seq
+        notes = notes.concat(items).slice(-8)
+        const askNews = items.some(i => i.kind === "thinking" || i.kind === "answer")
+        if (noteShowing && (noteKind === "thinking" || (noteKind === "answer" && askNews))) {
+            // "hmm…" gives way to its answer, and an answer to the next question, at once
+            bubbleTimer.stop(); bubble.visible = false; noteShowing = false
+        }
+        if (!noteShowing) nextNote()
+    }
+    // Say the next notification: it wants your attention, so it stomps and jitters in place
+    // with a "!", speaks up (a call and a second one, three for critical), and shows the
+    // summary and body in the bubble, longer for longer text.
+    function nextNote() {
+        if (!notes.length) { noteShowing = false; return }
+        let item = notes[0]
+        notes = notes.slice(1)
+        while (item.kind === "thinking" && notes.length) {   // its answer is already here
+            item = notes[0]; notes = notes.slice(1)
+        }
+        noteShowing = true
+        noteKind = item.kind || "notification"
+        const critical = item.urgency === "critical"
+        const summary = item.summary || (item.kind ? "" : item.app || "")   // answers: no title line
+        let text = item.body ? (summary ? summary + "\n" + item.body : item.body) : summary
+        const limit = noteKind === "answer" ? 320 : 160
+        if (text.length > limit) text = text.slice(0, limit - 1) + "…"
+        if (noteKind === "thinking") { say(text, 45, 300); return }   // aeris-ask is waiting
+        if (noteKind === "answer") {                                  // a hop, a chirp, time to read
+            hopStart = now()
+            setMode("stomp", 1.2)
+            voice("chirp")
+            say(text, Math.max(6, Math.min(25, 5 + text.length / 14)), 380)
+            return
+        }
+        const secs = Math.max(5, Math.min(12, 4 + text.length / 18))
+        if (mode === "jump") { py = ground; tilt = 0 }
         hopStart = now()
-        setMode("hop", 2.2)
-        chirp()
-        const line = summary || app
-        if (line) say(line.length > 60 ? line.slice(0, 59) + "…" : line)
+        attnUntil = now() + secs * 1000
+        setMode("stomp", critical ? 4.0 : 2.6)
+        voice("caw")
+        callTimer.calls = critical ? ["caw", "caw"] : ["chirp"]
+        callTimer.restart()
+        say(text, secs, 300, critical)   // critical: inverted, like dunst
+    }
+    Timer {
+        id: callTimer
+        property var calls: []
+        interval: 900
+        repeat: true
+        onTriggered: {
+            if (!calls.length) { stop(); return }
+            lane.voice(calls[0])
+            calls = calls.slice(1)
+        }
     }
     function tally(dt) {
         if (px < width / 2) dwellL += dt; else dwellR += dt
@@ -203,18 +267,30 @@ PanelWindow {
         chirpAt = now() + rand(180, 600) * 1000
         chirpUntil = now() + 1600
         const roll = Math.random()
-        const kind = roll < 0.3 ? "song" : (roll < 0.55 ? "giggle" : "caw")
-        Quickshell.execDetached(["pw-play", "--volume=0.35",
-                                 soundDir + "v2_" + kind + Math.floor(Math.random() * 3) + ".wav"])
+        voice(roll < 0.25 ? "song" : roll < 0.45 ? "giggle" : roll < 0.65 ? "chirp"
+              : roll < 0.75 ? "yawn" : "caw")
         canvas.requestPaint()
+    }
+    // One of the pet's five sounds. Each pet has its own voice (prefixes = VOICE_PREFIX in
+    // aeris-pet); silent while ~/.local/state/aeris-pet/muted exists (the menu's Vocal / Mute).
+    function voice(kind) {
+        const file = soundDir + (lane.kind === "raven" ? "v2_" : "dr1_") + kind
+                     + Math.floor(Math.random() * 3) + ".wav"
+        Quickshell.execDetached(["sh", "-c",
+            '[ -e "$HOME/.local/state/aeris-pet/muted" ] || exec pw-play --volume=0.35 "$1"',
+            "voice", file])
     }
     function hop() {
         hopStart = now()
         setMode("hop", 1.1)
     }
-    function say(text) {
+    function say(text, seconds, wrap, inverted) {
+        if (noteShowing && wrap === undefined) return   // chatter waits for the notification
+        bubble.inverted = inverted === true
+        bubbleText.wrapAt = wrap ?? 260
         bubbleText.text = text
         bubble.visible = true
+        bubbleTimer.interval = (seconds ?? 4.5) * 1000
         bubbleTimer.restart()
     }
     function eatCrumb() {
@@ -276,25 +352,41 @@ PanelWindow {
     }
     onAlertChanged: if (alert && asleep) decide()
 
-    // Desktop notifications, as an event stream: every Notify call on the session bus.
-    // Strings after the Notify line are app_name, app_icon, summary, body.
-    Process {
-        id: notifyWatch
-        running: lane.visible
-        command: ["dbus-monitor", "--session",
-                  "type='method_call',interface='org.freedesktop.Notifications',member='Notify'"]
-        property var strs: null
-        stdout: SplitParser {
-            onRead: line => {
-                const p = notifyWatch
-                if (line.indexOf("member=Notify") >= 0) { p.strs = []; return }
-                if (p.strs === null) return
-                const m = /^\s+string "(.*)"$/.exec(line)
-                if (!m) return
-                p.strs.push(m[1])
-                if (p.strs.length === 3) { lane.notified(p.strs[0], p.strs[2]); p.strs = null }
-            }
+    // Desktop notifications, from the feed aeris-pet-notify appends to (the pet as notifier).
+    // Where the pet is, for the ask box (ask.qml follows it): {"where", "x", "y"} in screen px,
+    // written at most 4 times a second while it moves. In place (not atomic) so watches hold.
+    FileView {
+        id: posFile
+        path: Quickshell.env("XDG_RUNTIME_DIR") + "/aeris-pet/pos.json"
+        atomicWrites: false
+        blockWrites: false
+        printErrors: false
+    }
+    property int posSent: -9999
+    Timer {
+        interval: 250
+        running: lane.visible && lane.placed
+        repeat: true
+        onTriggered: {
+            const x = Math.round(lane.px)
+            if (Math.abs(x - lane.posSent) < 2) return
+            lane.posSent = x
+            posFile.setText(JSON.stringify({ where: "bar", x: x, y: Theme.barHeight }))
         }
+    }
+    // The watch only takes on an existing file, so create it first, then point the view at it.
+    Process {
+        running: true
+        command: ["sh", "-c", 'mkdir -p "$(dirname "$1")" && touch "$1"', "feed", lane.notifyFeed]
+        onExited: feedView.path = lane.notifyFeed
+    }
+    FileView {
+        id: feedView
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: lane.feedChanged(text())
+        onLoadFailed: if (lane.noteSeq < 0) lane.noteSeq = 0   // no feed yet: nothing old to skip
     }
     onKindChanged: canvas.requestPaint()
     Timer {   // place it once the bar has laid out its icons
@@ -359,31 +451,55 @@ PanelWindow {
     // ---- speech bubble, under the bar below the pet
     PopupWindow {
         id: bubble
+        // Swiss, black and white: a pill, a 1 px white frame, 8 px grid padding, and a 1 px
+        // leader line from the pet down to the bubble. Inverted (white, black text) for
+        // critical notifications.
+        property bool inverted: false
+        readonly property int leader: 8
+        readonly property real boxX: Math.round(Math.max(4, Math.min(lane.width - implicitWidth - 4, lane.px - implicitWidth / 2)))
         anchor.window: lane
-        anchor.rect.x: Math.round(Math.max(4, Math.min(lane.width - implicitWidth - 4, lane.px - implicitWidth / 2)))
-        anchor.rect.y: Math.max(Theme.barHeight + 2, lane.py + 4)
-        implicitWidth: Math.min(bubbleText.implicitWidth, 220) + 16
-        implicitHeight: bubbleText.implicitHeight + 10
+        anchor.rect.x: boxX
+        anchor.rect.y: Math.max(Theme.barHeight, lane.py + 2)
+        implicitWidth: Math.min(bubbleText.implicitWidth, bubbleText.wrapAt) + 40
+        implicitHeight: leader + bubbleText.implicitHeight + 16
         visible: false
         color: "transparent"
         mask: Region {}   // never in the way of a click
+        Rectangle {   // the leader line, under the pet
+            x: Math.round(Math.max(1, Math.min(bubble.implicitWidth - 2, lane.px - bubble.boxX)))
+            width: 1
+            height: bubble.leader
+            color: Theme.fg
+        }
         Rectangle {
-            anchors.fill: parent
-            color: Theme.bg
-            border.color: Theme.line
+            y: bubble.leader
+            width: parent.width
+            height: parent.height - bubble.leader
+            color: bubble.inverted ? Theme.fg : "#000000"
+            border.color: Theme.fg
             border.width: 1
-            radius: 3
+            radius: height / 2   // fully rounded
         }
         Text {
             id: bubbleText
-            x: 8; y: 5
-            width: Math.min(implicitWidth, 220)
+            property int wrapAt: 260   // notifications get a wider bubble
+            x: 20; y: bubble.leader + 8
+            width: Math.min(implicitWidth, wrapAt)
             wrapMode: Text.Wrap
-            color: Theme.fg
-            font { family: Theme.sans; pixelSize: Theme.small }
+            color: bubble.inverted ? "#000000" : Theme.fg
+            lineHeight: 20
+            lineHeightMode: Text.FixedHeight
+            font { family: Theme.sans; pixelSize: 14; features: { "tnum": 1 } }
         }
     }
-    Timer { id: bubbleTimer; interval: 4500; onTriggered: bubble.visible = false }
+    Timer {
+        id: bubbleTimer
+        interval: 4500
+        onTriggered: {
+            bubble.visible = false
+            if (lane.noteShowing) { lane.noteShowing = false; Qt.callLater(lane.nextNote) }
+        }
+    }
 
     // ---- drawing
     // A small canvas that travels with the pet; feet at (20, 26) inside it.
@@ -398,16 +514,21 @@ PanelWindow {
             ctx.reset()
             ctx.lineCap = "round"
             ctx.lineJoin = "round"
-            let lift = 0
-            if (lane.mode === "hop") {
+            let lift = 0, jit = 0, look = 1
+            if (lane.mode === "stomp") {
+                const s = (lane.now() - lane.hopStart) / 1000
+                lift = 4 * Math.abs(Math.sin(s * Math.PI * 5))   // five stamps a second
+                jit = 1.5 * Math.sin(s * Math.PI * 22)
+                look = Math.floor(s * 3) % 2 ? -1 : 1
+            } else if (lane.mode === "hop") {
                 const s = (lane.now() - lane.hopStart) / 1000
                 lift = 6 * Math.abs(Math.sin(s * Math.PI * 2.7))
             } else if (lane.mode === "walk" && lane.kind === "raven") {
                 lift = 1.6 * Math.abs(Math.sin(lane.t * 9))
             }
             ctx.save()
-            ctx.translate(20 + (lane.px - Math.round(lane.px)), 26 - lift)
-            ctx.scale(lane.dir, 1)
+            ctx.translate(20 + (lane.px - Math.round(lane.px)) + jit, 26 - lift)
+            ctx.scale(lane.dir * look, 1)
             ctx.rotate(lane.tilt)
             if (lane.kind === "raven") drawRaven(ctx, lift > 0.5)
             else drawDragon(ctx)
@@ -449,7 +570,7 @@ PanelWindow {
         function drawRaven(ctx, airborne) {
             const sleeping = lane.asleep
             const peck = lane.mode === "peck" ? 0.5 + 0.2 * Math.sin(lane.t * 18) : 0
-            const flap = lane.mode === "hop" ? 0.7 * Math.sin(lane.t * 30) - 0.3 : 0
+            const flap = lane.mode === "hop" || lane.mode === "stomp" ? 0.7 * Math.sin(lane.t * 30) - 0.3 : 0
             ctx.save()
             if (sleeping) ctx.translate(0, 1.5)          // hunkers down
             // legs
@@ -491,7 +612,7 @@ PanelWindow {
         function drawDragon(ctx) {
             const walking = lane.mode === "walk"
             const sleeping = lane.asleep
-            const wave = sleeping ? 0.3 : (walking || lane.mode === "hop" ? 1.4 : 0.6)
+            const wave = sleeping ? 0.3 : (walking || lane.mode === "hop" || lane.mode === "stomp" ? 1.4 : 0.6)
             const ph = lane.t * (walking ? 8 : 2)
             const pts = []
             for (let i = 0; i < 9; i++) {

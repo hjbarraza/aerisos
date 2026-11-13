@@ -1,0 +1,61 @@
+#!/bin/bash
+# aeris:summary=Open a folder, file, link or app by name, without tying up the terminal
+# aeris:group=desktop
+# aeris:args=[thing ...]
+# open: open things from the terminal without tying up the terminal.
+#
+#   open                      the current folder in the file manager (Thunar, else Nautilus)
+#   open some/folder          that folder in the file manager
+#   open file.jpg             the file in its default app (xdg-open)
+#   open https://example.com  the link in the browser (anything starting http:// or https://)
+#   open firefox              an app, by its launcher name or command (when no such file is here):
+#                             "open monologue", "open file manager", "open Hype"
+#
+# Several arguments open several things.
+
+set -euo pipefail
+
+launch() { setsid -f "$@" >/dev/null 2>&1 </dev/null; }
+
+# The desktop entry for an app name: its id (firefox for firefox.desktop) or launcher Name,
+# exact first, then the start of a name, then anywhere in it. Hidden entries are skipped.
+find_app() {
+  local want=${1,,} dirs=("$HOME/.local/share/applications" /usr/share/applications)
+  local mode f id name best=""
+  for mode in exact prefix contains; do
+    for f in "${dirs[@]/%//}"*.desktop; do
+      [[ -f $f ]] || continue
+      grep -qE '^(NoDisplay|Hidden)=true' "$f" && continue
+      id=$(basename "$f" .desktop); id=${id,,}
+      name=$(grep -m1 '^Name=' "$f"); name=${name#Name=}; name=${name,,}
+      case $mode in
+        exact)    [[ $id == "$want" || $name == "$want" || ${id##*.} == "$want" ]] ;;
+        prefix)   [[ $name == "$want"* || $id == "$want"* ]] ;;
+        contains) [[ $name == *"$want"* ]] ;;
+      esac && { best=$(basename "$f" .desktop); break 2; }
+    done
+  done
+  [[ -n $best ]] && echo "$best"
+}
+
+(( $# )) || set -- .
+status=0
+for target in "$@"; do
+  if [[ $target =~ ^https?:// ]]; then
+    launch xdg-open "$target"
+  elif [[ -d $target ]]; then
+    if command -v thunar >/dev/null; then launch thunar "$(realpath -- "$target")"; else launch nautilus "$(realpath -- "$target")"; fi
+  elif [[ -e $target ]]; then
+    launch xdg-open "$(realpath -- "$target")"
+  elif app=$(find_app "$target"); then
+    launch gtk-launch "$app"
+    echo "open: started $app"
+  elif [[ $target != */* ]] && command -v -- "$target" >/dev/null; then
+    launch "$target"
+    echo "open: started $target"
+  else
+    echo "open: $target: no such file, folder or app" >&2
+    status=1
+  fi
+done
+exit $status

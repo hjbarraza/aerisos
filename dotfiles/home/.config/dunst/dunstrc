@@ -65,3 +65,23 @@
     foreground = "#000000"
     frame_color = "#ffffff"
     timeout = 0
+# Pet timers and reminders (aeris-ask /timer, /remind): critical, and they ring through a /hush,
+# which pauses dunst at level 50.
+[aeris-timer]
+    appname = "tinyraven-timer"
+    override_pause_level = 60
+
+# The pet as notifier: `aeris-pet` enables these two rules while the pet is shown (and disables
+# them when it hides). Popups are not drawn (they still go to history) and aeris-pet-notify hands
+# each one to the pet's speech bubble. Critical ones still pop up as well. dunst starts with both
+# off, so if the pet is not running, notifications look as usual.
+[aeris-pet-notifier]
+    enabled = false
+    appname = "*"
+    skip_display = true
+    script = ~/.local/bin/aeris-pet-notify
+
+[aeris-pet-notifier-critical]
+    enabled = false
+    msg_urgency = critical
+    skip_display = false

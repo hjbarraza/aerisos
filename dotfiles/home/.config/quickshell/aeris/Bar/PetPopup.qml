@@ -7,7 +7,7 @@ import qs.Commons
 import qs.Ui
 
 // Pet menu under the paw icon: pick the pet (dragon, raven), where it lives (the desktop
-// overlay or a strip of the bar, PetLane), show or hide it. Also opened by right-clicking
+// overlay or a strip of the bar, PetLane), its sound (vocal or mute), show or hide it. Also opened by right-clicking
 // the pet itself (`aeris-shell pet menu` from the overlay). Reads `aeris-pet status` on open.
 PopupWindow {
     id: petPopup
@@ -15,8 +15,10 @@ PopupWindow {
     property string pet: ""
     property bool running: false
     property string where: "desktop"
+    property bool muted: false
     readonly property var pets: [["dragon", "Dragon"], ["raven", "Raven"]]
     readonly property var places: [["desktop", "On desktop"], ["bar", "In bar"]]
+    readonly property var voices: [["vocal", "Vocal"], ["mute", "Mute"]]
 
     anchor.rect.x: 0
     anchor.rect.y: Theme.barHeight
@@ -52,6 +54,7 @@ PopupWindow {
                     petPopup.pet = j.pet ?? ""
                     petPopup.running = j.running === true
                     petPopup.where = j.where ?? "desktop"
+                    petPopup.muted = j.muted === true
                 } catch (e) { petPopup.running = false }
             }
         }
@@ -111,6 +114,31 @@ PopupWindow {
                     Layout.fillWidth: true
                 }
                 TapHandler { onTapped: petPopup.act("aeris-pet where " + placeRow.modelData[0]) }
+            }
+        }
+        Item { width: 1; height: 3 }
+        Rectangle { width: parent.width; height: 1; color: Theme.line }
+        Item { width: 1; height: 2 }
+        Repeater {
+            model: petPopup.voices
+            RowLayout {
+                id: voiceRow
+                required property var modelData
+                readonly property bool current: petPopup.muted === (modelData[0] === "mute")
+                width: petCol.width
+                spacing: 6
+                Text {
+                    text: voiceRow.current ? "●" : "○"
+                    color: voiceRow.current ? Theme.fg : Theme.dim
+                    font.pixelSize: 8
+                }
+                Text {
+                    text: voiceRow.modelData[1]
+                    color: Theme.fg
+                    font { family: Theme.sans; pixelSize: Theme.size }
+                    Layout.fillWidth: true
+                }
+                TapHandler { onTapped: petPopup.act("aeris-pet " + voiceRow.modelData[0]) }
             }
         }
         Item { width: 1; height: 3 }

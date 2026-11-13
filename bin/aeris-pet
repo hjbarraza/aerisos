@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # aeris:summary=Desktop pet (dragon or raven) on a transparent overlay
 # aeris:group=desktop
-# aeris:args=[run|start|quit|toggle|status|set dragon|raven|where desktop|bar]
+# aeris:args=[run|start|quit|toggle|status|set dragon|raven|where desktop|bar|mute|vocal|notifier]
 """aeris-pet: a small dragon companion for the desktop, outside any terminal.
 
 It swims through the air like Haku: its body undulates as it moves, and its
@@ -25,7 +25,16 @@ choice is kept in ~/.local/state/aeris-pet/pet and picked up by the running pet.
   aeris-pet quit            hide the pet
   aeris-pet where bar|desktop  live in the top bar (drawn by Quickshell, Bar/PetLane.qml)
                             or on the desktop overlay (this program)
-  aeris-pet status          bar module JSON: {"text", "class", "pet", "running", "where"}
+  aeris-pet mute|vocal      silence the pet or let it caw again (both modes; kept in
+                            ~/.local/state/aeris-pet/muted, read at every sound)
+  aeris-pet notifier        re-sync the notifier with the pet (see below)
+  aeris-pet status          bar module JSON: {"text", "class", "pet", "running", "where", "muted"}
+
+The pet is the notifier while it is shown: aeris-pet enables the dunst rules
+[aeris-pet-notifier] (popups not drawn, kept in history; critical ones still pop up) and dunst
+hands each notification to aeris-pet-notify, which appends it to
+$XDG_RUNTIME_DIR/aeris-pet/notify.jsonl. The pet watches that file and says each one in its
+bubble (summary and body, queued, longer for longer text). Hiding the pet turns the rules off.
 
 In bar mode this program does not run: the shell draws a small pet in the bar and
 start/quit/toggle show or hide it there (hidden = ~/.local/state/aeris-pet/bar-hidden).
@@ -60,7 +69,16 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+
+# The pet draws on Wayland's overlay layer, above the top bar (Waybar is a layer surface, so a
+# normal window, even floating, always sits under it and hid the pet perched near the top).
+# Needs gtk-layer-shell; without it the pet falls back to a floating window under the bar.
+try:
+    gi.require_version("GtkLayerShell", "0.1")
+    from gi.repository import GtkLayerShell  # noqa: E402
+except (ValueError, ImportError):
+    GtkLayerShell = None
 
 APP = "aeris-pet"
 CRUMB_APP = "aeris-crumbs"
@@ -73,8 +91,8 @@ NEW_WINDOW_LINES = ["ooh, a new window", "what's this, then?", "new room, same d
 VOLUME = 0.35
 
 BUBBLE_SECONDS = 5.0
-BUBBLE_WRAP_PX = 110
-FONT = "Die Grotesk 8"
+BUBBLE_WRAP_PX = 140
+FONT = "Die Grotesk 10"
 
 # Dragon body: BODY_N spine points, BODY_SEG px apart, head first.
 BODY_N = 16
@@ -92,10 +110,18 @@ REAR_BONES = (7.0, 7.5, 8.0)      # thigh (angled forward), shank, metatarsal (h
 STRIDE = 5.5                      # half a step, px
 
 PETS = (("dragon", "Dragon"), ("raven", "Raven"))
+PET_NAMES = {"dragon": "tinydragon", "raven": "tinyraven"}   # used by the ask box and its answers
 CHOICE_FILE = os.path.expanduser("~/.local/state/aeris-pet/pet")
 RAVEN_SCALE = 0.2                 # the 200x200 raven drawing shown 40 px tall
 WHERE_FILE = os.path.expanduser("~/.local/state/aeris-pet/where")
 BAR_HIDDEN_FILE = os.path.expanduser("~/.local/state/aeris-pet/bar-hidden")
+MUTED_FILE = os.path.expanduser("~/.local/state/aeris-pet/muted")
+NOTIFY_FEED = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-pet", "notify.jsonl")
+# where the pet is on screen, {"where", "x", "y"} in screen px, a few times a second while it
+# moves: the ask box (ask.qml) follows it. PetLane.qml writes the same file in bar mode.
+POS_FILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-pet", "pos.json")
+NOTIFIER_RULES = ("aeris-pet-notifier", "aeris-pet-notifier-critical")
+NOTE_WRAP_PX = 250                  # notifications get a wider bubble than chatter
 PID_FILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "aeris-pet.pid")
 BAR_GLYPH = "\U000F03E9"          # nf-md-paw
 
@@ -322,13 +348,88 @@ def _giggle(rate=11025):
     return s
 
 
+def _growl(f0, f1, dur, rate=11025, rumble_hz=28.0, rough=0.35, noise=0.12):
+    """The dragon's throat: a low, buzzy tone (odd and even harmonics) gliding f0->f1, with a
+    fast amplitude flutter (the rumble) and breath. Far below the raven's caw."""
+    n = int(dur * rate)
+    out, phase = [], 0.0
+    for i in range(n):
+        t = i / n
+        f = f0 + (f1 - f0) * t
+        f *= 1 + 0.02 * math.sin(2 * math.pi * 3.5 * i / rate)
+        phase += 2 * math.pi * f / rate
+        env = min(1.0, t * 6, (1 - t) * 4) ** 0.9
+        s = (math.sin(phase) + 0.55 * math.sin(2 * phase) + 0.35 * math.sin(3 * phase)
+             + 0.2 * math.sin(5 * phase))
+        s *= 1 - rough + rough * (0.5 + 0.5 * math.sin(2 * math.pi * rumble_hz * i / rate))
+        s += noise * (random.random() * 2 - 1)
+        out.append(0.3 * env * s)
+    return out
+
+
+def _dragon_sounds(rate=11025):
+    """Dragon voice, same slots as the raven: caw = a short roar and snort, giggle = a breathy
+    chuffing purr, song = a slow, low hum."""
+    roars, purrs, songs = [], [], []
+    for i in range(3):
+        s = _growl(150 + 20 * i, 95, 0.42, rate, rumble_hz=26 + 4 * i)
+        s += _silence(0.06, rate)
+        s += _growl(220, 160, 0.09, rate, rough=0.1, noise=0.45)       # snort
+        roars.append(s)
+    for i in range(3):
+        s = []
+        for k in range(4 + i):
+            base = 240 - 12 * k + 15 * i
+            s += _growl(base, base * 0.8, 0.11, rate, rumble_hz=40, rough=0.5, noise=0.3)
+            s += _silence(0.05, rate)
+        purrs.append(s)
+    for notes in [(196, 220, 262, 220), (262, 247, 196, 175), (147, 175, 196, 220, 175)]:
+        s = []
+        for f in notes:
+            s += _wobble_tone(f, f * 1.005, 0.34, rate, vib_hz=3.0, vib_depth=0.008)
+            s += _silence(0.05, rate)
+        songs.append(s)
+    chirps, yawns = [], []
+    for i in range(3):                                   # a rolling "rrrp" up, pleased
+        s = _growl(170 + 15 * i, 330 + 20 * i, 0.22, rate, rumble_hz=55, rough=0.6, noise=0.08)
+        if i != 1:
+            s += _silence(0.04, rate) + _growl(260, 380, 0.1, rate, rumble_hz=55, rough=0.6, noise=0.08)
+        chirps.append(s)
+    for i in range(3):                                   # a long, deep groan sinking into breath
+        s = _growl(190 - 10 * i, 85, 0.9, rate, rumble_hz=18, rough=0.3, noise=0.1)
+        s += _growl(110, 80, 0.35, rate, rough=0.0, noise=0.5)
+        yawns.append(s)
+    return {"caw": roars, "giggle": purrs, "song": songs, "chirp": chirps, "yawn": yawns}
+
+
+# Five sounds per pet, three takes each: caw (raven caw / dragon roar: greetings, alerts),
+# giggle (dragon: chuffing purr), song, chirp (fed, woken), yawn (falling asleep).
+SOUND_KINDS = ("caw", "giggle", "song", "chirp", "yawn")
+# Sound file prefixes per pet; bump one to regenerate that voice. PetLane.qml uses the same.
+VOICE_PREFIX = {"raven": "v2_", "dragon": "dr1_"}
+
+
 def make_sounds():
-    """Synthesize lo-fi caws, giggles and songs once, into SOUND_DIR."""
+    """Synthesize each pet's lo-fi voice once, into SOUND_DIR: {pet: {caw, giggle, song}}."""
     os.makedirs(SOUND_DIR, exist_ok=True)
     for old in os.listdir(SOUND_DIR):
-        if not old.startswith("v2_"):
+        if not old.startswith(tuple(VOICE_PREFIX.values())):
             os.remove(os.path.join(SOUND_DIR, old))
-    made = {"caw": [], "song": [], "giggle": []}
+    voices = {"raven": make_raven_sounds()}
+    pre = VOICE_PREFIX["dragon"]
+    wanted = [os.path.join(SOUND_DIR, f"{pre}{k}{i}.wav") for k in SOUND_KINDS for i in range(3)]
+    if not all(os.path.exists(w) for w in wanted):
+        random.seed(11)
+        for k, clips in _dragon_sounds().items():
+            for i, c in enumerate(clips):
+                _write_wav(os.path.join(SOUND_DIR, f"{pre}{k}{i}.wav"), _lofi(c), 11025)
+    voices["dragon"] = {k: [os.path.join(SOUND_DIR, f"{pre}{k}{i}.wav") for i in range(3)]
+                        for k in SOUND_KINDS}
+    return voices
+
+
+def make_raven_sounds():
+    made = {k: [] for k in SOUND_KINDS}
     random.seed(7)
     rate = 11025
     for i in range(3):
@@ -352,10 +453,84 @@ def make_sounds():
                 s += _wobble_tone(n, n * 1.01, 0.22, rate, vib_hz=4.5, vib_depth=0.012) + _silence(0.04, rate)
             _write_wav(path, _lofi(s, rate), rate)
         made["song"].append(path)
+    for i in range(3):                                   # quick knocking "tok-tok(-tok)"
+        path = os.path.join(SOUND_DIR, f"v2_chirp{i}.wav")
+        if not os.path.exists(path):
+            s = []
+            for k in range(2 + (i == 2)):
+                s += _wobble_tone(1500 + 80 * i, 1300, 0.045, rate, vib_hz=0, vib_depth=0, noise=0.25)
+                s += _silence(0.07, rate)
+            _write_wav(path, _lofi(s, rate), rate)
+        made["chirp"].append(path)
+    for i in range(3):                                   # a soft caw that sags into a sigh
+        path = os.path.join(SOUND_DIR, f"v2_yawn{i}.wav")
+        if not os.path.exists(path):
+            s = _wobble_tone(900 - 40 * i, 380, 0.6, rate, vib_hz=5, vib_depth=0.04, noise=0.08)
+            s += _wobble_tone(400, 300, 0.3, rate, vib_hz=0, vib_depth=0, noise=0.35)
+            _write_wav(path, _lofi(s, rate), rate)
+        made["yawn"].append(path)
     return made
 
 
+def read_feed(after):
+    """Notifications in NOTIFY_FEED newer than seq `after`, oldest first."""
+    out = []
+    try:
+        with open(NOTIFY_FEED, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    item = json.loads(line)
+                except ValueError:
+                    continue            # a line still being written; read again on the next change
+                if item.get("seq", 0) > after:
+                    out.append(item)
+    except OSError:
+        pass
+    return out
+
+
+def feed_last_seq():
+    items = read_feed(0)
+    return items[-1]["seq"] if items else 0
+
+
+def note_text(item):
+    """A notification as bubble text: the summary, then the body, trimmed."""
+    summary, body = item.get("summary", ""), item.get("body", "")
+    if not summary and item.get("kind") not in ("answer", "thinking"):
+        summary = item.get("app", "")
+    text = summary if not body else f"{summary}\n{body}" if summary else body
+    limit = 320 if item.get("kind") == "answer" else 160     # aeris-ask answers get more room
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+def set_notifier(on):
+    if on:                          # the bar pet can only watch a file that exists
+        os.makedirs(os.path.dirname(NOTIFY_FEED), exist_ok=True)
+        open(NOTIFY_FEED, "a").close()
+    for rule in NOTIFIER_RULES:
+        subprocess.run(["dunstctl", "rule", rule, "enable" if on else "disable"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def is_muted():
+    return os.path.exists(MUTED_FILE)
+
+
+def set_muted(muted):
+    if muted:
+        os.makedirs(os.path.dirname(MUTED_FILE), exist_ok=True)
+        open(MUTED_FILE, "w").close()
+    else:
+        try:
+            os.remove(MUTED_FILE)
+        except OSError:
+            pass
+
+
 def play(path):
+    if is_muted():
+        return
     try:
         subprocess.Popen(["pw-play", f"--volume={VOLUME}", path],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -425,7 +600,15 @@ class Pet:
         self.next_blink = now + random.uniform(2, 4)
         self.bubble_text = None
         self.bubble_until = 0.0
+        self.bubble_wrap = BUBBLE_WRAP_PX
         self.next_bubble = now + random.uniform(15, 30)
+        # notifications (the pet is the notifier): new lines in NOTIFY_FEED, said one by one
+        self.notes = []
+        self.note_kind = None           # kind of the feed item in the bubble now
+        self.note_seq = feed_last_seq()
+        os.makedirs(os.path.dirname(NOTIFY_FEED), exist_ok=True)
+        self.feed_monitor = Gio.File.new_for_path(NOTIFY_FEED).monitor_file(Gio.FileMonitorFlags.NONE, None)
+        self.feed_monitor.connect("changed", self.on_feed_changed)
 
         self.drag = None
         self.toss = None
@@ -466,6 +649,19 @@ class Pet:
         rgba = self.win.get_screen().get_rgba_visual()
         if rgba is not None:
             self.win.set_visual(rgba)
+        self.layer = GtkLayerShell is not None and GtkLayerShell.is_supported()
+        if self.layer:
+            GtkLayerShell.init_for_window(self.win)
+            GtkLayerShell.set_namespace(self.win, APP)
+            GtkLayerShell.set_layer(self.win, GtkLayerShell.Layer.OVERLAY)
+            for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM,
+                         GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+                GtkLayerShell.set_anchor(self.win, edge, True)
+            GtkLayerShell.set_exclusive_zone(self.win, -1)    # cover the bar instead of moving below it
+            GtkLayerShell.set_keyboard_mode(self.win, GtkLayerShell.KeyboardMode.NONE)
+            mon = Gdk.Display.get_default().get_primary_monitor() or Gdk.Display.get_default().get_monitor(0)
+            if mon is not None:
+                GtkLayerShell.set_monitor(self.win, mon)
         self.area = Gtk.DrawingArea()
         self.area.set_size_request(self.mon_w, self.mon_h)
         self.area.connect("draw", self.on_draw)
@@ -511,6 +707,8 @@ class Pet:
         )
 
     def setup_hyprland(self):
+        if self.layer:
+            return False    # a layer surface is placed by its anchors, not by window moves
         hypr(f'hl.dsp.window.float({{ window = "class:^{APP}$" }})')
         hypr(f'hl.dsp.window.move({{ x = {self.mon_x}, y = {self.mon_y}, window = "class:^{APP}$" }})')
         return False
@@ -591,14 +789,16 @@ class Pet:
         scratch = cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 1, 1))
         layout = PangoCairo.create_layout(scratch)
         layout.set_font_description(Pango.FontDescription(FONT))
-        layout.set_width(BUBBLE_WRAP_PX * Pango.SCALE)
+        layout.set_width(self.bubble_wrap * Pango.SCALE)
         layout.set_wrap(Pango.WrapMode.WORD_CHAR)
         layout.set_text(text, -1)
         _, logical = layout.get_pixel_extents()
-        bw = logical.width + 20
+        bw = logical.width + 32
         bh = logical.height + 14
         bx = clamp(anchor_x - bw / 2, self.mon_x + 2, self.mon_x + self.mon_w - bw - 2)
         by = top_y - 10 - bh
+        if by < self.mon_y + 4:         # no room above (perched at the top): hang it below
+            by = top_y + 50
         return bx, by, bw, bh, layout
 
     # frame loop --------------------------------------------------------
@@ -620,8 +820,24 @@ class Pet:
                 self.stats_t0, self.stats_frames, self.stats_draw = now, 0, 0.0
         return True
 
+    def write_pos(self, now):
+        """Tell the ask box where the pet is (POS_FILE), at most 4 times a second, on change."""
+        if now < getattr(self, "pos_next", 0.0):
+            return
+        self.pos_next = now + 0.25
+        x, y = round(self.hx - self.mon_x), round(self.hy - self.mon_y)
+        if getattr(self, "pos_last", None) == (x, y):
+            return
+        self.pos_last = (x, y)
+        try:
+            with open(POS_FILE, "w") as f:
+                f.write(json.dumps({"where": "desktop", "x": x, "y": y, "h": self.mon_h}))
+        except OSError:
+            pass
+
     def update(self, now, dt):
         self.step_mode(now, dt)
+        self.write_pos(now)
         self.pitch += (self.pitch_t - self.pitch) * min(1.0, dt * 5)
         self.amp += (self.amp_t - self.amp) * min(1.0, dt * 4)
         self.speed += (self.speed_t - self.speed) * min(1.0, dt * 4)
@@ -639,7 +855,12 @@ class Pet:
             self.next_blink = now + random.uniform(3, 6)
         if self.bubble_text is not None and now >= self.bubble_until:
             self.bubble_text = None
-        if self.bubble_text is None and now >= self.next_bubble:
+        if self.bubble_text is None:
+            self.note_kind = None
+        if self.notes and self.drag is None and (self.bubble_text is None
+                                                 or self.bubble_wrap < NOTE_WRAP_PX):
+            self.say_note(now)          # a notification interrupts chatter, then the next waits
+        elif self.bubble_text is None and now >= self.next_bubble:
             self.say(random.choice(self.lines))
 
     def update_dirty(self):
@@ -723,6 +944,7 @@ class Pet:
             self.try_perch_random(now)
         elif now - self.last_activity > SLEEP_AFTER:
             self.mode = "sleep"
+            self.voice("yawn")
 
     def step_walk(self, now, dt):
         self.amp_t, self.speed_t, self.pitch_t, self.bow_t = 4.5, 8.0, 0.0, 0.0
@@ -765,15 +987,31 @@ class Pet:
             self.bow_t = 0.0
             self.mode, self.mode_until = "rest", now + random.uniform(4, 8)
 
-    def start_dance(self, seconds):
+    def start_dance(self, seconds, style="dance"):
+        """style "dance": the happy sway. "stomp": wanting attention (a notification), quick
+        stamping in place with a jitter and turning back and forth."""
         now = time.monotonic()
         self.mode = "dance"
+        self.dance_style = style
+        self.dance_x, self.dance_y = self.hx, self.hy
+        self.dance_back = self.mode if self.mode == "perch" else "rest"
         self.dance_started = now
         self.dance_until = now + seconds
         self.next_dance = now + random.uniform(45, 100)
 
     def step_dance(self, now):
         t = now - self.dance_started
+        if getattr(self, "dance_style", "dance") == "stomp":
+            self.amp_t, self.speed_t = 12.0, 16.0
+            self.pitch_t = 0.15 * math.sin(t * 2 * math.pi * 4.0)
+            self.bow_t = 6.0
+            self.hy = self.dance_y - 7 * abs(math.sin(t * 2 * math.pi * 2.5))   # five stamps a second
+            self.hx = self.dance_x + 2.5 * math.sin(t * 2 * math.pi * 11.0)     # jitter
+            self.dir = 1 if int(t * 3) % 2 == 0 else -1                         # look around
+            if now >= self.dance_until:
+                self.hx, self.hy = self.dance_x, self.dance_y
+                self.mode, self.mode_until = self.dance_back, now + random.uniform(5, 12)
+            return
         self.amp_t, self.speed_t = 9.0, 10.0
         self.pitch_t = 0.3 * math.sin(t * 2 * math.pi * 1.0)
         self.bow_t = 3 + 3 * math.sin(t * 2 * math.pi * 2.0)
@@ -834,18 +1072,73 @@ class Pet:
         if self.mode == "sleep":
             self.mode = "rest"
             self.mode_until = now + random.uniform(4, 8)
+            self.voice("chirp")
 
-    def say(self, text):
+    def say(self, text, seconds=BUBBLE_SECONDS, wrap=BUBBLE_WRAP_PX):
         now = time.monotonic()
+        self.bubble_invert = False
         self.bubble_text = text
-        self.bubble_until = now + BUBBLE_SECONDS
+        self.bubble_wrap = wrap
+        self.bubble_until = now + seconds
         self.next_bubble = now + random.uniform(30, 60)
+
+    def on_feed_changed(self, _mon, _file, _other, event):
+        if event not in (Gio.FileMonitorEvent.CHANGES_DONE_HINT, Gio.FileMonitorEvent.CREATED,
+                         Gio.FileMonitorEvent.CHANGED):
+            return
+        new = read_feed(self.note_seq)
+        if new:
+            self.note_seq = new[-1]["seq"]
+            self.notes.extend(new)
+            del self.notes[:-8]         # a burst: keep the latest few
+            ask_news = any(i.get("kind") in ("thinking", "answer") for i in new)
+            if self.note_kind == "thinking" or (self.note_kind == "answer" and ask_news):
+                self.bubble_until = 0.0     # "hmm…" gives way to its answer, an answer to the next
+
+    def say_note(self, now):
+        """Say the next queued notification: wake, look up, and make a sound."""
+        item = self.notes.pop(0)
+        while item.get("kind") == "thinking" and self.notes:    # its answer is already here
+            item = self.notes.pop(0)
+        text = note_text(item)
+        kind = item.get("kind", "notification")
+        self.note_kind = kind
+        self.touch(now)
+        if kind == "thinking":          # aeris-ask is waiting on the model: a quiet "hmm…"
+            self.say(text, seconds=45, wrap=NOTE_WRAP_PX)
+            return
+        if kind == "answer":            # an answer: a little hop, one chirp, time to read it
+            if self.mode == "perch" or (self.mode in ("rest", "walk", "dance", "goto", "peck")
+                                        and self.on_ground()):
+                self.start_dance(1.2, style="stomp")
+            self.say(text, seconds=clamp(5 + len(text) / 14, 6, 25), wrap=NOTE_WRAP_PX + 60)
+            self.voice("chirp")
+            return
+        critical = item.get("urgency") == "critical"
+        if self.mode == "perch" or (self.mode in ("rest", "walk", "dance", "goto", "peck")
+                                    and self.on_ground()):
+            self.start_dance(4.0 if critical else 2.6, style="stomp")
+        self.say(text, seconds=clamp(4 + len(text) / 18, 5, 12), wrap=NOTE_WRAP_PX)
+        self.bubble_invert = critical   # critical: inverted, like dunst
+        # it speaks up: a call, then a second one (three for critical)
+        calls = ["caw", "caw", "caw"] if critical else ["caw", "chirp"]
+        for i, kind in enumerate(calls):
+            if i == 0:
+                self.voice(kind)
+            else:
+                GLib.timeout_add(int(900 * i), lambda k=kind: (self.voice(k), False)[1])
+
+    def voice(self, kind):
+        """One of the current pet's five sounds (silent while muted, see play)."""
+        clips = self.sounds.get(self.kind, {}).get(kind)
+        if clips:
+            play(random.choice(clips))
 
     def sing_or_caw(self, now):
         roll = random.random()
-        kind = "song" if roll < 0.3 else ("giggle" if roll < 0.55 else "caw")
-        if self.sounds[kind]:
-            play(random.choice(self.sounds[kind]))
+        kind = ("song" if roll < 0.25 else "giggle" if roll < 0.45
+                else "chirp" if roll < 0.65 else "caw")
+        self.voice(kind)
         self.next_sound = now + random.uniform(180, 600)
 
     def perch_candidates(self):
@@ -904,6 +1197,7 @@ class Pet:
         for _ in range(3):
             self.crumbs.append(random.uniform(self.mon_x + 40, self.mon_x + self.mon_w - 40))
         self.say(random.choice(FEED_LINES))
+        self.voice("chirp")
         self.ensure_crumb_window()
         if self.crumb_area is not None:
             self.crumb_area.queue_draw()
@@ -1096,8 +1390,7 @@ class Pet:
         to_x = random.uniform(self.min_x, self.max_x)
         self.start_fly(to_x, self.ground_y, "floor", amp=random.uniform(60, 120))
         self.say(msg)
-        if self.sounds["caw"]:
-            play(random.choice(self.sounds["caw"]))
+        self.voice("caw")
 
     # input -------------------------------------------------------------
 
@@ -1179,8 +1472,7 @@ class Pet:
         self.touch(now)
         self.start_dance(random.uniform(2.5, 3.5))
         self.say(random.choice(self.lines))
-        if self.sounds["caw"]:
-            play(random.choice(self.sounds["caw"]))
+        self.voice("caw")
         return False
 
     def step_toss(self, now, dt):
@@ -1371,6 +1663,8 @@ class Pet:
         hop = 0.0
         if self.mode in ("walk", "goto"):
             hop = 4.0 * abs(math.sin(self.gait * 0.8))
+        elif self.mode == "dance" and getattr(self, "dance_style", "dance") == "stomp":
+            hop = 6.0 * abs(math.sin(now * 2 * math.pi * 2.5))
         elif self.mode == "dance":
             hop = 5.0 * abs(math.sin(now * 2 * math.pi * 1.5))
         tilt = 0.0
@@ -1498,27 +1792,28 @@ class Pet:
         hx, hy = head
         top = self.head_top(head)
         bx, by, bw, bh, layout = self.bubble_rect(text, hx, top)
-        radius = 6
-        cr.new_path()
-        cr.arc(bx + bw - radius, by + radius, radius, -math.pi / 2, 0)
-        cr.arc(bx + bw - radius, by + bh - radius, radius, 0, math.pi / 2)
-        cr.arc(bx + radius, by + bh - radius, radius, math.pi / 2, math.pi)
-        cr.arc(bx + radius, by + radius, radius, math.pi, 3 * math.pi / 2)
+        # Swiss, black and white (as the bar bubble): a pill with a 1 px white frame, and a
+        # 1 px leader line to the pet instead of a tail. Inverted for critical.
+        inv = getattr(self, "bubble_invert", False)
+        bg, fg = ((1, 1, 1), (0, 0, 0)) if inv else ((0, 0, 0), (1, 1, 1))
+        bx, by = round(bx) + 0.5, round(by) + 0.5
+        w, h = round(bw), round(bh)
+        rad = h / 2                                 # fully rounded
+        cr.new_sub_path()
+        cr.arc(bx + w - rad, by + rad, rad, -math.pi / 2, math.pi / 2)
+        cr.arc(bx + rad, by + rad, rad, math.pi / 2, 3 * math.pi / 2)
         cr.close_path()
-        cr.set_source_rgba(*COL_BUBBLE, 0.96)
+        cr.set_source_rgb(*bg)
         cr.fill_preserve()
-        cr.set_source_rgb(*COL_EDGE)
+        cr.set_source_rgb(1, 1, 1)
         cr.set_line_width(1)
         cr.stroke()
-        tx = clamp(hx, bx + 10, bx + bw - 10)
-        cr.move_to(tx - 4, by + bh)
-        cr.line_to(tx + 4, by + bh)
-        cr.line_to(hx, top + 4)
-        cr.close_path()
-        cr.set_source_rgba(*COL_BUBBLE, 0.96)
-        cr.fill()
-        cr.set_source_rgb(*COL_TEXT)
-        cr.move_to(bx + 10, by + 7)
+        lx = round(clamp(hx, bx + 1, bx + bw - 1)) + 0.5
+        cr.move_to(lx, by if by > top else by + round(bh))
+        cr.line_to(lx, (by - 8) if by > top else top + 2)
+        cr.stroke()
+        cr.set_source_rgb(*fg)
+        cr.move_to(bx + 16, by + 7)
         PangoCairo.show_layout(cr, layout)
 
     def on_draw(self, _widget, cr):
@@ -1565,8 +1860,14 @@ def start_detached():
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def sync_notifier():
+    """The pet is the notifier exactly while it is shown (in the bar or on the desktop)."""
+    set_notifier(bar_shown() if load_where() == "bar" else bool(running_pid()))
+
+
 def run():
     if load_where() == "bar":
+        sync_notifier()             # at login: the bar pet takes over notifications
         return 0                    # the bar draws the pet; no overlay
     lock = open(PID_FILE + ".lock", "w")
     try:
@@ -1580,12 +1881,14 @@ def run():
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, lambda *_: (Gtk.main_quit(), False)[1])
     Pet()
+    set_notifier(True)
     bar_refresh()
     Gtk.main()
     try:
         os.remove(PID_FILE)
     except OSError:
         pass
+    sync_notifier()                 # popups again, unless the pet moved to the bar (it takes over)
     bar_refresh()
     return 0
 
@@ -1600,6 +1903,7 @@ def show(on):
     """Show or hide the pet wherever it lives."""
     if load_where() == "bar":
         set_bar_shown(on)
+        set_notifier(on)
         bar_refresh()
     elif on:
         if not running_pid():
@@ -1614,12 +1918,16 @@ def main():
     kinds = [k for k, _ in PETS]
     if cmd == "run":
         return run()
+    if cmd != "status":
+        make_sounds()               # the bar pet plays these files too, without the overlay
     if cmd == "status":
         where = load_where()
         running = bar_shown() if where == "bar" else bool(running_pid())
         print(json.dumps({"text": BAR_GLYPH, "class": "on" if running else "off",
                           "pet": load_choice(), "running": running, "where": where,
-                          "tooltip": f"{load_choice()} pet" + ("" if running else " (hidden)")},
+                          "muted": is_muted(), "name": PET_NAMES.get(load_choice(), load_choice()),
+                          "tooltip": f"{load_choice()} pet" + ("" if running else " (hidden)")
+                                     + (", muted" if is_muted() else "")},
                          ensure_ascii=False))
         return 0
     if cmd == "set" and len(args) == 2 and args[1] in kinds:
@@ -1635,6 +1943,15 @@ def main():
             set_bar_shown(was_running)
         elif was_running and not running_pid():
             start_detached()
+        if args[1] == "bar" or not was_running:
+            sync_notifier()         # desktop + running: the overlay turns it on when it starts
+        bar_refresh()
+        return 0
+    if cmd == "notifier":
+        sync_notifier()
+        return 0
+    if cmd in ("mute", "vocal"):
+        set_muted(cmd == "mute")
         bar_refresh()
         return 0
     if cmd == "start":
@@ -1647,7 +1964,7 @@ def main():
         running = bar_shown() if load_where() == "bar" else bool(running_pid())
         show(not running)
         return 0
-    print(f"usage: aeris-pet [run|status|start|quit|toggle|set {'|'.join(kinds)}|where bar|desktop]",
+    print(f"usage: aeris-pet [run|status|start|quit|toggle|set {'|'.join(kinds)}|where bar|desktop|mute|vocal|notifier]",
           file=sys.stderr)
     return 2
 
