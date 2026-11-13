@@ -54,6 +54,7 @@ max_duration_secs = 60
 # then resume them as soon as recording stops. Talks D-Bus directly; no external
 # playerctl binary required.
 # pause_media = false
+pause_media = true   # YouTube, Spotify ... pause while dictating, resume after
 
 # MPRIS player bus-name suffixes to skip when pausing. Matched against the
 # part after `org.mpris.MediaPlayer2.` either exactly or as a `<entry>.*`
@@ -75,6 +76,9 @@ max_duration_secs = 60
 # same duration is used going down and coming back up; 0 keeps the previous
 # instant behavior.
 # duck_media_fade_ms = 150
+# Whatever cannot be paused is muted (ducked to 0%) instead, and restored after
+duck_media = true
+duck_media_volume_percent = 0
 
 # Auto-stop an external-trigger recording (`voxtype record start`, e.g. from
 # a wake-word integration) after this many seconds of silence. Unset by
