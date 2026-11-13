@@ -3,10 +3,6 @@ brave-bin
 envycontrol
 gpu-unlock-dkms
 gpu-unlock-firmware
-hype
-hype-debug
-monologue
-monologue-debug
 nodejs-all-the-package-names
 sublime-text-4
 usbimager

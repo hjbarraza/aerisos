@@ -96,6 +96,7 @@ openrazer-driver-dkms
 pacman-contrib
 pam-u2f
 pavucontrol
+pinta
 pipewire
 pipewire-alsa
 pipewire-jack
@@ -106,6 +107,7 @@ power-profiles-daemon
 python-cairo
 python-openrazer
 qemu-system-x86
+qpdf
 qt5-speech
 qt5-svg
 qt5-wayland
@@ -122,6 +124,7 @@ smartmontools
 snap-pac
 snapper
 sof-firmware
+solaar
 starship
 steam
 sudo

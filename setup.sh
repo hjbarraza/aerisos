@@ -615,7 +615,7 @@ mod_logins() {
 # Both read the current Omarchy theme, so ~/.local/state/omarchy/current/theme points at the
 # AERIS palette (dotfiles/home/.config/omarchy/themes/aeris, monochrome). Sources stay in
 # ~/.local/src/<app>; aeris-update rebuilds one when upstream moves.
-OMACOM_APPS=(monologue hype)
+OMACOM_APPS=(monologue hype omacut signed omacalc omawrite)
 
 # omacom_app NAME: clone or fast-forward ~/.local/src/NAME, build, and install the package
 omacom_app() {
@@ -659,7 +659,7 @@ monologue_extras() {
 }
 
 mod_omacom() {
-    log "Omarchy apps: Monologue (camera recorder), Hype (presentations)"
+    log "Omarchy apps: Monologue (camera), Hype (slides), Omacut (video trim), Signed (PDF signing), Omacalc, Omawrite"
     pacman_install base-devel git qt6-base qt6-declarative qt6-multimedia qt6-imageformats qt6-svg \
         ffmpeg libpulse source-highlight libwebp xdg-desktop-portal
     # The theme the apps follow: the AERIS palette, restored by the dotfiles module
@@ -1129,7 +1129,9 @@ mod_snapshot() {
     mkdir -p "$PKG"
     # wl-clipboard (aeris-ask) is often only a dependency here, so -Qqe would drop it
     { pacman -Qqen; echo wl-clipboard; } | sort -u > "$PKG/pacman.txt"
-    pacman -Qqem > "$PKG/aur.txt"
+    # Omarchy apps are built by the omacom module from their own PKGBUILDs, not the AUR (the AUR
+    # "hype" is an unrelated Twitch app), so keep them and their -debug packages out of aur.txt
+    pacman -Qqem | grep -vxE "($(IFS='|'; echo "${OMACOM_APPS[*]}"))(-debug)?" > "$PKG/aur.txt"
     info "$(wc -l < "$PKG/pacman.txt") repo packages, $(wc -l < "$PKG/aur.txt") AUR packages"
     # The archinstall config (sibling repo aerisos-archinstall) follows the package list
     if [[ -x $HOME/aerisos-archinstall/make-config ]]; then
