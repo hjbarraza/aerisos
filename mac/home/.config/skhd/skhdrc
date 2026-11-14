@@ -12,11 +12,13 @@ ctrl + alt + shift - right : yabai -m window --swap east || $HOME/.local/bin/gri
 ctrl + alt + shift - up    : yabai -m window --swap north || $HOME/.local/bin/grid swap north
 ctrl + alt + shift - down  : yabai -m window --swap south || $HOME/.local/bin/grid swap south
 
-# Resize (Hyprland: super + ctrl + arrows, 60px steps)
-cmd + ctrl - left  : $HOME/.local/bin/grid resize west
-cmd + ctrl - right : $HOME/.local/bin/grid resize east
-cmd + ctrl - up    : $HOME/.local/bin/grid resize north
-cmd + ctrl - down  : $HOME/.local/bin/grid resize south
+# Resize is done by Hammerspoon (~/.hammerspoon/init.lua), which sees the key release; skhd only
+# lists the keys for the cheat sheet and passes them through (->).
+# Resize (Hyprland: super + ctrl + arrows; hold to keep resizing)
+cmd + ctrl - left  -> : true
+cmd + ctrl - right -> : true
+cmd + ctrl - up    -> : true
+cmd + ctrl - down  -> : true
 
 # Flip split rows / columns (Hyprland: wm + J)
 ctrl + alt - j : yabai -m window --toggle split

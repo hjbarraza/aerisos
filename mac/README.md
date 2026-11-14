@@ -11,7 +11,7 @@ The Hyprland desktop, ported to a Mac: tiling, hotkeys, bar and mouse habits.
 | `home/.local/bin/grid`, `tile`, `floating` | Layout of the current space: Swiss grid (3 \| 6 \| 3 columns), yabai tiling, or plain macOS. `floating` opens Magnet; `tile` and `grid` quit it. |
 | `home/.local/bin/layout` | Prints the current layout; `layout next` cycles tile → grid → float. Used by ⌃⌥L and the bar's layout label. |
 | `home/.warp/settings.toml` | Warp: Söhne Mono, the same mono as Ghostty and the bar. |
-| `home/.hammerspoon/init.lua` | Select to copy, right-click in a text field to paste (Option + right-click for the menu). |
+| `home/.hammerspoon/init.lua` | Select to copy, right-click in a text field to paste (Option + right-click for the menu). Window resize: hold ⌘⌃ + arrow to move the window's border; the neighbours follow in tile, the window shakes in grid. |
 | `keysheet/` | ⌘K cheat sheet: a searchable list of the skhd hotkeys. |
 
 ## Install

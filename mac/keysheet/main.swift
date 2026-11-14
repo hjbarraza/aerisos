@@ -21,7 +21,7 @@ func loadHotkeys() -> [Hotkey] {
             continue
         }
         guard let colon = line.range(of: " : "), line.contains(" - ") else { continue }
-        let combo = line[..<colon.lowerBound]
+        let combo = line[..<colon.lowerBound].replacingOccurrences(of: " ->", with: "") // skhd passthrough marker
         let parts = combo.components(separatedBy: " - ")
         let modList = parts[0].split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
         let mods = modList.map { symbols[$0] ?? "" }.joined(separator: " ")
