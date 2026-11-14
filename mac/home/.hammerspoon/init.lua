@@ -148,8 +148,27 @@ local function startResize(dir)
   local me = { released = false, steps = 0 }
   hold = me
   local before = loose and 0 or spill(query("--windows --space"), s)
+  local initial = before
+  -- Some apps apply their minimum size a moment after yabai returns, so a spill can show up
+  -- after the per-step check passed. Once the resize ends, wait, re-check, and undo steps until
+  -- nothing spills more than when the key went down.
+  local function settle()
+    hs.timer.doAfter(0.15, function()
+      hs.task.new(yabai, function(_, out)
+        if me.steps > 0 and spill(hs.json.decode(out), s) > initial then
+          me.steps = me.steps - 1
+          yabaiSeq({ resize(-dx, -dy) }, settle)
+        end
+      end, { "-m", "query", "--windows", "--space" }):start()
+    end)
+  end
   local function tick()
-    if hold ~= me or (me.released and me.steps >= TAP_STEPS) then return end
+    if hold ~= me then return end
+    if me.released and me.steps >= TAP_STEPS then
+      hold = nil
+      if not loose then settle() end
+      return
+    end
     yabaiSeq({ table.unpack(step) }, function(ok)
       if not ok then hold = nil return end
       me.steps = me.steps + 1
@@ -158,7 +177,8 @@ local function startResize(dir)
         local after = spill(hs.json.decode(out), s)
         if after > before then -- a neighbour hit its minimum: undo and stop
           hold = nil
-          return yabaiSeq({ resize(-dx, -dy) }, function() end)
+          me.steps = me.steps - 1
+          return yabaiSeq({ resize(-dx, -dy) }, settle)
         end
         before = after
         tick()
