@@ -11,3 +11,9 @@ node_modules/
 dotfiles/home/.config/opencode/service.json
 dotfiles/home/.config/opencode/service-aeris.json
 iso/out/
+
+# Licensed Söhne fonts: kept on the machine, never published (setup.sh warns when missing)
+dotfiles/home/.local/share/fonts/soehne/
+
+# Claude Code: personal settings and skills stay on the machine
+dotfiles/home/.claude/
