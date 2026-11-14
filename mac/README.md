@@ -38,3 +38,4 @@ Then grant Accessibility to yabai, skhd and Hammerspoon in System Settings → P
 
 - yabai runs with SIP on: tiling works; switching spaces from a hotkey does not.
 - yabai cannot move windows onto a screen showing a macOS full-screen app. Use ⌃⌥↩ (maximize) instead of the green button to keep windows in the tiling layout.
+- `mac/resize-matrix.py [grid|float|tile]` resizes every window on the current space in every direction and layout through Hammerspoon, and checks the result (about 3 min; hands off the mouse and keyboard). Rerun it after changing the resize code.
