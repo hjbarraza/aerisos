@@ -49,6 +49,13 @@ sudo ~/aerisos/iso/build.sh                            # → iso/out/aerisos-*.i
 sudo cp iso/out/aerisos-*.iso /dev/sdX && sync         # write to USB (ERASES it)
 ```
 
+Or both steps in one command, on an Arch machine with the repo at `~/aerisos` and the stick plugged in. It asks which stick (type `ERASE` to confirm), pulls the repo, builds and writes. Add `--snapshot` to save this machine's configs and package lists into the ISO first, `--t2` for the T2 stick:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/iso/usb.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/iso/usb.sh | bash -s -- --snapshot
+```
+
 Boot the USB (UEFI), connect Wi-Fi if needed (`iwctl`), and run
 **`aeris-installer`**: it asks for the disk (typed `ERASE` to confirm),
 timezone, and your **username + password**, installs a minimal Arch with
