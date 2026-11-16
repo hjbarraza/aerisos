@@ -952,14 +952,14 @@ mod_boot() {
 # Razer laptops: razer-control-revived (battery health optimizer, power modes, fans,
 # logo) built from source, plus a timer that holds the battery between 90 and 95%
 mod_razer() {
-    log "Razer: razer-control-revived + battery held at 90-95% + Fn key as Ctrl"
+    log "Razer: razer-control-revived + battery held at 90-95%"
     local src="$HOME/.local/src/razer-control-revived"
     local repo=https://github.com/encomjp/razer-control-revived
     if ! lsusb 2>/dev/null | grep -qi '1532:.*Razer'; then
         warn "No Razer laptop controller found; skipping"
         return 0
     fi
-    pacman_install rust dbus libusb hidapi pkgconf gtk4 libadwaita git python-evdev
+    pacman_install rust dbus libusb hidapi pkgconf gtk4 libadwaita git
 
     if [[ -d $src/.git ]]; then
         run git -C "$src" pull --ff-only
@@ -992,13 +992,6 @@ mod_razer() {
         "$HOME/.config/systemd/user/"
     run systemctl --user daemon-reload
     run systemctl --user enable --now razercontrol.service aeris-charge-limit.timer
-
-    # Keyboard: the Fn key also acts as Ctrl (MacBook row: Ctrl second from the left). It reads the
-    # raw HID reports of the keyboard, which the udev rule above opens to the logged-in user.
-    run install -m755 "$AERIS/bin/fn-as-ctrl" "$HOME/.local/bin/fn-as-ctrl"
-    run install -m644 "$AERIS/razer/fn-as-ctrl.service" "$HOME/.config/systemd/user/"
-    run systemctl --user daemon-reload
-    run systemctl --user enable --now fn-as-ctrl.service
     info "GUI: Razer Settings in the app launcher. CLI: razer-cli read bho / write bho off"
 }
 

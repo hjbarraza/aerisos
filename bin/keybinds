@@ -23,9 +23,9 @@ KEY_NAMES = {
     "XF86AudioPlay": "Play key", "XF86AudioPause": "Pause key",
 }
 
-# Show modifiers by their Mac names. On Apple keyboards and on the Razer (left Alt/Win swapped into
-# Mac order) the key next to the spacebar is Cmd (printed Alt on the Razer) and the one left of it is
-# Option (printed Win on the Razer), so the list reads the same on both.
+# Show modifiers by their Mac names on Apple keyboards and on the Razer, which is used with an
+# external Mac-layout keyboard (ctrl, opt, cmd). On the Razer's own keyboard Cmd is the Win key and
+# Option the Alt key.
 try:
     VENDOR = open("/sys/class/dmi/id/sys_vendor").read()
 except OSError:

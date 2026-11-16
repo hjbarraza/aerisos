@@ -14,7 +14,7 @@ documentation is the `README.md`.
 | `status/` | The collector `aeris-status` (root, systemd timer) and its units. The only code that calls external APIs. |
 | `lock/`, `sddm/aeris/` | Lock and login screens. Renderers of `status.json` and `lock.tsv`; they make no network calls. |
 | `dotfiles/home/` | Configs restored into `$HOME` by `./setup.sh dotfiles` and captured by `./setup.sh snapshot`. The Quickshell bar and dock QML live here. |
-| `battery/`, `razer/`, `t2/`, `iso/`, `plymouth/`, `vicinae/` | One module each, named for what it sets up. |
+| `battery/`, `t2/`, `iso/`, `plymouth/`, `vicinae/` | One module each, named for what it sets up. |
 | `setup.sh` | The installer. One `mod_<name>()` per module, idempotent, backs up before overwriting. |
 | `docs/` | Reference for people working on the code. `docs/README.md` is the index. |
 | `test/` | `./test/run` runs every `test/*-test.sh`. |

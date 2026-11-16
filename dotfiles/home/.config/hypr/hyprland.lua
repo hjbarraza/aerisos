@@ -310,23 +310,15 @@ hl.gesture({
     action = "workspace"
 })
 
--- MacBook modifier row on the Razer Blade: left of the spacebar reads Ctrl, Fn, Win, Alt;
--- swapping left Win/Alt gives Ctrl, Fn, Option, Cmd (Super next to the spacebar, as on a
--- Mac). The firmware owns the Fn layer (Fn + F-keys) and sends no key for Fn, so no other key
--- can become Fn; but Fn shows in a raw HID report, and ~/.local/bin/fn-as-ctrl makes it act as
--- Ctrl as well: the row then works as Ctrl, Ctrl, Option, Cmd. Per device, so an external Apple keyboard plugged in keeps its own layout.
--- The built-in keyboard shows up as several HID interfaces (`hyprctl devices`).
+-- The Razer Blade's own keyboard is not remapped: its keys do what is printed on them (Ctrl, Fn,
+-- Win = Super, Alt). The macOS-style shortcuts below still apply on this machine, for an external
+-- Mac-layout keyboard (Logitech MX Keys in macOS mode: ctrl, opt = Alt, cmd = Super).
 local isRazer = false
 do
     local f = io.open("/sys/class/dmi/id/sys_vendor")
     if f then
         isRazer = (f:read("l") or ""):find("Razer") ~= nil
         f:close()
-    end
-end
-if isRazer then
-    for _, n in ipairs({ "razer-razer-blade", "razer-razer-blade-1", "razer-razer-blade-3" }) do
-        hl.device({ name = n, kb_options = "altwin:swap_lalt_lwin" })
     end
 end
 
@@ -342,8 +334,8 @@ hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal), { description = "Open
 hl.bind(mainMod .. " + SHIFT + Return", hl.dsp.exec_cmd("ghostty"), { description = "Open ghostty (trial)" })   -- was SUPER+G, now Cmd+G (find next)
 
 -- macOS-style shortcuts: the key in the Cmd position (left of the spacebar) carries the
--- familiar combos — Cmd itself (Super) on Apple keyboards and on the Razer (Win/Alt
--- swapped above), the left Alt on other PC layouts. Letter combos are forwarded to the focused app as their Ctrl equivalents
+-- familiar combos — Cmd itself (Super) on Apple keyboards and on the Razer (used with an
+-- external Mac-layout keyboard), the left Alt on other PC layouts. Letter combos are forwarded to the focused app as their Ctrl equivalents
 -- (ghostty/kitty accept Ctrl+C/V natively, so terminals behave too). Close window moved
 -- from SUPER+C to Cmd+Q (macOS "quit") so Cmd+C can be copy; terminal moved to
 -- mainMod+Return. Voxtype's dictation key (Right Option/Alt) is press/release only,
@@ -617,20 +609,6 @@ hl.bind("XF86AudioNext",  hl.dsp.exec_cmd("playerctl next"),       { description
 hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause"), { description = "Play / pause", locked = true })
 hl.bind("XF86AudioPlay",  hl.dsp.exec_cmd("playerctl play-pause"), { description = "Play / pause", locked = true })
 hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd("playerctl previous"),   { description = "Previous track", locked = true })
-
--- On the Razer the Fn key also acts as Ctrl (~/.local/bin/fn-as-ctrl), so Fn + F-key arrives as
--- Ctrl + media key. Same actions as above; no description, so the cheat sheet lists each once.
-if isRazer then
-    for _, m in ipairs({
-        { "XF86AudioRaiseVolume", "swayosd-client --output-volume raise", true }, { "XF86AudioLowerVolume", "swayosd-client --output-volume lower", true },
-        { "XF86AudioMute", "swayosd-client --output-volume mute-toggle", true },  { "XF86AudioMicMute", "swayosd-client --input-volume mute-toggle", true },
-        { "XF86MonBrightnessUp", "swayosd-client --brightness raise", true },     { "XF86MonBrightnessDown", "swayosd-client --brightness lower", true },
-        { "XF86AudioNext", "playerctl next", false }, { "XF86AudioPrev", "playerctl previous", false },
-        { "XF86AudioPause", "playerctl play-pause", false }, { "XF86AudioPlay", "playerctl play-pause", false },
-    }) do
-        hl.bind("CTRL + " .. m[1], hl.dsp.exec_cmd(m[2]), { locked = true, repeating = m[3] })
-    end
-end
 
 
 --------------------------------
