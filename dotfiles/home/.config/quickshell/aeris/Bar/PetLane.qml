@@ -52,6 +52,7 @@ PanelWindow {
     property real jStart: 0
     property real jDur: 1
     property bool blink: false
+    property real gaze: 0              // raven head angle while sitting (rad, + looks down)
     property bool placed: false        // set once the bar has laid out its icons
     // Seconds spent left and right of the bar's middle; walks favour the side it has
     // neglected so it hangs out on both equally. The lead is capped (a long sleep on one
@@ -113,6 +114,7 @@ PanelWindow {
 
     function setMode(m, seconds) {
         if (m !== "jump") { py = ground; tilt = 0 }   // anything else happens on the bar floor
+        gaze = 0
         mode = m
         modeEnd = now() + (seconds ?? 0) * 1000
         canvas.requestPaint()
@@ -336,6 +338,9 @@ PanelWindow {
             lane.tally(0.4)
             lane.blink = lane.mode === "sit" && Math.random() < 0.08
             if (lane.mode === "sit") {   // fidgets: look the other way, or a quick peck
+                // birds look around in snaps and hold still between: a new head angle now and then
+                if (lane.kind === "raven" && Math.random() < 0.3)
+                    lane.gaze = lane.pick([-0.5, -0.25, 0, 0, 0.2, 0.35])
                 const f = Math.random()
                 if (f < 0.05) lane.dir = -lane.dir
                 else if (f < 0.07 && lane.kind === "raven") { lane.setMode("peck", 0.6); return }
@@ -523,14 +528,12 @@ PanelWindow {
             } else if (lane.mode === "hop") {
                 const s = (lane.now() - lane.hopStart) / 1000
                 lift = 6 * Math.abs(Math.sin(s * Math.PI * 2.7))
-            } else if (lane.mode === "walk" && lane.kind === "raven") {
-                lift = 1.6 * Math.abs(Math.sin(lane.t * 9))
             }
             ctx.save()
             ctx.translate(20 + (lane.px - Math.round(lane.px)) + jit, 26 - lift)
             ctx.scale(lane.dir * look, 1)
             ctx.rotate(lane.tilt)
-            if (lane.kind === "raven") drawRaven(ctx, lift > 0.5)
+            if (lane.kind === "raven") drawRaven(ctx, lift)
             else drawDragon(ctx)
             ctx.restore()
 
@@ -566,44 +569,123 @@ PanelWindow {
             }
         }
 
-        // Raven, feet at (0, 0), facing +x, about 16 px wide and 13 px tall.
-        function drawRaven(ctx, airborne) {
-            const sleeping = lane.asleep
-            const peck = lane.mode === "peck" ? 0.5 + 0.2 * Math.sin(lane.t * 18) : 0
-            const flap = lane.mode === "hop" || lane.mode === "stomp" ? 0.7 * Math.sin(lane.t * 30) - 0.3 : 0
-            ctx.save()
-            if (sleeping) ctx.translate(0, 1.5)          // hunkers down
-            // legs
+        // Raven, feet at (0, 0), facing +x, about 16 px wide and 13 px tall. It moves like
+        // the desktop bird, at bar size. Walking: each foot's place is a function of the
+        // distance walked, so a planted foot stays put on the bar while the body travels
+        // (no sliding), the body rises over the standing leg, and the head holds still then
+        // thrusts forward once per step. Hops squash on the floor and stretch in the air.
+        // In the air it tucks its legs and beats its wings. Sitting, it looks around in
+        // snaps (lane.gaze). Pecking and sleeping bend the neck instead of tipping the body.
+        function drawRaven(ctx, lift) {
+            const m = lane.mode, sleeping = lane.asleep
+            const walking = m === "walk"
+            const bouncing = m === "hop" || m === "stomp"
+            const air = lift > 0.5 || m === "jump"
+            const ease = x => x * x * (3 - 2 * x)
+
+            // gait: one stride (two steps) every 6 px, planted for 60% of it
+            const u = walking ? (((lane.dir * lane.px / 6) % 1) + 1) % 1 : 0
+            const foot = shift => {                  // [x offset, lift] of one foot
+                if (air) return [-1.4, 1.5]          // tucked back under the belly
+                if (!walking) return [0, 0]
+                const v = (u + shift) % 1
+                if (v < 0.6) return [1.8 - 6 * v, 0]           // planted: moves back 1 px per px walked
+                const s = (v - 0.6) / 0.4
+                return [-1.8 + 3.6 * ease(s), 1.5 * Math.sin(Math.PI * s)]
+            }
+            const vault = walking ? 0.35 * (1 + Math.cos(4 * Math.PI * (u - 0.3))) : 0
+            const w = (2 * u + 0.6) % 1              // head: hold, then one thrust per step
+            const bob = !walking ? 0 : 0.8 * (w < 0.7 ? 1 - 2 * w / 0.7 : -1 + 2 * ease((w - 0.7) / 0.3))
+
+            const pecking = m === "peck"
+            const strike = pecking ? Math.max(0, Math.sin(lane.t * 16)) : 0
+            const lean = pecking ? 0.3 : 0                                   // body tips a little
+            const neck = pecking ? 0.55 + 0.4 * strike : sleeping ? 0.5 : lane.gaze
+            const calling = bouncing || lane.now() < lane.chirpUntil         // beak opens to call
+            const flap = air || bouncing ? 0.9 * Math.sin(lane.t * 28) - 0.45 : 0
+            const squash = air ? -0.07 : bouncing ? 0.1 : 0                  // stretch up, squash down
+            const sink = sleeping ? 1.5 : bouncing && !air ? 0.8 : 0         // hunkers down
+
+            // legs: hips ride the body, feet stay where the gait puts them
             ctx.strokeStyle = Theme.dim
             ctx.lineWidth = 0.9
             ctx.beginPath()
-            for (const lx of [-1.2, 1.0]) {
-                const fx = airborne ? lx - 1.2 : lx
-                ctx.moveTo(lx, -3); ctx.lineTo(fx, sleeping ? -1.5 : 0)
-                ctx.moveTo(fx, sleeping ? -1.5 : 0); ctx.lineTo(fx + 1.6, sleeping ? -1.5 : 0)
+            for (const [lx, shift] of [[-1.2, 0.5], [1.0, 0]]) {
+                const [fx, fl] = foot(shift)
+                const hy = -3.2 + sink - vault, x = lx + fx, y = Math.min(0, hy + 0.6) - fl
+                ctx.moveTo(lx, hy)
+                ctx.lineTo((lx + x) / 2 - 0.5, (hy + y) / 2)     // the joint bends backward
+                ctx.lineTo(x, y)
+                ctx.lineTo(x + (fl > 0.3 ? 1.0 : 1.6), y + (fl > 0.3 ? 0.6 : 0))   // toes curl in the air
             }
             ctx.stroke()
-            ctx.rotate(peck)
-            // tail
-            ctx.fillStyle = Theme.dim
-            ctx.beginPath(); ctx.moveTo(-3.5, -7.2); ctx.lineTo(-9, -5.2); ctx.lineTo(-8.5, -4); ctx.lineTo(-3, -4.6); ctx.fill()
-            // body
-            ctx.fillStyle = Theme.fg
-            ctx.strokeStyle = Theme.dim
-            ctx.lineWidth = 0.7
-            ctx.beginPath(); ctx.ellipse(-5.5, -9.6, 10, 6.8); ctx.fill(); ctx.stroke()
-            // head and beak
-            ctx.beginPath(); ctx.arc(3.6, -10.2, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
-            ctx.fillStyle = Theme.dim
-            ctx.beginPath(); ctx.moveTo(6.2, -11.3); ctx.lineTo(9.6, -9.9); ctx.lineTo(6.2, -9.0); ctx.fill()
-            // wing
+
             ctx.save()
-            ctx.translate(-1.5, -8.6)
+            ctx.translate(0, sink - vault)
+            ctx.scale(1 + squash, 1 - squash)
+            ctx.rotate(lean)
+
+            // head: swings about the neck base, reaches on the bob
+            const ca = Math.cos(neck), sa = Math.sin(neck)
+            const turn = (x, y) => [x * ca - y * sa, x * sa + y * ca]
+            const [nx, ny] = turn(1.87, -2.08)
+            const hx = 1.44 + nx + bob - (sleeping ? 0.8 : 0), hy = -7.5 + ny
+            const at = (x, y) => { const [a, b] = turn(x, y); return [hx + a, hy + b] }
+            const gape = calling ? 0.5 : pecking ? 0.25 * strike : 0          // rad
+            const sway = walking ? 0.14 * Math.sin(2 * Math.PI * u) : air ? 0.3 : 0
+
+            // What makes it a raven and not a chick (the desktop bird's shapes, rig.py, over
+            // 9.6): a heavy bill as long as the head, a throat beard, a long wedge tail,
+            // wings that reach back over it, a body carried chest-up.
+            const skin = () => {
+                ctx.beginPath()
+                ctx.save()                   // tail: swings against the walk, fans down in the air
+                ctx.translate(-4.8, -4.6); ctx.rotate(sway)
+                ctx.moveTo(0.6, -1.15); ctx.lineTo(-5.8, 0.1); ctx.lineTo(-6.6, 1.15); ctx.lineTo(-5.7, 2.3); ctx.lineTo(0.4, 1.35)
+                ctx.closePath()
+                ctx.restore()
+                ctx.save()                   // body, tilted chest-up
+                ctx.translate(-0.65, -5.6); ctx.rotate(-0.28)
+                ctx.moveTo(5.2, 0); ctx.ellipse(-5.2, -3.0, 10.4, 6.0)
+                ctx.restore()
+                ctx.moveTo(hx + 2.4, hy); ctx.arc(hx, hy, 2.4, 0, Math.PI * 2)
+                ctx.moveTo(...at(0.1, 1.9)); ctx.lineTo(...at(1.25, 3.1)); ctx.lineTo(...at(2.2, 1.15))   // beard
+                ctx.closePath()
+            }
+            // tail, body, head and beard share one outline: all outlines first, then all fills
+            ctx.fillStyle = Theme.pet
+            ctx.strokeStyle = Theme.dim
+            ctx.lineWidth = 1.4
+            skin(); ctx.stroke()
+            skin(); ctx.fill()
+            // wing: long and pointed, folded along the body; opens and beats in the air
+            ctx.save()
+            ctx.translate(0.19, -7.5)
             ctx.rotate(flap)
-            ctx.fillStyle = Qt.darker(Theme.fg, 1.25)
-            ctx.beginPath(); ctx.ellipse(-4.5, -1.6, 7, 3.4); ctx.fill(); ctx.stroke()
+            ctx.scale(flap ? 1.2 : 1, flap ? 1.3 : 1)
+            ctx.fillStyle = Qt.darker(Theme.pet, 1.12)
+            ctx.lineWidth = 0.7
+            ctx.beginPath()
+            ctx.moveTo(1.25, -0.83)
+            ctx.bezierCurveTo(-1.25, -2.3, -4.8, -0.4, -7.5, 2.5)
+            ctx.bezierCurveTo(-4.8, 2.8, -1.0, 2.4, 1.25, -0.83)
+            ctx.fill(); ctx.stroke()
             ctx.restore()
-            eye(ctx, 4.4, -10.8)
+            // bill: two halves about a hinge, so it opens
+            const hinge = [1.35, 0.2]
+            const jaw = (x, y, a) => {       // a point of the bill, turned about the hinge
+                const dx = x - hinge[0], dy = y - hinge[1], c = Math.cos(a), s = Math.sin(a)
+                return at(hinge[0] + dx * c - dy * s, hinge[1] + dx * s + dy * c)
+            }
+            ctx.fillStyle = Theme.dim
+            ctx.beginPath()
+            ctx.moveTo(...jaw(1.04, -1.56, -0.2 * gape))
+            ctx.bezierCurveTo(...jaw(2.9, -2.0, -0.2 * gape), ...jaw(4.9, -1.15, -0.2 * gape), ...jaw(5.4, 0.5, -0.2 * gape))
+            ctx.lineTo(...at(...hinge)); ctx.closePath()
+            ctx.moveTo(...at(...hinge)); ctx.lineTo(...jaw(4.7, 0.73, 0.8 * gape)); ctx.lineTo(...jaw(1.15, 1.35, 0.8 * gape))
+            ctx.closePath()
+            ctx.fill()
+            eye(ctx, ...at(0.3, -0.73))
             ctx.restore()
         }
 

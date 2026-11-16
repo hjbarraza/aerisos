@@ -10,7 +10,7 @@ Singleton {
     id: theme
 
     readonly property var defaults: ({
-        colors: { bg: "#0a0a0a", fg: "#e6e6e6", dim: "#7a7a7a", warn: "#ffffff", line: "#2a2a2a" },
+        colors: { bg: "#0a0a0a", fg: "#e6e6e6", dim: "#7a7a7a", warn: "#ffffff", line: "#2a2a2a", pet: "#ffffff" },
         fonts:  { sans: "Söhne", mono: "Söhne Mono", nerd: "NotoSansM Nerd Font", size: 12, small: 11 },
         bar:    { height: 26 },
         dock:   { enabled: true }
@@ -27,6 +27,7 @@ Singleton {
     readonly property color dim:  get("colors", "dim")
     readonly property color warn: get("colors", "warn")
     readonly property color line: get("colors", "line")
+    readonly property color pet:  get("colors", "pet")    // the raven: white
     readonly property string sans: get("fonts", "sans")
     readonly property string mono: get("fonts", "mono")   // small caps labels
     readonly property string nerd: get("fonts", "nerd")
