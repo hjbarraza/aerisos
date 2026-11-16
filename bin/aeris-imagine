@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+# aeris:summary=Generate images with the local Flux model (headless ComfyUI)
+# aeris:group=desktop
+# aeris:args=[PROMPT | -] [--mode fast|turbo|fine] [--lora NAME[:W]] [-n N] [-o FILE] | --stop
+# Text to image on the local GPU with no UI. Runs ComfyUI headless in the background
+# (started on first use, kept warm so later images skip the model load) and sends it the
+# Flux graph of the saved workflows. Prompts come from the argument, or one per line on
+# stdin with `-` or no argument, so it scripts: `cat prompts.txt | aeris-imagine`.
+# Prints the path of every image written, one per line. `--stop` frees the VRAM.
+"""aeris-imagine: local Flux text-to-image through a headless ComfyUI."""
+
+import argparse
+import json
+import os
+import random
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+COMFY = Path(os.environ.get("AERIS_COMFY", Path.home() / "ComfyUI"))
+HOST = os.environ.get("AERIS_COMFY_HOST", "127.0.0.1:8188")
+OUT = Path(os.environ.get("AERIS_IMAGINE_DIR", Path.home() / "Pictures" / "aeris-imagine"))
+STATE = Path.home() / ".local" / "state" / "aeris"
+LOG = STATE / "comfyui.log"
+PIDFILE = STATE / "comfyui.pid"
+
+# fast: schnell, 4 steps. turbo: dev + flux-turbo-alpha LoRA, 8 steps. fine: dev, 20 steps.
+MODES = {
+    "fast": {"unet": "flux1-schnell-Q4_K_S.gguf", "steps": 4, "loras": []},
+    "turbo": {"unet": "flux1-dev-Q4_K_S.gguf", "steps": 8, "loras": [("flux-turbo-alpha", 1.0)]},
+    "fine": {"unet": "flux1-dev-Q4_K_S.gguf", "steps": 20, "loras": []},
+}
+# Trigger words a LoRA needs at the start of the prompt.
+TRIGGERS = {"bw-illustration": "bwillustration"}
+
+
+def api(path, data=None, timeout=30):
+    req = urllib.request.Request(f"http://{HOST}{path}")
+    if data is not None:
+        req.data = json.dumps(data).encode()
+        req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r)
+
+
+def up():
+    try:
+        api("/system_stats", timeout=2)
+        return True
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def start_server():
+    if up():
+        return
+    STATE.mkdir(parents=True, exist_ok=True)
+    port = HOST.rsplit(":", 1)[1]
+    with open(LOG, "ab") as log:
+        p = subprocess.Popen(
+            [str(COMFY / ".venv/bin/python"), "main.py", "--listen", "127.0.0.1",
+             "--port", port, "--disable-auto-launch"],
+            cwd=COMFY, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            start_new_session=True)
+    PIDFILE.write_text(str(p.pid))
+    print(f"aeris-imagine: starting ComfyUI (log {LOG})", file=sys.stderr)
+    # ComfyUI has no readiness signal; poll its stats endpoint until it answers.
+    for _ in range(240):
+        if p.poll() is not None:
+            sys.exit(f"aeris-imagine: ComfyUI exited, see {LOG}")
+        if up():
+            return
+        time.sleep(0.5)
+    sys.exit(f"aeris-imagine: ComfyUI did not come up in 120 s, see {LOG}")
+
+
+def stop_server():
+    try:
+        pid = int(PIDFILE.read_text())
+        os.kill(pid, signal.SIGTERM)
+        print(f"aeris-imagine: stopped ComfyUI ({pid})", file=sys.stderr)
+    except (FileNotFoundError, ValueError, ProcessLookupError):
+        print("aeris-imagine: no ComfyUI started by aeris-imagine is running", file=sys.stderr)
+    PIDFILE.unlink(missing_ok=True)
+
+
+def parse_lora(s):
+    name, _, w = s.partition(":")
+    name = name.removesuffix(".safetensors")
+    if not (COMFY / "models/loras" / f"{name}.safetensors").exists():
+        have = sorted(p.stem for p in (COMFY / "models/loras").glob("*.safetensors"))
+        sys.exit(f"aeris-imagine: no LoRA {name!r}; have: {', '.join(have)}")
+    return name, float(w) if w else 1.0
+
+
+def graph(prompt, seed, mode, loras, width, height, steps, guidance, prefix):
+    """The saved bw-fast/bw-fine workflow in API form, LoRAs chained on the model."""
+    g = {
+        "unet": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": mode["unet"]}},
+        "clip": {"class_type": "DualCLIPLoaderGGUF", "inputs": {
+            "clip_name1": "t5-v1_1-xxl-encoder-Q4_K_M.gguf",
+            "clip_name2": "clip_l.safetensors", "type": "flux"}},
+        "vae": {"class_type": "VAELoader", "inputs": {"vae_name": "ae.safetensors"}},
+    }
+    model = ["unet", 0]
+    for i, (name, w) in enumerate(loras):
+        g[f"lora{i}"] = {"class_type": "LoraLoaderModelOnly", "inputs": {
+            "model": model, "lora_name": f"{name}.safetensors", "strength_model": w}}
+        model = [f"lora{i}", 0]
+    g.update({
+        "pos": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["clip", 0]}},
+        "guide": {"class_type": "FluxGuidance", "inputs": {
+            "conditioning": ["pos", 0], "guidance": guidance}},
+        "neg": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["pos", 0]}},
+        "latent": {"class_type": "EmptySD3LatentImage", "inputs": {
+            "width": width, "height": height, "batch_size": 1}},
+        "sample": {"class_type": "KSampler", "inputs": {
+            "model": model, "positive": ["guide", 0], "negative": ["neg", 0],
+            "latent_image": ["latent", 0], "seed": seed, "steps": steps, "cfg": 1.0,
+            "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}},
+        "decode": {"class_type": "VAEDecode", "inputs": {
+            "samples": ["sample", 0], "vae": ["vae", 0]}},
+        "save": {"class_type": "SaveImage", "inputs": {
+            "images": ["decode", 0], "filename_prefix": prefix}},
+    })
+    return g
+
+
+def slug(text):
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:48] or "image"
+
+
+def wait(pid):
+    # The finished image only shows in /history; ComfyUI's push channel is a websocket,
+    # which the stdlib cannot speak, so poll while a job is queued.
+    while True:
+        h = api(f"/history/{pid}").get(pid)
+        if h:
+            st = h.get("status", {})
+            if st.get("status_str") == "error":
+                msgs = [m for m in st.get("messages", []) if m[0] == "execution_error"]
+                err = msgs[0][1].get("exception_message", "").strip() if msgs else "unknown"
+                raise RuntimeError(err)
+            imgs = [i for o in h["outputs"].values() for i in o.get("images", [])]
+            if imgs:
+                return imgs
+        time.sleep(0.25)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="aeris-imagine", description=__doc__)
+    ap.add_argument("prompt", nargs="?", help="the prompt; '-' or none reads one per line from stdin")
+    ap.add_argument("--mode", choices=MODES, default="fast",
+                    help="fast: schnell 4 steps (default); turbo: dev + turbo LoRA 8 steps; fine: dev 20 steps")
+    ap.add_argument("--lora", action="append", default=[], metavar="NAME[:W]",
+                    help="add a LoRA from ComfyUI/models/loras, e.g. bw-illustration:1.3 (repeatable)")
+    ap.add_argument("--bw", action="store_true", help="shortcut for --lora bw-illustration:1.3")
+    ap.add_argument("-W", "--width", type=int, default=1024)
+    ap.add_argument("-H", "--height", type=int, default=1024)
+    ap.add_argument("--steps", type=int, help="override the mode's step count")
+    ap.add_argument("--guidance", type=float, default=3.0)
+    ap.add_argument("--seed", type=int, help="fixed seed (with -n, seed, seed+1, ...)")
+    ap.add_argument("-n", "--count", type=int, default=1, help="images per prompt")
+    ap.add_argument("-o", "--output", help="output file (one image) or directory")
+    ap.add_argument("--stop", action="store_true", help="stop the background ComfyUI and exit")
+    a = ap.parse_args()
+
+    if a.stop:
+        stop_server()
+        return
+
+    if a.prompt and a.prompt != "-":
+        prompts = [a.prompt]
+    elif sys.stdin.isatty():
+        ap.error("give a prompt, or pipe prompts one per line")
+    else:
+        prompts = [l.strip() for l in sys.stdin if l.strip() and not l.startswith("#")]
+
+    mode = MODES[a.mode]
+    loras = list(mode["loras"]) + [parse_lora(s) for s in a.lora]
+    if a.bw:
+        loras.append(parse_lora("bw-illustration:1.3"))
+    steps = a.steps or mode["steps"]
+
+    jobs = len(prompts) * a.count
+    out = Path(a.output).expanduser() if a.output else OUT
+    single_file = a.output and jobs == 1 and out.suffix.lower() in (".png", ".jpg", ".webp")
+    (out.parent if single_file else out).mkdir(parents=True, exist_ok=True)
+
+    start_server()
+    queued = []
+    for p in prompts:
+        text = p
+        for name, _ in loras:
+            t = TRIGGERS.get(name)
+            if t and t not in text.lower():
+                text = f"{t} {text}"
+        for k in range(a.count):
+            seed = a.seed + k if a.seed is not None else random.randrange(2**48)
+            g = graph(text, seed, mode, loras, a.width, a.height, steps, a.guidance,
+                      f"aeris-imagine/{slug(p)}")
+            pid = api("/prompt", {"prompt": g, "client_id": "aeris-imagine"})["prompt_id"]
+            queued.append((pid, p, seed))
+
+    failed = 0
+    for pid, p, seed in queued:
+        t0 = time.time()
+        try:
+            imgs = wait(pid)
+        except RuntimeError as e:
+            print(f"aeris-imagine: failed: {p!r}: {e}", file=sys.stderr)
+            failed += 1
+            continue
+        for img in imgs:
+            src = COMFY / "output" / img["subfolder"] / img["filename"]
+            dest = out if single_file else out / f"{time.strftime('%Y%m%d-%H%M%S')}-{slug(p)}-{seed}.png"
+            shutil.move(src, dest)
+            print(dest)
+            print(f"aeris-imagine: {time.time() - t0:.1f}s seed {seed}", file=sys.stderr)
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main()
