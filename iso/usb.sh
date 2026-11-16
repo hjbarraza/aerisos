@@ -26,6 +26,11 @@ die() { echo "! $*" >&2; exit 1; }
 (( EUID != 0 )) || die "run as your normal user (it asks for the sudo password)"
 [[ -x $AERIS/iso/build.sh ]] || die "no AerisOS repo at $AERIS"
 
+# The raven keeps watch through the build and says the "ready" notification in its bubble
+if command -v aeris-pet >/dev/null; then
+  aeris-pet set raven >/dev/null 2>&1 || true
+fi
+
 # --- the stick, asked before the long build -----------------------------------
 mapfile -t STICKS < <(lsblk -dpno NAME,TRAN,SIZE,MODEL | awk '$2 == "usb"')
 (( ${#STICKS[@]} )) || die "no USB stick found"
@@ -60,3 +65,6 @@ ISO=$(ls -t "$AERIS/iso/out/$NAME"-[0-9]*.iso | head -1)
 sudo umount "$STICK"?* 2>/dev/null || true
 sudo dd if="$ISO" of="$STICK" bs=4M status=progress oflag=sync
 echo "Done: ${ISO##*/} is on $STICK. Boot from it and run: aeris-installer"
+if command -v notify-send >/dev/null; then
+  notify-send "AerisOS" "The USB stick is ready" || true
+fi
