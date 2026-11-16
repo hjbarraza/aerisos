@@ -27,10 +27,25 @@ die() { echo "! $*" >&2; exit 1; }
 [[ -x $AERIS/iso/build.sh ]] || die "no AerisOS repo at $AERIS"
 clear
 
-# The raven keeps watch through the build and says the "ready" notification in its bubble
-if command -v aeris-pet >/dev/null; then
-  aeris-pet set raven >/dev/null 2>&1 || true
-fi
+# tinyraven: the pet's silhouette (aeris-pet/raven.svg) rendered at 24x12, eye and legs added
+cat <<'RAVEN'
+
+              ##########
+             ####### o ####
+            ###############
+           ##############
+          ############
+         #############
+       .#############
+      ###############
+     ###############
+    ##############
+  +############
+  ######   /  /
+          ^  ^
+  tinyraven builds your AerisOS USB
+
+RAVEN
 
 # --- the stick, asked before the long build -----------------------------------
 mapfile -t STICKS < <(lsblk -dpno NAME,TRAN,SIZE,MODEL | awk '$2 == "usb"')
