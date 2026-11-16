@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # aeris:summary=Searchable cheat sheet of Hyprland shortcuts
 # aeris:group=system
-"""Searchable cheat sheet of Hyprland shortcuts (Win key + K: Option+K on the macOS layout, SUPER+K elsewhere).
+"""Searchable cheat sheet of Hyprland shortcuts (Cmd+K: the key next to the spacebar + K).
 
 Reads the live binds from `hyprctl binds -j`, so it always matches the config.
 Only binds with a description are listed; add one with
@@ -23,17 +23,15 @@ KEY_NAMES = {
     "XF86AudioPlay": "Play key", "XF86AudioPause": "Pause key",
 }
 
-# Show modifiers as printed on this keyboard: Hyprland's SUPER/ALT sit on Cmd/Option on Apple
-# keyboards and on the keys labelled Alt/Super (Win) on the Razer (left pair swapped into Mac order).
+# Show modifiers by their Mac names. On Apple keyboards and on the Razer (left Alt/Win swapped into
+# Mac order) the key next to the spacebar is Cmd (printed Alt on the Razer) and the one left of it is
+# Option (printed Win on the Razer), so the list reads the same on both.
 try:
     VENDOR = open("/sys/class/dmi/id/sys_vendor").read()
 except OSError:
     VENDOR = ""
-if "Apple" in VENDOR:
+if "Apple" in VENDOR or "Razer" in VENDOR:
     MODS = [(64, "Cmd"), (4, "Ctrl"), (8, "Option"), (1, "Shift")]
-elif "Razer" in VENDOR:
-    MODS = [(64, "Alt"), (4, "Ctrl"), (8, "Super"), (1, "Shift")]
-    KEY_NAMES["Alt_R"] = "Right Alt"   # only the left pair is swapped
 
 
 def combo(bind):

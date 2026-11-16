@@ -312,8 +312,9 @@ hl.gesture({
 
 -- MacBook modifier row on the Razer Blade: left of the spacebar reads Ctrl, Fn, Win, Alt;
 -- swapping left Win/Alt gives Ctrl, Fn, Option, Cmd (Super next to the spacebar, as on a
--- Mac). Fn is handled in the keyboard firmware and sends no key, so Ctrl/Fn cannot trade
--- places. Per device, so an external Apple keyboard plugged in keeps its own layout.
+-- Mac). The firmware owns the Fn layer (Fn + F-keys) and sends no key for Fn, so no other key
+-- can become Fn; but Fn shows in a raw HID report, and ~/.local/bin/fn-as-ctrl makes it act as
+-- Ctrl as well: the row then works as Ctrl, Ctrl, Option, Cmd. Per device, so an external Apple keyboard plugged in keeps its own layout.
 -- The built-in keyboard shows up as several HID interfaces (`hyprctl devices`).
 local isRazer = false
 do
@@ -364,7 +365,10 @@ local mac = cmdMod == "SUPER"
 local wm = mac and "CTRL + ALT" or mainMod
 for _, k in ipairs({ "C", "V", "X", "Z", "A", "T", "N", "W", "F", "S", "P", "O", "R", "G", "K", "J", "D", "B", "I", "U", "Y",
                      "comma", "0" }) do
-    hl.bind(cmdMod .. " + " .. k, hl.dsp.send_shortcut({ mods = "CTRL", key = k }), { description = "macOS-style: Ctrl+" .. k .. " to the app" })
+    -- Cmd+K is the shortcuts cheat sheet on the macOS layout, so it is not forwarded there
+    if not (mac and k == "K") then
+        hl.bind(cmdMod .. " + " .. k, hl.dsp.send_shortcut({ mods = "CTRL", key = k }), { description = "macOS-style: Ctrl+" .. k .. " to the app" })
+    end
 end
 -- Cmd+Shift combos that aren't app launchers (Shift+Z redo, T reopen tab, R hard reload, P palette, F find in files, S save as)
 for _, k in ipairs({ "Z", "T", "R", "P", "F", "S" }) do
@@ -423,7 +427,7 @@ hl.bind(mainMod .. " + SHIFT + V", hl.dsp.exec_cmd("cliphist list | wofi --dmenu
 hl.bind(mainMod .. " + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- Spotlight-style search (Vicinae, falls back to hyprlauncher)
 hl.bind("ALT + space", hl.dsp.exec_cmd("command -v vicinae >/dev/null && vicinae toggle || " .. menu), { description = "Search / launcher (Vicinae)" })   -- alias
 -- Cheat sheet on the physical Win key + K: Option (ALT) on the macOS layout (Razer Win/Alt swapped), SUPER elsewhere
-hl.bind((mac and "ALT" or mainMod) .. " + K", hl.dsp.exec_cmd("~/.local/bin/keybinds"), { description = "Keyboard shortcuts cheat sheet" })
+hl.bind(mainMod .. " + K", hl.dsp.exec_cmd("~/.local/bin/keybinds"), { description = "Keyboard shortcuts cheat sheet" })
 -- Web apps (Omarchy-style): open the site in its own frameless Brave window
 local function webapp(url) return hl.dsp.exec_cmd("brave --app=" .. url) end
 hl.bind(mainMod .. " + SHIFT + C", webapp("https://calendar.notion.so"), { description = "Notion Calendar" })
@@ -613,6 +617,20 @@ hl.bind("XF86AudioNext",  hl.dsp.exec_cmd("playerctl next"),       { description
 hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause"), { description = "Play / pause", locked = true })
 hl.bind("XF86AudioPlay",  hl.dsp.exec_cmd("playerctl play-pause"), { description = "Play / pause", locked = true })
 hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd("playerctl previous"),   { description = "Previous track", locked = true })
+
+-- On the Razer the Fn key also acts as Ctrl (~/.local/bin/fn-as-ctrl), so Fn + F-key arrives as
+-- Ctrl + media key. Same actions as above; no description, so the cheat sheet lists each once.
+if isRazer then
+    for _, m in ipairs({
+        { "XF86AudioRaiseVolume", "swayosd-client --output-volume raise", true }, { "XF86AudioLowerVolume", "swayosd-client --output-volume lower", true },
+        { "XF86AudioMute", "swayosd-client --output-volume mute-toggle", true },  { "XF86AudioMicMute", "swayosd-client --input-volume mute-toggle", true },
+        { "XF86MonBrightnessUp", "swayosd-client --brightness raise", true },     { "XF86MonBrightnessDown", "swayosd-client --brightness lower", true },
+        { "XF86AudioNext", "playerctl next", false }, { "XF86AudioPrev", "playerctl previous", false },
+        { "XF86AudioPause", "playerctl play-pause", false }, { "XF86AudioPlay", "playerctl play-pause", false },
+    }) do
+        hl.bind("CTRL + " .. m[1], hl.dsp.exec_cmd(m[2]), { locked = true, repeating = m[3] })
+    end
+end
 
 
 --------------------------------

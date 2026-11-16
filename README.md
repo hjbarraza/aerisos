@@ -168,7 +168,7 @@ Run only some parts by naming modules:
 | `boot` | Boot branding: boot menu hidden (hold **Space** at power-on to show it; entry **AerisOS**, native resolution), a **full-screen** splash with the ÆRIS OS wordmark centred, then an **animated Plymouth** boot (`plymouth/aeris/`): the same image with a light gliding along a short hairline until the login screen fades in. Quiet boot, so no kernel text covers it. Rebuilds the kernel image (UKI). On T2 Macs (plain `linux-t2` entry, no UKI) the quiet options go on that entry and Plymouth into its initramfs; the firmware splash is UKI-only. |
 | `logins` | Interactive logins, kept for last so the unattended modules run first: `gh auth login` + `gh auth setup-git` (GitHub pushes over HTTPS) and Tailscale (`tailscaled` enabled, `tailscale up` browser login, `--operator=$USER` so the bar widget and CLI work without sudo). Skips whatever is already logged in. |
 | `gamesdrive` | *Optional, this laptop only.* Mounts the games drive (btrfs labelled `games`) at `/mnt/games` on every boot and shows it as "Games" in Files. Never formats anything. See [Games drive](#games-drive). |
-| `razer` | *Optional, Razer laptops.* Builds and installs [razer-control-revived](https://github.com/encomjp/razer-control-revived) (Battery Health Optimizer, power modes, CPU/GPU boost, fans, lid logo; GUI **Razer Settings** + `razer-cli`), with device access for the logged-in user only, and a timer that holds the battery between **90 and 95%**. See [Battery](#battery). |
+| `razer` | *Optional, Razer laptops.* Builds and installs [razer-control-revived](https://github.com/encomjp/razer-control-revived) (Battery Health Optimizer, power modes, CPU/GPU boost, fans, lid logo; GUI **Razer Settings** + `razer-cli`), with device access for the logged-in user only, a timer that holds the battery between **90 and 95%** (see [Battery](#battery)), and `fn-as-ctrl`: the **Fn** key also acts as Ctrl, as on a MacBook where Ctrl is the second key (undo: `systemctl --user disable --now fn-as-ctrl`). |
 | `titan` | *Optional — only if you said yes in the wizard (or name it: `./setup.sh titan`).* A security key as a second factor: **your own key — Google Titan, YubiKey, or any FIDO2/U2F key** — is auto-detected while plugged in and enrolled (touch it when it blinks). Unlocking (hyprlock) and logging in (SDDM) then take **password + key touch**, and **unplugging the key logs you out** (udev rule matched to your key's USB id; it also restarts SDDM, which otherwise leaves a black screen because sddm-helper crashes on terminate-user). tty login (`Ctrl+Alt+F3`) stays password-only as the recovery path if the key is lost. The key is bound to the fixed origin `pam://aeris`, so a hostname change does not break it. Key rejected or replaced: `curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/titan/setup-titan-pam.sh \| sudo bash`. Runs `titan/setup-titan-pam.sh`. |
 | `snapshot` | *Optional.* Saves this machine's current configs and package lists back into this folder. |
 
@@ -230,7 +230,7 @@ change rewrites it anyway.
 
 `SUPER+K` shows every shortcut, searchable. The essentials:
 
-The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade): every Cmd combo behaves as on a Mac, and window management moves to `CTRL+OPTION`. On the Razer, Cmd is the key labelled **Alt** and Option the key labelled **Win** (the cheat sheet and menu call it Super); on Apple keyboards they are Cmd and Option. The cheat sheet (`OPTION+K`: the Win key + K on the Razer) and the AERIS menu always show the keys as printed on the keyboard in use.
+The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade): every Cmd combo behaves as on a Mac, and window management moves to `CTRL+OPTION`. On the Razer, Cmd is the key labelled **Alt** and Option the key labelled **Win**, and the **Fn** key also acts as Ctrl (`fn-as-ctrl`, set up by `./setup.sh razer`), so the four keys left of the spacebar work as Ctrl · Ctrl · Option · Cmd; Fn + F-keys keep their printed functions (volume, brightness). On Apple keyboards the keys are Cmd and Option. The cheat sheet (`CMD+K`) names the keys Cmd and Option on both; the AERIS menu shows them as printed on the keyboard in use.
 
 | Keys | Action |
 |---|---|
@@ -239,14 +239,14 @@ The **macOS layout** applies when Cmd is Super (Apple keyboards, the Razer Blade
 | `SUPER+SPACE` · `ALT+SPACE` | Search / launch (Vicinae) |
 | `ALT+TAB` · `ALT+SHIFT+TAB` | Next · previous window |
 | `SUPER+RETURN` · `SUPER+SHIFT+RETURN` · `SUPER+E` | Terminal · Ghostty · Files |
-| `CMD+C/V/X/Z/A/T/N/W/F/S/P/O/R/G/K/J/D/B/I/U/Y` · `CMD+,` `=` `-` `0` · `CMD+SHIFT+Z/T/R/P/F/S` | macOS-style: forwarded to the app as `Ctrl+…` (the "Cmd" is the key left of the spacebar: Super on Apple keyboards and the Razer Blade, whose left Win/Alt are swapped into the MacBook order Ctrl · Fn · Option · Cmd; left Alt on other PC layouts) |
+| `CMD+C/V/X/Z/A/T/N/W/F/S/P/O/R/G/J/D/B/I/U/Y` (and `K` on PC layouts) · `CMD+,` `=` `-` `0` · `CMD+SHIFT+Z/T/R/P/F/S` | macOS-style: forwarded to the app as `Ctrl+…` (the "Cmd" is the key left of the spacebar: Super on Apple keyboards and the Razer Blade, whose left Win/Alt are swapped into the MacBook order Option · Cmd; left Alt on other PC layouts) |
 | `CMD+Q` · `CMD+TAB` | Close window · cycle windows (macOS-style) |
 | `CMD+SHIFT+[` · `]` (Mac also `CMD+OPTION+←` · `→`) | Previous · next tab in the browser (forwarded as `Ctrl+PageUp/PageDown`); `Cmd+1–9` goes to the app (tab N) on the macOS layout |
 | `CMD+L` | Address bar in Brave/Chromium (forwarded as `Ctrl+L`; does nothing in other apps) |
 | `CMD+←/→` · `CMD+↑/↓` · `OPTION+←/→` (add `SHIFT` to select) | macOS layout: line start/end · document start/end · word left/right |
 | `CMD+BACKSPACE` · `OPTION+BACKSPACE` · `CMD+[` · `]` | macOS layout: delete to line start · delete word · back · forward |
 | `SUPER+ALT+F` · `SUPER+F` · `SUPER+SHIFT+F` | Float/unfloat · full screen · maximize (macOS layout: `CMD+CTRL+F` full screen, `CTRL+OPTION+RETURN` maximize) |
-| `SUPER+P` · `SUPER+J` · `SUPER+K` · `SUPER+S` | Pseudo-tile · flip split rows/columns · shortcut cheat sheet · scratchpad (macOS layout: `CTRL+OPTION+` the same letter, except the cheat sheet: `OPTION+K`, the Win key on the Razer) |
+| `SUPER+P` · `SUPER+J` · `SUPER+K` · `SUPER+S` | Pseudo-tile · flip split rows/columns · shortcut cheat sheet · scratchpad (macOS layout: `CTRL+OPTION+` the same letter, except the cheat sheet: `CMD+K`) |
 | `` OPTION+` `` · `` OPTION+SHIFT+` `` (the Win key on the Razer; `` SUPER+` `` on PC layouts) | **Ask**: a terminal slides in, centred on the screen, with a chat to the local Ollama model (`aeris-ask-term`); press again or Esc to hide it, the conversation stays · ask about the selected text. `/new` clears, `/model NAME` switches |
 | `SUPER+/` · mouse forward button | **Ask the pet**: a box opens under the pet in the bar; short answers appear in its speech bubble, follow-ups grow it into a chat. `/help` lists the instant commands (timers, reminders, /hush, /status, /weather, /open, /run). Esc closes |
 | mouse back button | **Dictate and send**: hold, speak, release (held a second or more) and the text is typed and Enter pressed; or click to start and click again to stop |
@@ -405,6 +405,7 @@ bin/             every AerisOS command (aeris, aeris-menu, aeris-update, dnd, sc
 webapps/         web-app launchers (Brave --app)
 vicinae/aerisos/ the AerisOS menu (Vicinae extension, TypeScript/React)
 battery/         user units for the low-battery alerts and the Razer charge limit (90–95%)
+razer/           user unit for fn-as-ctrl (the Razer Fn key also acts as Ctrl)
 status/          aeris-status collector + systemd service/timer for the login screen info
 plymouth/aeris/  animated boot theme (Plymouth script)
 png2bmp.py       PNG → 24-bit BMP converter (fallback when ImageMagick is missing)
