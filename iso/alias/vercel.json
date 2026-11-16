@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://raw.githubusercontent.com/hjbarraza/aerisos/iso-usb/iso/usb.sh",
+      "permanent": false
+    }
+  ]
+}
