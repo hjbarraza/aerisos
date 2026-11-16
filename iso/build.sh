@@ -6,7 +6,7 @@
 # Takes the official Arch "releng" ISO profile and bakes in:
 #   - this repo at its current commit (git archive → /root/aerisos on the ISO,
 #     so gitignored secrets never reach the ISO)
-#   - the guided installer (aeris-installer) + a login hint to run it
+#   - the guided installer (aeris-installer), started at boot on the first console
 # Output: ~/aerisos/iso/out/aerisos-<date>-x86_64.iso  (~1.2 GB, gitignored)
 #
 # T2 Macs:  sudo ~/aerisos/iso/build.sh --t2   (on a working T2 Mac, or anywhere with T2_FIRMWARE_TAR, below)
@@ -48,10 +48,16 @@ git -C "$AERIS" archive HEAD | tar -x -C "$PROFILE/airootfs/root/aerisos"
 # The installer
 install -Dm755 "$AERIS/iso/aeris-installer" "$PROFILE/airootfs/usr/local/bin/aeris-installer"
 
-# Login hint on the live system
+# The installer starts by itself on the first console. The others (Ctrl+Alt+F2) stay a
+# shell with a hint: the stick is also the recovery medium
+cat >> "$PROFILE/airootfs/root/.zlogin" <<'EOF'
+if [[ $(tty) == /dev/tty1 ]]; then
+    aeris-installer || printf '\n  To try again, run:  \033[1maeris-installer\033[0m\n\n'
+fi
+EOF
 mkdir -p "$PROFILE/airootfs/etc/profile.d"
 cat > "$PROFILE/airootfs/etc/profile.d/aerisos.sh" <<'EOF'
-printf '\n  \033[1mAerisOS\033[0m — to install, run:  \033[1maeris-installer\033[0m\n  (Wi-Fi first if needed: iwctl)\n\n'
+[ "$(tty)" = /dev/tty1 ] || printf '\n  \033[1mAerisOS\033[0m — to install, run:  \033[1maeris-installer\033[0m\n\n'
 EOF
 
 # Boot menu says AerisOS, not "Arch Linux install medium" (GRUB on UEFI —

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # AerisOS guided installer — runs as root on the AerisOS live USB.
-# Asks: disk, timezone, username + password. Installs a minimal Arch with
+# Asks: Wi-Fi (when offline), disk, timezone, username + password. Installs a minimal Arch with
 # systemd-boot, copies the aerisos repo (baked into the ISO) into the new
 # user's home, and leaves one command for after the reboot: ./setup.sh
 set -euo pipefail
@@ -31,10 +31,45 @@ if (( T2 )); then
 fi
 
 # --- network ----------------------------------------------------------------
-if ! ping -c1 -W3 archlinux.org >/dev/null 2>&1; then
-    echo "No internet. For Wi-Fi:  iwctl → station wlan0 connect \"SSID\"  — then re-run: aeris-installer"
-    (( T2 )) && echo "T2 Mac with no wlan0: tether a phone over USB and run  bash /root/aerisos/t2/firmware.sh"
-    die "network required (pacstrap downloads packages)"
+online() { ping -c1 -W3 archlinux.org >/dev/null 2>&1; }
+
+# Wi-Fi: pick a network from the scan, type its password, until the machine is online.
+# WIFI_SSID / WIFI_PSK also go to the new system (see "Wi-Fi on the new system")
+WIFI_SSID="" WIFI_PSK=""
+wifi_connect() {
+    local dev=$1 nets n i
+    while ! online; do
+        say "Wi-Fi"
+        iwctl station "$dev" scan 2>/dev/null || true
+        sleep 4
+        # iwd did the scan; iw reads the kernel's result list, one "SSID: name" per network
+        mapfile -t nets < <(iw dev "$dev" scan dump | awk -F': ' '/^\tSSID: ./ {print $2}' | sort -u)
+        for i in "${!nets[@]}"; do printf '  %d) %s\n' "$((i+1))" "${nets[$i]}"; done
+        read -rp "Network number (Enter to scan again): " n
+        [[ $n =~ ^[0-9]+$ ]] && (( n >= 1 && n <= ${#nets[@]} )) || continue
+        WIFI_SSID=${nets[$((n-1))]}
+        read -rsp "Password for $WIFI_SSID (Enter if it has none): " WIFI_PSK; echo
+        if [[ -n $WIFI_PSK ]]; then
+            iwctl --passphrase "$WIFI_PSK" station "$dev" connect "$WIFI_SSID" || true
+        else
+            iwctl station "$dev" connect "$WIFI_SSID" || true
+        fi
+        for i in {1..10}; do online && break; sleep 2; done
+        online || echo "Not connected (wrong password?). Again."
+    done
+}
+
+if ! online; then
+    WLAN=""
+    for d in /sys/class/net/*/wireless; do
+        if [[ -e $d ]]; then d=${d%/wireless}; WLAN=${d##*/}; break; fi
+    done
+    if [[ -n $WLAN ]]; then
+        wifi_connect "$WLAN"
+    else
+        (( T2 )) && echo "T2 Mac with no Wi-Fi device: tether a phone over USB and run  bash /root/aerisos/t2/firmware.sh"
+        die "network required (pacstrap downloads packages): no Wi-Fi device found, plug in a cable"
+    fi
 fi
 
 # --- disk -------------------------------------------------------------------
@@ -109,6 +144,17 @@ if (( T2 )); then
     # early boot and load it 2 s later from a unit (see t2/vhci-late.sh)
     BOOT_OPTS+=" modprobe.blacklist=t2bce_vhci"
     install -Dm644 /root/aerisos/t2/t2bce-vhci-late.service /mnt/etc/systemd/system/t2bce-vhci-late.service
+fi
+
+# --- Wi-Fi on the new system: the network chosen above, so the first boot is online ---
+if [[ -n $WIFI_SSID ]]; then
+    install -dm700 /mnt/etc/NetworkManager/system-connections
+    NMCONN=/mnt/etc/NetworkManager/system-connections/aerisos-wifi.nmconnection
+    {
+        printf '[connection]\nid=%s\ntype=wifi\n\n[wifi]\nssid=%s\n' "$WIFI_SSID" "$WIFI_SSID"
+        [[ -z $WIFI_PSK ]] || printf '\n[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n' "$WIFI_PSK"
+    } > "$NMCONN"
+    chmod 600 "$NMCONN"
 fi
 
 # --- the repo -----------------------------------------------------------------

@@ -56,8 +56,9 @@ curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/iso/usb.sh |
 curl -fsSL https://raw.githubusercontent.com/hjbarraza/aerisos/main/iso/usb.sh | bash -s -- --snapshot
 ```
 
-Boot the USB (UEFI), connect Wi-Fi if needed (`iwctl`), and run
-**`aeris-installer`**: it asks for the disk (typed `ERASE` to confirm),
+Boot the USB (UEFI). **`aeris-installer`** starts by itself: when the machine is
+offline it lists the Wi-Fi networks and asks for the password (the new system
+gets that network too), then it asks for the disk (typed `ERASE` to confirm),
 timezone, and your **username + password**, installs a minimal Arch with
 systemd-boot on btrfs, and puts the repo in your home. After the reboot, log
 in and run the one command it leaves in the login message:
@@ -79,8 +80,8 @@ sudo dd if=iso/out/aerisos-t2-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
 Hold **Option** at power-on and pick the USB (Startup Security Utility must
-allow booting from external media). Keyboard and Wi-Fi work on the USB:
-`iwctl station wlan0 connect "SSID"`, then **`aeris-installer`**. It sees the T2
+allow booting from external media). Keyboard and Wi-Fi work on the USB, and
+**`aeris-installer`** starts by itself and asks for the Wi-Fi network. It sees the T2
 chip and installs `linux-t2` (from the arch-mact2 repo, kept in `pacman.conf`),
 the firmware, the boot entry with the T2 kernel options and the `t2bce_vhci`
 late-load workaround below. After the reboot, `cd ~/aerisos && ./setup.sh` as
