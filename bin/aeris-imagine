@@ -39,6 +39,21 @@ MODES = {
 }
 # Trigger words a LoRA needs at the start of the prompt.
 TRIGGERS = {"bw-illustration": "bwillustration"}
+# --bw: the bw-illustration template (~/Desktop/PROMPT TEMPLATE - bwillustration.txt).
+# The prompt is only the subject; the closing sentence forces monochrome on white.
+BW_TEMPLATE = ("bwillustration of {subject}. Black and white pen and ink line drawing with "
+               "cross-hatching and stippling, monochrome, on a plain white background.")
+
+
+def bw_prompt(subject):
+    """Wrap a plain subject in the bw template; a full bwillustration prompt passes through."""
+    subject = subject.strip().rstrip(".")
+    if subject.lower().startswith("bwillustration"):
+        return subject + "."
+    first, _, rest = subject.partition(" ")
+    if first in ("A", "An", "The"):  # "A street market" reads "of a street market"
+        subject = f"{first.lower()} {rest}"
+    return BW_TEMPLATE.format(subject=subject)
 
 
 def api(path, data=None, timeout=30):
@@ -161,7 +176,8 @@ def main():
                     help="fast: schnell 4 steps (default); turbo: dev + turbo LoRA 8 steps; fine: dev 20 steps")
     ap.add_argument("--lora", action="append", default=[], metavar="NAME[:W]",
                     help="add a LoRA from ComfyUI/models/loras, e.g. bw-illustration:1.3 (repeatable)")
-    ap.add_argument("--bw", action="store_true", help="shortcut for --lora bw-illustration:1.3")
+    ap.add_argument("--bw", action="store_true",
+                    help="pen-and-ink style: bw-illustration LoRA at 1.3, prompt is the subject only")
     ap.add_argument("-W", "--width", type=int, default=1024)
     ap.add_argument("-H", "--height", type=int, default=1024)
     ap.add_argument("--steps", type=int, help="override the mode's step count")
@@ -197,7 +213,7 @@ def main():
     start_server()
     queued = []
     for p in prompts:
-        text = p
+        text = bw_prompt(p) if a.bw else p
         for name, _ in loras:
             t = TRIGGERS.get(name)
             if t and t not in text.lower():
