@@ -25,6 +25,7 @@ done
 die() { echo "! $*" >&2; exit 1; }
 (( EUID != 0 )) || die "run as your normal user (it asks for the sudo password)"
 [[ -x $AERIS/iso/build.sh ]] || die "no AerisOS repo at $AERIS"
+clear
 
 # The raven keeps watch through the build and says the "ready" notification in its bubble
 if command -v aeris-pet >/dev/null; then
