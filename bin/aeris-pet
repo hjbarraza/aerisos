@@ -94,25 +94,30 @@ BUBBLE_SECONDS = 5.0
 BUBBLE_WRAP_PX = 140
 FONT = "Die Grotesk 10"
 
-# Dragon body: BODY_N spine points, BODY_SEG px apart, head first.
-BODY_N = 16
-BODY_SEG = 4.6
-HEAD_R = 7.5
+# Dragon body: BODY_N spine points, BODY_SEG px apart, head first. Long and thin, a river
+# dragon: about 130 px of body behind a small head, on short legs.
+BODY_N = 34
+BODY_SEG = 4.0
+HEAD_R = 6.0
+BODY_REST = 11                  # spine height above the floor when it stands (the head is held higher)
+NECK_N = 6                      # spine points in the arch from the raised head down to the back
 GROUND_PAD = 25                 # head centre sits this far above the bottom edge (legs stand under it)
 WALK_SPEED = 26.0               # px per second
 GOTO_SPEED = 40.0
 
 # Legs: spine points the front and rear legs hang from, and bone lengths (px).
-LEG_FRONT_AT = 3
-LEG_REAR_AT = 10
-FRONT_BONES = (9.5, 10.5)          # upper arm, forearm (elbow bends back)
-REAR_BONES = (7.0, 7.5, 8.0)      # thigh (angled forward), shank, metatarsal (hock bends back)
-STRIDE = 5.5                      # half a step, px
+LEG_FRONT_AT = 5
+LEG_REAR_AT = 19
+FRONT_BONES = (5.5, 6.0)          # upper arm, forearm (elbow bends back)
+REAR_BONES = (4.0, 4.6, 4.6)      # thigh (angled forward), shank, metatarsal (hock bends back)
+STRIDE = 4.0                      # half a step, px
 
 PETS = (("dragon", "Dragon"), ("raven", "Raven"))
 PET_NAMES = {"dragon": "tinydragon", "raven": "tinyraven"}   # used by the ask box and its answers
 CHOICE_FILE = os.path.expanduser("~/.local/state/aeris-pet/pet")
-RAVEN_SCALE = 0.2                 # the 200x200 raven drawing shown 40 px tall
+RAVEN_K = 0.16                    # px per unit of the raven rig: the bird stands about 20 px tall
+RAVEN_DIR = os.path.join(SHARE, "raven")   # the rig: anim.py (motion) and rig.py (drawing)
+RAVEN_REST = (("idle", 6), ("preen", 2), ("rouse", 1), ("flick", 1))   # what it does standing, weighted
 WHERE_FILE = os.path.expanduser("~/.local/state/aeris-pet/where")
 BAR_HIDDEN_FILE = os.path.expanduser("~/.local/state/aeris-pet/bar-hidden")
 MUTED_FILE = os.path.expanduser("~/.local/state/aeris-pet/muted")
@@ -261,18 +266,6 @@ def two_bone(root, target, l1, l2, bend):
     knee = (root[0] + ux * a + px * h, root[1] + uy * a + py * h)
     end = (root[0] + ux * d, root[1] + uy * d)
     return knee, end
-
-
-# The raven, from ~/.local/share/aeris-pet/raven.svg (200x200, facing right). The wing is
-# hinged at the shoulder (125,92) so it can flap.
-RAVEN_BODY = svg_path("M186,74 C172,62 160,52 146,48 C128,40 110,46 102,62 C88,84 66,112 48,142 "
-                      "C36,160 22,178 10,192 C30,186 46,178 60,170 C80,170 100,168 116,158 "
-                      "C136,146 148,124 150,100 C151,90 156,82 162,80 C170,78 178,76 186,74 Z")
-RAVEN_WING = svg_path("M0,0 C-18,10 -44,34 -72,64 C-44,56 -16,40 6,16 Z")   # relative to the hinge
-RAVEN_HINGE = (125, 92)
-RAVEN_EYE = (150, 63)
-RAVEN_HIPS = (96, 104)            # x of the two legs, which hang from y=160 to the feet
-RAVEN_FEET_Y = 196
 
 
 def hypr(dispatch):
@@ -541,9 +534,11 @@ def play(path):
 # ---------------------------------------------------------------- dragon
 
 def radius_at(i):
-    """Body radius at spine point i: head is widest, tail tapers."""
+    """Body radius at spine point i: a slim neck behind the head, a little thicker at the
+    shoulders, then one long taper to the tail."""
     s = i / (BODY_N - 1)
-    return HEAD_R * (1 - 0.72 * s) ** 0.85
+    t = min(1.0, s * 6)
+    return 5.0 * (1 - s) ** 0.65 * (0.82 + 0.18 * t * t * (3 - 2 * t)) + 0.8
 
 
 class Pet:
@@ -577,6 +572,7 @@ class Pet:
         self.gait = 0.0
         self.stride = 0.0
         self.prev_hx = self.hx
+        self.spine = [[self.hx - i * BODY_SEG, self.hy] for i in range(BODY_N)]   # see step_spine
 
         self.mode = "rest"              # rest walk goto peck dance fly perch sleep drag toss
         self.mode_until = now + random.uniform(4, 10)
@@ -598,6 +594,8 @@ class Pet:
         self.next_active_perch = 0.0
         self.blink_until = 0.0
         self.next_blink = now + random.uniform(2, 4)
+        self.raven = None               # (rig module, Animator), loaded when first drawn
+        self.raven_t = now
         self.bubble_text = None
         self.bubble_until = 0.0
         self.bubble_wrap = BUBBLE_WRAP_PX
@@ -742,35 +740,80 @@ class Pet:
 
     # geometry ----------------------------------------------------------
 
+    def step_spine(self, dt):
+        """The body is a chain dragged by the head: every point keeps its distance to the one
+        in front of it, so the body follows the path the head took. It trails through the
+        arcs of a flight, swings behind on a throw, and slides round when the dragon turns.
+        Standing, the chain settles into a low back stretched out behind the head, which
+        stays up on an arched neck."""
+        head = (self.hx, self.hy + self.bow)
+        sp = self.spine
+        if math.hypot(head[0] - sp[0][0], head[1] - sp[0][1]) > 80:    # moved at once: lay it out afresh
+            sp[:] = [[head[0] - self.dir * i * BODY_SEG, head[1]] for i in range(BODY_N)]
+        sp[0][:] = head
+        low = self.floor_y() - BODY_REST if self.planted() else None
+        for i in range(1, BODY_N):
+            a, p = sp[i - 1], sp[i]
+            if low is not None:
+                t = min(1.0, i / NECK_N)
+                want_y = head[1] + (low - head[1]) * t * t * (3 - 2 * t)
+                if LEG_FRONT_AT <= i <= LEG_REAR_AT:       # the back arches a little between the legs
+                    want_y -= 3.0 * math.sin(math.pi * (i - LEG_FRONT_AT) / (LEG_REAR_AT - LEG_FRONT_AT))
+                elif i > LEG_REAR_AT:                      # and the tail lifts off the floor toward its tip
+                    want_y -= 8.0 * ((i - LEG_REAR_AT) / (BODY_N - 1 - LEG_REAR_AT)) ** 2
+                p[1] += (want_y - p[1]) * min(1.0, dt * 9)
+                p[0] += (a[0] - self.dir * BODY_SEG - p[0]) * min(1.0, dt * 4)   # lie out behind
+            dx, dy = p[0] - a[0], p[1] - a[1]
+            d = math.hypot(dx, dy)
+            if d < 1e-6:
+                dx, dy, d = -self.dir, 0.0, 1.0
+            p[0], p[1] = a[0] + dx / d * BODY_SEG, a[1] + dy / d * BODY_SEG
+
+    def tangent(self, pts, i):
+        """Unit vector along the body at point i, pointing toward the head."""
+        a, b = pts[max(i - 1, 0)], pts[min(i + 1, len(pts) - 1)]
+        dx, dy = a[0] - b[0], a[1] - b[1]
+        d = math.hypot(dx, dy) or 1.0
+        return dx / d, dy / d
+
     def geometry(self):
-        """Spine points (screen px, head first), forward and normal vectors, and the head point."""
+        """Spine points (screen px, head first), the head's forward and normal vectors, and
+        the head point. The points are the chain of step_spine plus the swimming wave, which
+        runs down the body across its own direction and grows toward the tail."""
         hx = self.hx
         hy = self.hy + self.bow
         th = self.pitch
         f = (self.dir * math.cos(th), math.sin(th))
         n = (-f[1], f[0])
+        amp = self.amp * (0.5 if self.planted() else 1.0)       # on the floor it only ripples
         pts = []
-        for i in range(BODY_N):
+        for i, (x, y) in enumerate(self.spine):
             s = i / (BODY_N - 1)
-            d = i * BODY_SEG
-            w = self.amp * (0.15 + 0.85 * s) * math.sin(2 * math.pi * 0.9 * s - self.phase)
-            pts.append((hx - f[0] * d + n[0] * w, hy - f[1] * d + n[1] * w))
+            tx, ty = self.tangent(self.spine, i)
+            w = amp * min(1.0, s * 5) * (0.3 + 0.7 * s) * math.sin(2 * math.pi * 1.5 * s - self.phase)
+            pts.append((x - ty * w, y + tx * w))
         return pts, f, n, (hx, hy)
 
     def belly(self, f):
         """Unit vector from the spine toward the belly, whichever way the pet faces."""
         return (-f[1] * self.dir, f[0] * self.dir)
 
+    def belly_at(self, t):
+        """Belly side of one stretch of body with tangent t. It goes by the way that stretch
+        itself points, so the mane stays on top while the body is still turning round."""
+        side = 1 if t[0] > 0.15 else -1 if t[0] < -0.15 else self.dir
+        return (-t[1] * side, t[0] * side)
+
     def head_top(self, head):
         """Where the speech bubble's tail points."""
         if self.kind == "raven":
-            return self.hy + GROUND_PAD - 2 - (RAVEN_FEET_Y - 44) * RAVEN_SCALE
+            return self.hy + GROUND_PAD - 2 - 128 * RAVEN_K
         return head[1] - HEAD_R - 6
 
     def dragon_bbox(self, pts, head, bubble=None):
         if self.kind == "raven":
-            half = 110 * RAVEN_SCALE + 8
-            pts = [(self.hx - half, self.hy - 200 * RAVEN_SCALE),
+            half = 125 * RAVEN_K + 8
+            pts = [(self.hx - half, self.hy - 160 * RAVEN_K),
                    (self.hx + half, self.hy + GROUND_PAD)]
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
@@ -837,6 +880,7 @@ class Pet:
 
     def update(self, now, dt):
         self.step_mode(now, dt)
+        self.step_spine(dt)
         self.write_pos(now)
         self.pitch += (self.pitch_t - self.pitch) * min(1.0, dt * 5)
         self.amp += (self.amp_t - self.amp) * min(1.0, dt * 4)
@@ -1509,37 +1553,55 @@ class Pet:
     # drawing -----------------------------------------------------------
 
     def draw_dragon(self, cr, now):
+        """A long river dragon: far legs, the mane along the back, one smooth body (outline
+        under fill), a tuft at the tail tip, near legs, head."""
         pts, f, _, head = self.geometry()
-        b = self.belly(f)
-        n = (-b[0], -b[1])          # toward the back: fins and horns go this way
-        self.draw_legs(cr, pts, f, b, now, far=True)
-        # silhouette: dark outline under a light body
-        cr.set_source_rgb(*COL_LINE)
-        for i, (x, y) in enumerate(pts):
-            cr.arc(x, y, radius_at(i) + 1.0, 0, 2 * math.pi)
-            cr.fill()
-        cr.set_source_rgb(*COL_BODY)
-        for i, (x, y) in enumerate(pts):
-            cr.arc(x, y, radius_at(i), 0, 2 * math.pi)
-            cr.fill()
-        # dorsal fins: flutter along the back
-        for i in range(3, BODY_N - 4, 3):
+        self.draw_legs(cr, pts, f, None, now, far=True)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        # mane: back-swept tufts from the crown to past the middle, longest at the neck,
+        # each one fluttering a beat after the one in front
+        last = int(BODY_N * 0.62)
+        for i in range(1, last):
+            tx, ty = self.tangent(pts, i)
+            bx, by = self.belly_at((tx, ty))
             px, py = pts[i]
             r = radius_at(i)
-            flut = 0.9 * math.sin(now * 2 * math.pi * 2.0 + i * 0.7)
-            bx, by = px + n[0] * r * 0.4, py + n[1] * r * 0.4
-            tipx = px + n[0] * (r + 3.0 + flut) - f[0] * 2.2
-            tipy = py + n[1] * (r + 3.0 + flut) - f[1] * 2.2
-            cr.move_to(bx - f[0] * 3.2, by - f[1] * 3.2)
-            cr.line_to(tipx, tipy)
-            cr.line_to(bx + f[0] * 3.2, by + f[1] * 3.2)
+            h = 2.0 + 6.5 * (1 - i / last) ** 0.7 + 1.1 * math.sin(now * 2 * math.pi * 1.8 - i * 0.55)
+            # long locks laid back along the body, more hair than spikes
+            cr.move_to(px - bx * r * 0.3 + tx * 2.6, py - by * r * 0.3 + ty * 2.6)
+            cr.line_to(px - bx * (r + h * 0.6) - tx * (3.0 + h * 1.5), py - by * (r + h * 0.6) - ty * (3.0 + h * 1.5))
+            cr.line_to(px - bx * r * 0.3 - tx * 2.6, py - by * r * 0.3 - ty * 2.6)
             cr.close_path()
-            cr.set_source_rgba(*COL_FIN, 0.85)
+            cr.set_source_rgb(*COL_FIN)
             cr.fill_preserve()
             cr.set_source_rgb(*COL_LINE)
             cr.set_line_width(0.6)
             cr.stroke()
-        self.draw_legs(cr, pts, f, b, now, far=False)
+        # tail tuft: three strands fanned off the tip
+        tx, ty = self.tangent(pts, BODY_N - 1)
+        ex, ey = pts[-1]
+        sway = 0.35 * math.sin(now * 2 * math.pi * 1.3)
+        for k in (-0.5, 0.0, 0.5):
+            c, sn = math.cos(k + sway), math.sin(k + sway)
+            dx, dy = -(tx * c - ty * sn), -(tx * sn + ty * c)
+            cr.move_to(ex, ey)
+            cr.line_to(ex + dx * 8, ey + dy * 8)
+            cr.set_source_rgb(*COL_LINE)
+            cr.set_line_width(2.4)
+            cr.stroke_preserve()
+            cr.set_source_rgb(*COL_FIN)
+            cr.set_line_width(1.3)
+            cr.stroke()
+        # body: tapered strokes between the spine points, so it is one smooth shape
+        for color, grow in ((COL_LINE, 1.0), (COL_BODY, 0.0)):
+            cr.set_source_rgb(*color)
+            for i in range(BODY_N - 1):
+                cr.move_to(*pts[i])
+                cr.line_to(*pts[i + 1])
+                cr.set_line_width(radius_at(i) + radius_at(i + 1) + 2 * grow)
+                cr.stroke()
+        self.draw_legs(cr, pts, f, None, now, far=False)
         self.draw_head(cr, head, f, now)
 
     def floor_y(self):
@@ -1556,12 +1618,15 @@ class Pet:
     def draw_legs(self, cr, pts, f, b, now, far):
         """Four legs like Haku's: front legs with the elbow bent back, hind legs with a
         forward thigh and a hock bent back, each ending in a clawed paw."""
-        back = (-f[0], -f[1])
         planted = self.planted()
         floor = self.floor_y()
         side = -1.0 if far else 1.0
         for front in (True, False):
             i = LEG_FRONT_AT if front else LEG_REAR_AT
+            # the leg hangs from the body where it is: level on the floor, along the body in the air
+            f = (float(self.dir), 0.0) if planted else self.tangent(pts, i)
+            b = self.belly(f) if planted else self.belly_at(f)
+            back = (-f[0], -f[1])
             px, py = pts[i]
             r = radius_at(i)
             hip = (px + b[0] * r * 0.45 + f[0] * (1.2 if far else 0.0),
@@ -1573,7 +1638,7 @@ class Pet:
             if planted:
                 stance = (1.5 if front else -1.0) * self.dir
                 tx = hip[0] + self.dir * self.stride * math.sin(ph) + stance
-                lift = 3.5 * max(0.0, math.cos(ph)) * (self.stride / STRIDE)
+                lift = 2.4 * max(0.0, math.cos(ph)) * (self.stride / STRIDE)
                 target = (tx, floor - lift)
                 paw_dir = (self.dir, 0.0)
             elif self.mode == "fly":
@@ -1607,7 +1672,7 @@ class Pet:
         fill = COL_FIN if far else COL_BODY
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
-        widths = [(4.6, 3.0)] + [(3.4, 1.9)] * (len(chain) - 2)   # thick upper bone, slim lower
+        widths = [(3.6, 2.2)] + [(2.8, 1.5)] * (len(chain) - 2)   # thick upper bone, slim lower
         for (wo, _), a, c in zip(widths, chain, chain[1:]):
             cr.move_to(*a)
             cr.line_to(*c)
@@ -1622,10 +1687,10 @@ class Pet:
             cr.stroke()
         # joint knobs at elbow / knee / hock
         for jx, jy in chain[1:-1]:
-            cr.arc(jx, jy, 1.7, 0, 2 * math.pi)
+            cr.arc(jx, jy, 1.3, 0, 2 * math.pi)
             cr.set_source_rgb(*COL_LINE)
             cr.fill()
-            cr.arc(jx, jy, 1.0, 0, 2 * math.pi)
+            cr.arc(jx, jy, 0.8, 0, 2 * math.pi)
             cr.set_source_rgb(*fill)
             cr.fill()
         # paw: a pad with three hooked claws fanned forward
@@ -1635,7 +1700,7 @@ class Pet:
         cr.translate(ex, ey)
         cr.rotate(math.atan2(dy, dx))
         cr.save()
-        cr.scale(2.4, 1.5)
+        cr.scale(2.0, 1.3)
         cr.arc(0.4, 0, 1.0, 0, 2 * math.pi)
         cr.restore()
         cr.set_source_rgb(*fill)
@@ -1655,77 +1720,52 @@ class Pet:
             cr.stroke()
         cr.restore()
 
+    def raven_behavior(self):
+        """The rig behavior the current mode calls for. None: at rest, the rig picks from RAVEN_REST."""
+        m = self.mode
+        if m == "drag":
+            return "held"
+        if m == "fly" or (m == "toss" and not self.on_ground()):
+            return "flight"
+        if m in ("walk", "goto"):
+            return "walk"
+        if m in ("peck", "sleep"):
+            return m
+        if m == "dance":
+            return "jitter" if getattr(self, "dance_style", "dance") == "stomp" else "dance"
+        return None
+
     def draw_raven(self, cr, now):
-        """The raven: hops on the ground, flaps in the air, mirrored to face its way."""
-        s = RAVEN_SCALE
-        feet = self.hy + GROUND_PAD - 2
-        airborne = self.mode in ("fly", "toss", "drag") or not self.planted()
-        hop = 0.0
-        if self.mode in ("walk", "goto"):
-            hop = 4.0 * abs(math.sin(self.gait * 0.8))
-        elif self.mode == "dance" and getattr(self, "dance_style", "dance") == "stomp":
-            hop = 6.0 * abs(math.sin(now * 2 * math.pi * 2.5))
-        elif self.mode == "dance":
-            hop = 5.0 * abs(math.sin(now * 2 * math.pi * 1.5))
-        tilt = 0.0
-        if self.mode == "peck":
-            tilt = 0.45 + 0.15 * math.sin(now * 2 * math.pi * 3)
-        elif airborne:
-            tilt = self.pitch * 0.6
-        if self.mode in ("fly", "toss", "drag", "dance"):
-            flap = 0.55 + 0.65 * math.sin(now * 2 * math.pi * (7.0 if self.mode != "dance" else 3.0))
-        else:
-            flap = 0.06 * (1 + math.sin(now * 2 * math.pi * 0.4))
-        legs = 0.35 if airborne else 1.0       # tucked in flight
+        """The raven is a rig (RAVEN_DIR): anim.py turns a behavior into a pose (planted feet,
+        steps, head bob, blinks, breathing, follow-through) and rig.py draws it as the same
+        chubby bird that lives in the bar. This picks the
+        behavior for the current mode and draws the pose at the pet's feet, mirrored to face
+        its way. Where the pet is and what it is doing stay this program's business."""
+        if self.raven is None:
+            sys.path.insert(0, RAVEN_DIR)
+            import anim
+            import rig
+            self.raven = (rig, anim.Animator(auto=False))
+            self.raven_t = now
+        rig, a = self.raven
+        dt = clamp(now - self.raven_t, 0.0, 0.05)
+        self.raven_t = now
+        want = self.raven_behavior()
+        if want is None:
+            if a.done or a.behavior not in [name for name, _ in RAVEN_REST]:
+                a.start(random.choices(*zip(*RAVEN_REST))[0])
+        elif a.done or a.behavior != want:
+            a.start(want)
+        # walking: this program moves the bird, the rig steps at that exact speed
+        a.drive = (GOTO_SPEED if self.mode == "goto" else WALK_SPEED) / RAVEN_K if want == "walk" else None
+        pose = a.update(dt)
         cr.save()
-        cr.translate(self.hx, feet - hop)
-        cr.scale(self.dir * s, s)
-        cr.rotate(tilt)
-        cr.translate(-100, -RAVEN_FEET_Y)
-        lw = 1.0 / s
-        # legs and toes
-        cr.set_source_rgb(*COL_LINE)
-        cr.set_line_width(1.6 * lw)
-        cr.set_line_cap(cairo.LINE_CAP_ROUND)
-        top = 158
-        foot = top + (RAVEN_FEET_Y - top) * legs
-        for lx in RAVEN_HIPS:
-            fx = lx - (12 if airborne else 0)
-            cr.move_to(lx, top)
-            cr.line_to(fx, foot)
-            for tx, ty in ((14, 0), (8, -3), (-7, 1)):
-                cr.move_to(fx, foot)
-                cr.line_to(fx + tx, foot + ty)
-            cr.stroke()
-        # body
-        trace(cr, RAVEN_BODY)
-        cr.set_source_rgb(*COL_BODY)
-        cr.fill_preserve()
-        cr.set_source_rgb(*COL_LINE)
-        cr.set_line_width(1.1 * lw)
-        cr.stroke()
-        # wing
-        cr.save()
-        cr.translate(*RAVEN_HINGE)
-        cr.rotate(flap)
-        trace(cr, RAVEN_WING)
-        cr.set_source_rgb(*COL_FIN)
-        cr.fill_preserve()
-        cr.set_source_rgb(*COL_LINE)
-        cr.set_line_width(0.9 * lw)
-        cr.stroke()
-        cr.restore()
-        # eye
-        ex, ey = RAVEN_EYE
-        cr.set_source_rgb(*COL_EYE)
-        if not (now < self.blink_until) and self.mode != "sleep":
-            cr.arc(ex, ey, 5.5, 0, 2 * math.pi)
-            cr.fill()
-        else:
-            cr.move_to(ex - 6, ey)
-            cr.line_to(ex + 6, ey)
-            cr.set_line_width(1.2 * lw)
-            cr.stroke()
+        cr.translate(self.hx, self.hy + GROUND_PAD - 2)
+        cr.scale(self.dir * RAVEN_K, RAVEN_K)
+        if want == "flight":
+            cr.rotate(self.pitch * 0.6)
+        cr.translate(-rig.FEET_X, -rig.GROUND_Y)
+        rig.draw(cr, pose)
         cr.restore()
 
     def draw_head(self, cr, head, f, now):
