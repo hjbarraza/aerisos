@@ -845,8 +845,8 @@ class Pet:
         layout.set_width(-1)            # lines are broken by wrap_chars, never mid-word
         layout.set_text(wrap_chars(text), -1)
         _, logical = layout.get_pixel_extents()
-        bw = logical.width + 32
-        bh = logical.height + 14
+        bw = logical.width + 48         # 24 px each side
+        bh = logical.height + 22        # 11 px above and below
         bx = clamp(anchor_x - bw / 2, self.mon_x + 2, self.mon_x + self.mon_w - bw - 2)
         by = top_y - 10 - bh
         if by < self.mon_y + 4:         # no room above (perched at the top): hang it below
@@ -1872,7 +1872,7 @@ class Pet:
         cr.line_to(lx, (by - 8) if by > top else top + 2)
         cr.stroke()
         cr.set_source_rgb(*fg)
-        cr.move_to(bx + 16, by + 7)
+        cr.move_to(bx + 24, by + 11)
         PangoCairo.show_layout(cr, layout)
 
     def on_draw(self, _widget, cr):

@@ -489,8 +489,8 @@ PanelWindow {
         anchor.window: lane
         anchor.rect.x: boxX
         anchor.rect.y: Math.max(Theme.barHeight, lane.py + 2)
-        implicitWidth: bubbleText.implicitWidth + 40
-        implicitHeight: leader + bubbleText.implicitHeight + 16
+        implicitWidth: bubbleText.implicitWidth + 56   // 28 px each side
+        implicitHeight: leader + bubbleText.implicitHeight + 24   // 12 px above and below
         visible: false
         color: "transparent"
         mask: Region {}   // never in the way of a click
@@ -512,7 +512,7 @@ PanelWindow {
         Text {
             id: bubbleText
             property int wrapAt: 260   // notifications get a wider bubble
-            x: 20; y: bubble.leader + 8
+            x: 28; y: bubble.leader + 12
             wrapMode: Text.NoWrap   // lines come from lane.wrapChars, 66 characters at most
             color: bubble.inverted ? "#000000" : Theme.fg
             lineHeight: 20
