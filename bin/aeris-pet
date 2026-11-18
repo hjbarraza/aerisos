@@ -59,6 +59,7 @@ import os
 import random
 import struct
 import subprocess
+import textwrap
 import threading
 import time
 import wave
@@ -92,6 +93,8 @@ VOLUME = 0.35
 
 BUBBLE_SECONDS = 5.0
 BUBBLE_WRAP_PX = 140
+CHATTER_PER_HOUR = 2               # unprompted bubbles (chatter, new-window remarks) per rolling hour
+BUBBLE_LINE_CHARS = 66             # a bubble grows taller only past this many characters a line
 FONT = "Die Grotesk 10"
 
 # Dragon body: BODY_N spine points, BODY_SEG px apart, head first. Long and thin, a river
@@ -541,6 +544,12 @@ def radius_at(i):
     return 5.0 * (1 - s) ** 0.65 * (0.82 + 0.18 * t * t * (3 - 2 * t)) + 0.8
 
 
+def wrap_chars(text, width=BUBBLE_LINE_CHARS):
+    """Break text into lines of at most `width` characters at spaces; a longer word stays whole."""
+    return "\n".join(textwrap.fill(para, width, break_long_words=False, break_on_hyphens=False)
+                     if para.strip() else para for para in text.split("\n"))
+
+
 class Pet:
     def __init__(self):
         self.lines = load_lines()
@@ -600,6 +609,7 @@ class Pet:
         self.bubble_until = 0.0
         self.bubble_wrap = BUBBLE_WRAP_PX
         self.next_bubble = now + random.uniform(15, 30)
+        self.chatter_times = []         # when the last unprompted bubbles appeared
         # notifications (the pet is the notifier): new lines in NOTIFY_FEED, said one by one
         self.notes = []
         self.note_kind = None           # kind of the feed item in the bubble now
@@ -832,9 +842,8 @@ class Pet:
         scratch = cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 1, 1))
         layout = PangoCairo.create_layout(scratch)
         layout.set_font_description(Pango.FontDescription(FONT))
-        layout.set_width(self.bubble_wrap * Pango.SCALE)
-        layout.set_wrap(Pango.WrapMode.WORD_CHAR)
-        layout.set_text(text, -1)
+        layout.set_width(-1)            # lines are broken by wrap_chars, never mid-word
+        layout.set_text(wrap_chars(text), -1)
         _, logical = layout.get_pixel_extents()
         bw = logical.width + 32
         bh = logical.height + 14
@@ -905,7 +914,7 @@ class Pet:
                                                  or self.bubble_wrap < NOTE_WRAP_PX):
             self.say_note(now)          # a notification interrupts chatter, then the next waits
         elif self.bubble_text is None and now >= self.next_bubble:
-            self.say(random.choice(self.lines))
+            self.chatter(random.choice(self.lines))
 
     def update_dirty(self):
         """Redraw only the area the dragon (and its bubble) occupies now or last frame."""
@@ -1126,6 +1135,16 @@ class Pet:
         self.bubble_until = now + seconds
         self.next_bubble = now + random.uniform(30, 60)
 
+    def chatter(self, text):
+        """An unprompted bubble: at most CHATTER_PER_HOUR in any hour, the rest stay unsaid."""
+        now = time.monotonic()
+        self.chatter_times = [t for t in self.chatter_times if now - t < 3600]
+        if len(self.chatter_times) >= CHATTER_PER_HOUR:
+            self.next_bubble = self.chatter_times[0] + 3600 + random.uniform(0, 300)
+            return
+        self.chatter_times.append(now)
+        self.say(text)
+
     def on_feed_changed(self, _mon, _file, _other, event):
         if event not in (Gio.FileMonitorEvent.CHANGES_DONE_HINT, Gio.FileMonitorEvent.CREATED,
                          Gio.FileMonitorEvent.CHANGED):
@@ -1313,7 +1332,7 @@ class Pet:
         self.dir = 1 if cx > self.hx else -1
         self.touch(now)
         if random.random() < 0.5:
-            self.say(random.choice(NEW_WINDOW_LINES))
+            self.chatter(random.choice(NEW_WINDOW_LINES))
 
     def poll(self, now):
         clients = hypr_json("clients") or []

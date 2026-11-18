@@ -286,11 +286,35 @@ PanelWindow {
         hopStart = now()
         setMode("hop", 1.1)
     }
+    // Break text into lines of at most n characters at spaces; a longer word stays whole,
+    // so the bubble widens up to n characters before it grows a line taller.
+    function wrapChars(text, n) {
+        return text.split("\n").map(para => {
+            const lines = []
+            let line = ""
+            for (const word of para.split(/ +/)) {
+                if (line === "") line = word
+                else if (line.length + 1 + word.length <= n) line += " " + word
+                else { lines.push(line); line = word }
+            }
+            lines.push(line)
+            return lines.join("\n")
+        }).join("\n")
+    }
+    // An unprompted bubble: at most two in any hour, the rest stay unsaid.
+    property var chatterTimes: []
+    function chatter(text) {
+        const t = Date.now()
+        chatterTimes = chatterTimes.filter(c => t - c < 3600000)
+        if (chatterTimes.length >= 2) return
+        chatterTimes = chatterTimes.concat([t])
+        say(text)
+    }
     function say(text, seconds, wrap, inverted) {
         if (noteShowing && wrap === undefined) return   // chatter waits for the notification
         bubble.inverted = inverted === true
         bubbleText.wrapAt = wrap ?? 260
-        bubbleText.text = text
+        bubbleText.text = wrapChars(String(text), 66)
         bubble.visible = true
         bubbleTimer.interval = (seconds ?? 4.5) * 1000
         bubbleTimer.restart()
@@ -353,7 +377,7 @@ PanelWindow {
     IdleMonitor {
         id: idle
         timeout: 300
-        onIsIdleChanged: if (!isIdle && lane.mode === "sleep") { lane.say("i was not asleep"); lane.decide() }
+        onIsIdleChanged: if (!isIdle && lane.mode === "sleep") { lane.chatter("i was not asleep"); lane.decide() }
     }
     onAlertChanged: if (alert && asleep) decide()
 
@@ -465,7 +489,7 @@ PanelWindow {
         anchor.window: lane
         anchor.rect.x: boxX
         anchor.rect.y: Math.max(Theme.barHeight, lane.py + 2)
-        implicitWidth: Math.min(bubbleText.implicitWidth, bubbleText.wrapAt) + 40
+        implicitWidth: bubbleText.implicitWidth + 40
         implicitHeight: leader + bubbleText.implicitHeight + 16
         visible: false
         color: "transparent"
@@ -489,8 +513,7 @@ PanelWindow {
             id: bubbleText
             property int wrapAt: 260   // notifications get a wider bubble
             x: 20; y: bubble.leader + 8
-            width: Math.min(implicitWidth, wrapAt)
-            wrapMode: Text.Wrap
+            wrapMode: Text.NoWrap   // lines come from lane.wrapChars, 66 characters at most
             color: bubble.inverted ? "#000000" : Theme.fg
             lineHeight: 20
             lineHeightMode: Text.FixedHeight
