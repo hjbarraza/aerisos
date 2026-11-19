@@ -1,0 +1,25 @@
+# bats: a visitor for ravenwood. Edit freely; see the notes in ravenwood.c or copy this file to make another.
+layer = 2
+tone = 30
+path = fly
+speed = 95
+every = 360
+height = 0.44
+bob = 11
+count = 3
+frametime = 0.07
+scale = 1.5
+frame
+#         #
+ ##     ##
+  #######
+    ###
+.
+.
+frame
+.
+.
+    ###
+  ## # ##
+ ###   ###
+#         #

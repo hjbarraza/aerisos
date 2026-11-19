@@ -1,0 +1,25 @@
+# leaves: a visitor for ravenwood. Edit freely; see the notes in ravenwood.c or copy this file to make another.
+layer = 3
+path = fall
+speed = 22
+every = 260
+count = 11
+frametime = 0.28
+scale = 2
+tone = 14
+frame
+ #
+:##
+  :
+frame
+ :
+###:
+.
+frame
+  #
+ ##
+:#
+frame
+ #
+ #:
+ #

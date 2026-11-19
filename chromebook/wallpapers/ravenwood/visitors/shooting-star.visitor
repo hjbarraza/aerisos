@@ -1,0 +1,21 @@
+# shooting-star: a visitor for ravenwood. Edit freely; see the notes in ravenwood.c or copy this file to make another.
+layer = -1
+path = fly
+speed = 420
+every = 700
+height = 0.2
+angle = 14
+frametime = 1
+frame
+ :
+   :
+     :
+       : :
+          **
+            ***
+               ***
+                  **
+                    ***
+                       **
+                         ****
+                           **
